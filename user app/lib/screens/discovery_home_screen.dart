@@ -185,8 +185,14 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
   }
 
   final List<Map<String, dynamic>> artists = [
-    {'name': 'Sunidhi Chauhan', 'image': 'https://images.unsplash.com/photo-1494790108755-2616c9c0b8d3?w=200&h=200&fit=crop&crop=face'},
-    {'name': 'A. R. Rahman', 'image': 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face'},
+    {'name': 'A. R. Rahman', 'image': 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop', 'followers': '2.5M', 'isFollowing': false},
+    {'name': 'Arijit Singh', 'image': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop', 'followers': '3.2M', 'isFollowing': false},
+    {'name': 'Shreya Ghoshal', 'image': 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&h=200&fit=crop', 'followers': '1.8M', 'isFollowing': true},
+    {'name': 'Sonu Nigam', 'image': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop', 'followers': '1.5M', 'isFollowing': false},
+    {'name': 'Sunidhi Chauhan', 'image': 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&h=200&fit=crop', 'followers': '900K', 'isFollowing': false},
+    {'name': 'Rahat Fateh Ali Khan', 'image': 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&h=200&fit=crop', 'followers': '1.2M', 'isFollowing': true},
+    {'name': 'Armaan Malik', 'image': 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=200&h=200&fit=crop', 'followers': '800K', 'isFollowing': false},
+    {'name': 'Neha Kakkar', 'image': 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=200&h=200&fit=crop', 'followers': '2.1M', 'isFollowing': false},
   ];
 
   @override
@@ -384,27 +390,103 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                   const Text('Artists', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
                   const SizedBox(height: 16),
                   SizedBox(
-                    height: 120,
+                    height: 240,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
                       itemCount: artists.length,
                       itemBuilder: (context, index) {
                         final artist = artists[index];
                         return Container(
-                          width: 80,
+                          width: 160,
                           margin: const EdgeInsets.only(right: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.grey.withOpacity(0.1),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
                           child: Column(
                             children: [
-                              Container(
-                                width: 70, height: 70,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  image: DecorationImage(image: NetworkImage(artist['image']), fit: BoxFit.cover),
-                                  border: Border.all(color: Colors.grey.shade300, width: 2),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      width: 90,
+                                      height: 90,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        image: DecorationImage(
+                                          image: NetworkImage(artist['image']),
+                                          fit: BoxFit.cover,
+                                        ),
+                                        border: Border.all(color: Colors.grey.shade300, width: 2),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      artist['name'],
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${artist['followers']} followers',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                              Text(artist['name'], style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.black87), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
+                              const Spacer(),
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  height: 32,
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        artists[index]['isFollowing'] = !artists[index]['isFollowing'];
+                                      });
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: artist['isFollowing'] 
+                                          ? Colors.grey.shade800 
+                                          : const Color(0xFF001F3F),
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    ),
+                                    child: FittedBox(
+                                      child: Text(
+                                        artist['isFollowing'] ? 'Following' : 'Follow',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         );
