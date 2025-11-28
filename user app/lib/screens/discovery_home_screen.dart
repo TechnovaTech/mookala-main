@@ -942,7 +942,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
         unselectedItemColor: Colors.grey,
         currentIndex: _currentBottomIndex,
         onTap: (index) {
-          if (index == 3) {
+          if (index == 2) {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const UserProfileMenuScreen()),
@@ -956,7 +956,6 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.confirmation_number), label: 'Ticket'),
-          BottomNavigationBarItem(icon: Icon(Icons.school), label: 'Learn'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
