@@ -124,18 +124,28 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
           child: Column(
             children: [
               const SizedBox(height: 40),
-              // Icon
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  color: Colors.purple.shade50,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Icon(
-                  Icons.security,
-                  size: 50,
-                  color: Colors.purple.shade600,
+              // OTP Image
+              Center(
+                child: Image.asset(
+                  'assets/images/otp.png',
+                  height: 350,
+                  width: 350,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade50,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Icon(
+                        Icons.security,
+                        size: 50,
+                        color: Colors.purple.shade600,
+                      ),
+                    );
+                  },
                 ),
               ),
               const SizedBox(height: 30),
