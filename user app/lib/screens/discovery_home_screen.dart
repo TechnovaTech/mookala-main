@@ -887,6 +887,37 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                 ],
               ),
             ),
+            
+            // Events Near You Section
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Events Near You',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 80,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        _buildDistanceCard('5 kms', 'Events nearby', Icons.location_on, Colors.orange),
+                        _buildDistanceCard('10 kms', 'Wider Area', Icons.route, Colors.orange),
+                        _buildDistanceCard('20 kms', 'Wider Area', Icons.warning, Colors.red),
+                        _buildDistanceCard('Custom', 'Pick distance', Icons.tune, Colors.blue),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
                 ],
               ),
             ),
@@ -916,6 +947,55 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.confirmation_number), label: 'Ticket'),
           BottomNavigationBarItem(icon: Icon(Icons.school), label: 'Learn'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDistanceCard(String distance, String subtitle, IconData icon, Color iconColor) {
+    return Container(
+      width: 180,
+      margin: const EdgeInsets.only(right: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300, width: 1),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 24,
+            color: iconColor,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  distance,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF001F3F),
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
