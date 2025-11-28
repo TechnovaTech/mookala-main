@@ -3,6 +3,7 @@ import 'event_details_screen.dart';
 import 'filter_screen.dart';
 import 'user_profile_menu_screen.dart';
 import 'category_events_screen.dart';
+import 'organized_event_details_screen.dart';
 
 class DiscoveryHomeScreen extends StatefulWidget {
   const DiscoveryHomeScreen({super.key});
@@ -749,7 +750,16 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                       itemCount: _organizedEvents.length,
                       itemBuilder: (context, index) {
                         final event = _organizedEvents[index];
-                        return Container(
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => OrganizedEventDetailsScreen(event: event),
+                              ),
+                            );
+                          },
+                          child: Container(
                           width: 180,
                           margin: const EdgeInsets.only(right: 16),
                           decoration: BoxDecoration(
@@ -880,6 +890,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                               ),
                             ],
                           ),
+                        ),
                         );
                       },
                     ),
