@@ -178,6 +178,14 @@ class _UserProfileMenuScreenState extends State<UserProfileMenuScreen> {
                   ),
                   _buildDivider(),
                   _buildMenuItem(
+                    icon: Icons.event_note_outlined,
+                    title: 'Organize Event',
+                    subtitle: '',
+                    hasLock: false,
+                    onTap: () => _navigateToOrganizeEvent(),
+                  ),
+                  _buildDivider(),
+                  _buildMenuItem(
                     icon: Icons.logout,
                     title: 'Logout',
                     subtitle: '',
@@ -491,6 +499,42 @@ class _UserProfileMenuScreenState extends State<UserProfileMenuScreen> {
   void _navigateToFoodBeverages() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Opening Food & Beverages...')),
+    );
+  }
+
+  void _navigateToOrganizeEvent() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.event_note, color: const Color(0xFF001F3F)),
+            const SizedBox(width: 8),
+            const Text('Organize Event'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Coming Soon!',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Our event organization app is under development. You\'ll be able to create and manage your own events soon.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
     );
   }
 
