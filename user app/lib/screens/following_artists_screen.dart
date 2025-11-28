@@ -244,26 +244,35 @@ class _FollowingArtistsScreenState extends State<FollowingArtistsScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Row(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.people, color: Colors.grey.shade600, size: 16),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${artist['followers']} followers',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
-                          ),
+                        Row(
+                          children: [
+                            Icon(Icons.people, color: Colors.grey.shade600, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${artist['followers']} followers',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 16),
-                        Icon(Icons.event, color: Colors.grey.shade600, size: 16),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${artist['upcomingShows']} shows',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
-                          ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.event, color: Colors.grey.shade600, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${artist['upcomingShows']} shows',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
