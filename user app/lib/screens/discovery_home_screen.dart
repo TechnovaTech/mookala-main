@@ -134,6 +134,17 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     {'title': 'Custom', 'subtitle': 'Pick dates'},
   ];
 
+  final List<Map<String, String>> _organizedEvents = [
+    {'title': 'Harsh Gujral Live', 'date': 'Sun, 07 Dec • 09:00 PM', 'description': 'A hilarious stand-up comedy show featuring the best jokes and stories', 'price': '₹499', 'image': 'assets/images/concert.jpg'},
+    {'title': 'PS - I Love You by Pranav Sharma', 'date': 'Sat, 06 Dec • 04:00 PM', 'description': 'An emotional comedy special about love, relationships and life', 'price': '₹399', 'image': 'assets/images/theatre.jpg'},
+    {'title': 'Classical Music Evening', 'date': 'Fri, 05 Dec • 08:00 PM', 'description': 'Experience the beauty of Indian classical music with renowned artists', 'price': '₹799', 'image': 'assets/images/folk.jpg'},
+    {'title': 'Theatre Workshop', 'date': 'Thu, 04 Dec • 07:30 PM', 'description': 'Learn acting techniques and stage performance from industry experts', 'price': '₹299', 'image': 'assets/images/theatre.jpg'},
+    {'title': 'Folk Dance Festival', 'date': 'Wed, 03 Dec • 09:30 PM', 'description': 'Celebrate traditional folk dances from different regions of India', 'price': '₹199', 'image': 'assets/images/folk.jpg'},
+    {'title': 'Live Concert Night', 'date': 'Tue, 02 Dec • 08:30 PM', 'description': 'Rock the night with live performances by popular bands', 'price': '₹899', 'image': 'assets/images/concert.jpg'},
+    {'title': 'Drama Performance', 'date': 'Mon, 01 Dec • 07:00 PM', 'description': 'A captivating theatrical performance by acclaimed actors', 'price': '₹599', 'image': 'assets/images/theatre.jpg'},
+    {'title': 'Cultural Show', 'date': 'Sun, 30 Nov • 06:30 PM', 'description': 'A vibrant showcase of Indian culture, music and dance', 'price': '₹349', 'image': 'assets/images/folk.jpg'},
+  ];
+
   Widget _buildCategoryCard(String title, String imagePath, Color backgroundColor) {
     return GestureDetector(
       onTap: () {
@@ -391,6 +402,8 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                 ],
               ),
             ),
+            
+
             
             // Artists
             Padding(
@@ -695,6 +708,177 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                                 ),
                               ],
                             ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Organized Events Section
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Organized Events',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const Spacer(),
+                      const Icon(
+                        Icons.arrow_forward_ios,
+                        color: Colors.blue,
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 260,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _organizedEvents.length,
+                      itemBuilder: (context, index) {
+                        final event = _organizedEvents[index];
+                        return Container(
+                          width: 180,
+                          margin: const EdgeInsets.only(right: 16),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.grey.withOpacity(0.2),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: Container(
+                                  width: double.infinity,
+                                  decoration: BoxDecoration(
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(12),
+                                      topRight: Radius.circular(12),
+                                    ),
+                                    image: DecorationImage(
+                                      image: AssetImage(event['image'] ?? 'assets/images/concert.jpg'),
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.white,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.star_border,
+                                            size: 16,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.only(
+                                      bottomLeft: Radius.circular(12),
+                                      bottomRight: Radius.circular(12),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        event['date'] ?? '',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        event['title'] ?? '',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black87,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        event['description'] ?? '',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            event['price'] ?? '',
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF001F3F),
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF001F3F),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: const Text(
+                                              'Book',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         );
                       },
