@@ -211,61 +211,44 @@ class _UserProfileMenuScreenState extends State<UserProfileMenuScreen> {
     bool hasNew = false,
     required VoidCallback onTap,
   }) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(
-          icon,
-          color: Colors.black87,
-          size: 24,
-        ),
-      ),
-      title: Row(
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
-          if (hasNew) ...[
-            const SizedBox(width: 8),
+    return InkWell(
+      onTap: hasLock ? null : onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.orange,
-                borderRadius: BorderRadius.circular(4),
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: const Text(
-                'NEW',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
+              child: Icon(
+                icon,
+                color: Colors.black87,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
                 ),
               ),
             ),
+            Icon(
+              hasLock ? Icons.lock_outline : Icons.arrow_forward_ios,
+              color: Colors.grey.shade400,
+              size: hasLock ? 20 : 16,
+            ),
           ],
-        ],
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(
-          fontSize: 14,
-          color: Colors.grey.shade600,
         ),
       ),
-      trailing: hasLock
-          ? Icon(Icons.lock_outline, color: Colors.grey.shade400, size: 20)
-          : Icon(Icons.arrow_forward_ios, color: Colors.grey.shade400, size: 16),
-      onTap: hasLock ? null : onTap,
     );
   }
 
