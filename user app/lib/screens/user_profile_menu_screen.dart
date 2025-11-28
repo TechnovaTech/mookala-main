@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'my_bookings_screen.dart';
 import 'following_artists_screen.dart';
+import 'edit_profile_screen.dart';
 
 class UserProfileMenuScreen extends StatefulWidget {
   const UserProfileMenuScreen({super.key});
@@ -43,11 +44,13 @@ class _UserProfileMenuScreenState extends State<UserProfileMenuScreen> {
         child: Column(
           children: [
             // Profile Header
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
+            GestureDetector(
+              onTap: () => _navigateToEditProfile(),
+              child: Container(
+                color: Colors.white,
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
                   Stack(
                     children: [
                       CircleAvatar(
@@ -129,7 +132,8 @@ class _UserProfileMenuScreenState extends State<UserProfileMenuScreen> {
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
             ),
             
@@ -444,6 +448,13 @@ class _UserProfileMenuScreenState extends State<UserProfileMenuScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const FollowingArtistsScreen()),
+    );
+  }
+
+  void _navigateToEditProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const EditProfileScreen()),
     );
   }
 
