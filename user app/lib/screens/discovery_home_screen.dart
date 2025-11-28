@@ -511,102 +511,101 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
               ),
             ),
             
-            // Nearby Events Grid
+            // Nearby Events Horizontal Scroll
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: 0.8,
-                ),
-                itemCount: filteredEvents.length,
-                itemBuilder: (context, index) {
-                  final event = filteredEvents[index];
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => EventDetailsScreen(event: event)));
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: Container(
-                              width: double.infinity,
-                              decoration: BoxDecoration(
-                                borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
-                                image: DecorationImage(image: NetworkImage(event['image']), fit: BoxFit.cover),
-                              ),
+              padding: const EdgeInsets.fromLTRB(0, 20, 0, 40),
+              child: SizedBox(
+                height: 220,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: filteredEvents.length,
+                  itemBuilder: (context, index) {
+                    final event = filteredEvents[index];
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => EventDetailsScreen(event: event)));
+                      },
+                      child: Container(
+                        width: 180,
+                        margin: const EdgeInsets.only(right: 16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 3,
                               child: Container(
+                                width: double.infinity,
                                 decoration: BoxDecoration(
                                   borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [Colors.transparent, const Color(0xFF001F3F).withOpacity(0.7)],
+                                  image: DecorationImage(image: NetworkImage(event['image']), fit: BoxFit.cover),
+                                ),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [Colors.transparent, const Color(0xFF001F3F).withOpacity(0.7)],
+                                    ),
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      Positioned(
+                                        top: 8, right: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(8)),
+                                          child: Text(event['distance'], style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF001F3F))),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                child: Stack(
+                              ),
+                            ),
+                            Expanded(
+                              flex: 2,
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(8),
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.only(bottomLeft: Radius.circular(12), bottomRight: Radius.circular(12)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Positioned(
-                                      top: 8, right: 8,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(8)),
-                                        child: Text(event['distance'], style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF001F3F))),
-                                      ),
+                                    Text(event['title'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                    const SizedBox(height: 1),
+                                    Text(event['artist'], style: TextStyle(fontSize: 11, color: Colors.grey.shade600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Flexible(child: Text(event['price'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF001F3F)))),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                          decoration: BoxDecoration(color: const Color(0xFF001F3F), borderRadius: BorderRadius.circular(10)),
+                                          child: const Text('Book', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
                               ),
                             ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(8),
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.only(bottomLeft: Radius.circular(12), bottomRight: Radius.circular(12)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(event['title'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                  const SizedBox(height: 1),
-                                  Text(event['artist'], style: TextStyle(fontSize: 11, color: Colors.grey.shade600), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Flexible(child: Text(event['price'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF001F3F)))),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                        decoration: BoxDecoration(color: const Color(0xFF001F3F), borderRadius: BorderRadius.circular(10)),
-                                        child: const Text('Book', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
                 ],
