@@ -424,12 +424,12 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                           child: Column(
                             children: [
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                                padding: const EdgeInsets.all(8),
                                 child: Column(
                                   children: [
                                     Container(
-                                      width: 90,
-                                      height: 90,
+                                      width: 110,
+                                      height: 110,
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
                                         image: DecorationImage(
@@ -439,7 +439,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                                         border: Border.all(color: Colors.grey.shade300, width: 2),
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
+                                    const SizedBox(height: 8),
                                     Text(
                                       artist['name'],
                                       style: const TextStyle(
@@ -448,22 +448,13 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                                         color: Colors.black87,
                                       ),
                                       textAlign: TextAlign.center,
-                                      maxLines: 2,
+                                      maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '${artist['followers']} followers',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
+                                    const SizedBox(height: 8),
                                   ],
                                 ),
                               ),
-                              const Spacer(),
                               Padding(
                                 padding: const EdgeInsets.all(8),
                                 child: SizedBox(
