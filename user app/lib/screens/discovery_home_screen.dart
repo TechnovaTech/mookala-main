@@ -123,6 +123,17 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     },
   ];
 
+  final List<Map<String, String>> _dateOptions = [
+    {'title': 'This Weekend', 'subtitle': 'Nov 29 - 30'},
+    {'title': 'Today', 'subtitle': 'Nov 28'},
+    {'title': 'Tomorrow', 'subtitle': 'Nov 29'},
+    {'title': 'This Week', 'subtitle': 'Nov 25 - Dec 1'},
+    {'title': 'Next Weekend', 'subtitle': 'Dec 6 - 7'},
+    {'title': 'Next Week', 'subtitle': 'Dec 2 - 8'},
+    {'title': 'This Month', 'subtitle': 'November'},
+    {'title': 'Custom', 'subtitle': 'Pick dates'},
+  ];
+
   Widget _buildCategoryCard(String title, String imagePath, Color backgroundColor) {
     return GestureDetector(
       onTap: () {
@@ -606,6 +617,99 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                     );
                   },
                 ),
+              ),
+            ),
+            
+            // Pick a Date Section
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Pick a Date, Find an Event',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 80,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _dateOptions.length,
+                      itemBuilder: (context, index) {
+                        final dateOption = _dateOptions[index];
+                        return GestureDetector(
+                          onTap: () {
+                            // Handle date selection
+                            print('Selected: ${dateOption['title']}');
+                          },
+                          child: Container(
+                            width: 140,
+                            margin: const EdgeInsets.only(right: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.grey.shade300,
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.grey.withOpacity(0.1),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        dateOption['title'] ?? '',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF001F3F),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        dateOption['subtitle'] ?? '',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(
+                                  Icons.calendar_today,
+                                  color: Color(0xFF001F3F),
+                                  size: 24,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
                 ],
