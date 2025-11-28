@@ -85,16 +85,23 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
     return Scaffold(
       body: Column(
         children: [
-          // Header with gradient background
+          // Header with category image background
           Container(
             height: 280,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF4A90E2), Color(0xFF001F3F)],
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: NetworkImage(_getCategoryImage()),
+                fit: BoxFit.cover,
               ),
             ),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.black.withOpacity(0.3), const Color(0xFF001F3F).withOpacity(0.8)],
+                ),
+              ),
             child: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(20),
@@ -153,6 +160,7 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
                   ],
                 ),
               ),
+            ),
             ),
           ),
           
@@ -342,6 +350,21 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
         ],
       ),
     );
+  }
+
+  String _getCategoryImage() {
+    switch (widget.categoryName.toLowerCase()) {
+      case 'music':
+        return 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=280&fit=crop';
+      case 'theatre':
+        return 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=280&fit=crop';
+      case 'concert':
+        return 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=280&fit=crop';
+      case 'jatra':
+        return 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=400&h=280&fit=crop';
+      default:
+        return 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=280&fit=crop';
+    }
   }
 
   Widget _buildFilterButton(IconData icon, String text) {
