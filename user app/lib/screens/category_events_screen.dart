@@ -187,13 +187,18 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
                       style: TextStyle(fontSize: 16, color: Colors.grey),
                     ),
                   )
-                : ListView.builder(
+                : GridView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 0.6,
+                    ),
                     itemCount: filteredEvents.length,
                     itemBuilder: (context, index) {
                       final event = filteredEvents[index];
                       return Container(
-                        margin: const EdgeInsets.only(bottom: 20),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
@@ -208,137 +213,151 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // Event image
-                            Container(
-                              height: 200,
-                              decoration: BoxDecoration(
-                                borderRadius: const BorderRadius.only(
-                                  topLeft: Radius.circular(16),
-                                  topRight: Radius.circular(16),
+                            Expanded(
+                              flex: 3,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(16),
+                                    topRight: Radius.circular(16),
+                                  ),
+                                  image: DecorationImage(
+                                    image: NetworkImage(event['image']),
+                                    fit: BoxFit.cover,
+                                  ),
                                 ),
-                                image: DecorationImage(
-                                  image: NetworkImage(event['image']),
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                              child: Stack(
-                                children: [
-                                  Positioned(
-                                    top: 12,
-                                    right: 12,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: const BoxDecoration(
-                                        color: Colors.white,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: const Icon(
-                                        Icons.star_border,
-                                        color: Colors.grey,
-                                        size: 20,
+                                child: Stack(
+                                  children: [
+                                    Positioned(
+                                      top: 8,
+                                      right: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.white,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.star_border,
+                                          color: Colors.grey,
+                                          size: 16,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                             
                             // Event details
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.only(
-                                  bottomLeft: Radius.circular(16),
-                                  bottomRight: Radius.circular(16),
+                            Expanded(
+                              flex: 2,
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.only(
+                                    bottomLeft: Radius.circular(16),
+                                    bottomRight: Radius.circular(16),
+                                  ),
                                 ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    event['date'],
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    event['title'],
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Row(
-                                    children: [
-                                      // Profile images
-                                      SizedBox(
-                                        width: 80,
-                                        height: 30,
-                                        child: Stack(
-                                          children: [
-                                            Positioned(
-                                              left: 0,
-                                              child: Container(
-                                                width: 30,
-                                                height: 30,
-                                                decoration: BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(color: Colors.white, width: 2),
-                                                  image: const DecorationImage(
-                                                    image: NetworkImage('https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=60&h=60&fit=crop'),
-                                                    fit: BoxFit.cover,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                            Positioned(
-                                              left: 20,
-                                              child: Container(
-                                                width: 30,
-                                                height: 30,
-                                                decoration: BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(color: Colors.white, width: 2),
-                                                  image: const DecorationImage(
-                                                    image: NetworkImage('https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=60&h=60&fit=crop'),
-                                                    fit: BoxFit.cover,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                            Positioned(
-                                              left: 40,
-                                              child: Container(
-                                                width: 30,
-                                                height: 30,
-                                                decoration: BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(color: Colors.white, width: 2),
-                                                  image: const DecorationImage(
-                                                    image: NetworkImage('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=60&h=60&fit=crop'),
-                                                    fit: BoxFit.cover,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      event['date'],
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
                                       ),
-                                      const SizedBox(width: 12),
-                                      Text(
-                                        event['interested'],
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey.shade600,
-                                        ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      event['title'],
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
                                       ),
-                                    ],
-                                  ),
-                                ],
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        // Profile images
+                                        SizedBox(
+                                          width: 50,
+                                          height: 20,
+                                          child: Stack(
+                                            children: [
+                                              Positioned(
+                                                left: 0,
+                                                child: Container(
+                                                  width: 20,
+                                                  height: 20,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    border: Border.all(color: Colors.white, width: 1),
+                                                    image: const DecorationImage(
+                                                      image: NetworkImage('https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop'),
+                                                      fit: BoxFit.cover,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              Positioned(
+                                                left: 15,
+                                                child: Container(
+                                                  width: 20,
+                                                  height: 20,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    border: Border.all(color: Colors.white, width: 1),
+                                                    image: const DecorationImage(
+                                                      image: NetworkImage('https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=40&h=40&fit=crop'),
+                                                      fit: BoxFit.cover,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              Positioned(
+                                                left: 30,
+                                                child: Container(
+                                                  width: 20,
+                                                  height: 20,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    border: Border.all(color: Colors.white, width: 1),
+                                                    image: const DecorationImage(
+                                                      image: NetworkImage('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop'),
+                                                      fit: BoxFit.cover,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            event['interested'],
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
