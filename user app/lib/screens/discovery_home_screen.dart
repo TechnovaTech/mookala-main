@@ -13,7 +13,7 @@ class DiscoveryHomeScreen extends StatefulWidget {
 
 class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
   final TextEditingController _searchController = TextEditingController();
-  int _selectedCategoryIndex = 0;
+
   int _currentBottomIndex = 0;
   List<Map<String, dynamic>> filteredEvents = [];
 
@@ -40,13 +40,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     });
   }
   
-  final List<Map<String, dynamic>> categories = [
-    {'name': 'All', 'icon': Icons.apps},
-    {'name': 'Concerts', 'icon': Icons.music_note},
-    {'name': 'Music Shows', 'icon': Icons.queue_music},
-    {'name': 'Theatre', 'icon': Icons.theater_comedy},
-    {'name': 'Jatra', 'icon': Icons.people},
-  ];
+
   
   final List<Map<String, dynamic>> featuredEvents = [
     {
@@ -129,6 +123,67 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     },
   ];
 
+  Widget _buildCategoryCard(String title, String imagePath, Color backgroundColor) {
+    return GestureDetector(
+      onTap: () {
+        final categoryEvents = nearbyEvents.where((event) => 
+          event['category'].toLowerCase().contains(title.toLowerCase())).toList();
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CategoryEventsScreen(
+              categoryName: title,
+              events: categoryEvents,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Stack(
+          children: [
+            // Full background image
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.asset(
+                imagePath,
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    color: Colors.grey.shade300,
+                    child: const Icon(Icons.image, color: Colors.grey),
+                  );
+                },
+              ),
+            ),
+            // Dark overlay
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                color: Colors.black.withOpacity(0.4),
+              ),
+            ),
+            // Centered white text
+            Center(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   final List<Map<String, dynamic>> artists = [
     {'name': 'Sunidhi Chauhan', 'image': 'https://images.unsplash.com/photo-1494790108755-2616c9c0b8d3?w=200&h=200&fit=crop&crop=face'},
     {'name': 'A. R. Rahman', 'image': 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face'},
@@ -191,54 +246,6 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
             ),
           ),
           
-          // Fixed Categories
-          Container(
-            color: Colors.grey.shade50,
-            padding: const EdgeInsets.all(20),
-            child: SizedBox(
-              height: 70,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: categories.length,
-                itemBuilder: (context, index) {
-                  final isSelected = _selectedCategoryIndex == index;
-                  final category = categories[index];
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedCategoryIndex = index;
-                      });
-                      if (index > 0) {
-                        final categoryEvents = nearbyEvents.where((event) => 
-                          event['category'] == category['name']).toList();
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => CategoryEventsScreen(
-                              categoryName: category['name'],
-                              events: categoryEvents,
-                            ),
-                          ),
-                        );
-                      }
-                    },
-                    child: Container(
-                      width: 80,
-                      margin: const EdgeInsets.only(right: 16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(category['icon'], color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade600, size: 32),
-                          const SizedBox(height: 8),
-                          Text(category['name'], style: TextStyle(color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade700, fontWeight: FontWeight.w500, fontSize: 12), textAlign: TextAlign.center),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
           
           // Scrollable Content
           Expanded(
@@ -321,6 +328,50 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                     );
                   },
                 ),
+              ),
+            ),
+            
+            // Explore Categories Section
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Explore Categories',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const Spacer(),
+                      const Icon(
+                        Icons.arrow_forward_ios,
+                        color: Colors.blue,
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  // 2x2 Grid
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    childAspectRatio: 1.8,
+                    children: [
+                      _buildCategoryCard('Music', 'assets/images/concert.jpg', Colors.blue.shade50),
+                      _buildCategoryCard('Theatre', 'assets/images/theatre.jpg', Colors.blue.shade50),
+                      _buildCategoryCard('Concert', 'assets/images/concert.jpg', Colors.blue.shade50),
+                      _buildCategoryCard('Jatra', 'assets/images/folk.jpg', Colors.orange.shade50),
+                    ],
+                  ),
+                ],
               ),
             ),
             
