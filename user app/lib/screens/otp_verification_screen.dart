@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../services/api_service.dart';
 import 'profile_screen.dart';
+import 'discovery_home_screen.dart';
 
 class OTPVerificationScreen extends StatefulWidget {
   final String phoneNumber;
@@ -64,18 +67,36 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       _isLoading = true;
     });
 
-    await Future.delayed(const Duration(seconds: 2));
-
+    final result = await ApiService.verifyOTP(widget.phoneNumber, otp);
+    
     setState(() {
       _isLoading = false;
     });
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const ProfileScreen(),
-      ),
-    );
+    if (result['success'] == true) {
+      // Check if user profile is complete
+      final profileResult = await ApiService.getProfile(widget.phoneNumber);
+      if (profileResult['success'] == true && 
+          profileResult['user'] != null && 
+          profileResult['user']['status'] == 'completed') {
+        await ApiService.saveUserPhone(widget.phoneNumber);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const DiscoveryHomeScreen()),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProfileScreen(phoneNumber: widget.phoneNumber),
+          ),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['error'] ?? 'Invalid OTP')),
+      );
+    }
   }
 
   void _resendOTP() async {
@@ -179,6 +200,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                       controller: _controllers[index],
                       focusNode: _focusNodes[index],
                       keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       textAlign: TextAlign.center,
                       maxLength: 1,
                       style: const TextStyle(

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../services/api_service.dart';
 import 'otp_verification_screen.dart';
+import 'discovery_home_screen.dart';
 
 class PhoneLoginScreen extends StatefulWidget {
   const PhoneLoginScreen({super.key});
@@ -14,9 +17,11 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   bool _rememberMe = false;
 
   void _sendOTP() async {
-    if (_phoneController.text.isEmpty) {
+    final phone = _phoneController.text.trim();
+    
+    if (phone.isEmpty || phone.length != 10) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid phone number')),
+        const SnackBar(content: Text('Please enter a valid 10-digit phone number')),
       );
       return;
     }
@@ -25,20 +30,39 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       _isLoading = true;
     });
 
-    await Future.delayed(const Duration(seconds: 2));
+    // Check if user already exists
+    final profileResult = await ApiService.getProfile(phone);
+    if (profileResult['success'] == true && 
+        profileResult['user'] != null && 
+        profileResult['user']['status'] == 'completed') {
+      await ApiService.saveUserPhone(phone);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const DiscoveryHomeScreen()),
+      );
+      return;
+    }
 
+    final result = await ApiService.registerPhone(phone);
+    
     setState(() {
       _isLoading = false;
     });
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => OTPVerificationScreen(
-          phoneNumber: _phoneController.text,
+    if (result['success'] == true) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => OTPVerificationScreen(
+            phoneNumber: phone,
+          ),
         ),
-      ),
-    );
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['error'] ?? 'Registration failed')),
+      );
+    }
   }
 
   @override
@@ -112,7 +136,11 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                 const SizedBox(height: 30),
                 TextField(
                   controller: _phoneController,
-                  keyboardType: TextInputType.phone,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(10),
+                  ],
                   decoration: InputDecoration(
                     hintText: 'Enter your phone number',
                     hintStyle: TextStyle(color: Colors.grey.shade400),

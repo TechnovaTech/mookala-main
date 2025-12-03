@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:image_picker/image_picker.dart';
+import '../services/api_service.dart';
 import 'preferences_screen.dart';
+import 'package:flutter/foundation.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final String phoneNumber;
+  const ProfileScreen({super.key, required this.phoneNumber});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -13,6 +19,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController _emailController = TextEditingController();
   String? _selectedCity;
   bool _isLoading = false;
+  Uint8List? _profileImageBytes;
+  final ImagePicker _picker = ImagePicker();
 
   final List<String> _cities = [
     'Mumbai',
@@ -28,29 +36,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
   ];
 
   void _saveProfile() async {
-    if (_nameController.text.isEmpty || _emailController.text.isEmpty || _selectedCity == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields')),
-      );
-      return;
-    }
+    // No validation - allow saving with any combination of fields
 
     setState(() {
       _isLoading = true;
     });
 
-    await Future.delayed(const Duration(seconds: 2));
+    String? profileImageBase64;
+    if (_profileImageBytes != null) {
+      profileImageBase64 = base64Encode(_profileImageBytes!);
+    }
+
+    final result = await ApiService.updateProfile(
+      phone: widget.phoneNumber,
+      name: _nameController.text.isNotEmpty ? _nameController.text : null,
+      email: _emailController.text.isNotEmpty ? _emailController.text : null,
+      city: _selectedCity,
+      profileImage: profileImageBase64,
+    );
 
     setState(() {
       _isLoading = false;
     });
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const PreferencesScreen(),
-      ),
-    );
+    if (result['success'] == true) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PreferencesScreen(phoneNumber: widget.phoneNumber),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['error'] ?? 'Profile update failed')),
+      );
+    }
   }
 
   void _selectPhoto() {
@@ -64,21 +84,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ListTile(
                 leading: const Icon(Icons.photo_library),
                 title: const Text('Choose from Gallery'),
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Gallery selected')),
-                  );
+                  final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+                  if (image != null) {
+                    final bytes = await image.readAsBytes();
+                    setState(() {
+                      _profileImageBytes = bytes;
+                    });
+                  }
                 },
               ),
               ListTile(
                 leading: const Icon(Icons.camera_alt),
                 title: const Text('Take Photo'),
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Camera selected')),
-                  );
+                  final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+                  if (image != null) {
+                    final bytes = await image.readAsBytes();
+                    setState(() {
+                      _profileImageBytes = bytes;
+                    });
+                  }
                 },
               ),
             ],
@@ -130,11 +158,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       shape: BoxShape.circle,
                       border: Border.all(color: const Color(0xFF001F3F), width: 3),
                     ),
-                    child: Icon(
-                      Icons.person,
-                      size: 60,
-                      color: Colors.grey.shade600,
-                    ),
+                    child: _profileImageBytes != null
+                        ? ClipOval(
+                            child: Image.memory(
+                              _profileImageBytes!,
+                              width: 120,
+                              height: 120,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : Icon(
+                            Icons.person,
+                            size: 60,
+                            color: Colors.grey.shade600,
+                          ),
                   ),
                   Positioned(
                     bottom: 0,

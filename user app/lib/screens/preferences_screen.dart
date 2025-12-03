@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import 'profile_screen.dart';
 import 'discovery_home_screen.dart';
 
 class PreferencesScreen extends StatefulWidget {
-  const PreferencesScreen({super.key});
+  final String phoneNumber;
+  const PreferencesScreen({super.key, required this.phoneNumber});
 
   @override
   State<PreferencesScreen> createState() => _PreferencesScreenState();
@@ -11,12 +13,21 @@ class PreferencesScreen extends StatefulWidget {
 
 class _PreferencesScreenState extends State<PreferencesScreen> {
   List<String> selectedGenres = [];
+  List<String> availableGenres = [];
+  bool _isLoading = false;
   
-  final List<Map<String, dynamic>> genres = [
-    {'name': 'Music', 'image': 'assets/images/concert.jpg'},
-    {'name': 'Theatre', 'image': 'assets/images/theatre.jpg'},
-    {'name': 'Folk', 'image': 'assets/images/folk.jpg'},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadGenres();
+  }
+  
+  void _loadGenres() async {
+    final genres = await ApiService.getGenres();
+    setState(() {
+      availableGenres = genres;
+    });
+  }
 
   void toggleGenre(String genre) {
     setState(() {
@@ -40,7 +51,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           onPressed: () {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => const ProfileScreen()),
+              MaterialPageRoute(
+                builder: (context) => ProfileScreen(phoneNumber: widget.phoneNumber),
+              ),
             );
           },
         ),
@@ -85,88 +98,58 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             ),
           ),
           const SizedBox(height: 30),
-          // Genre Column
+          // Genre Grid
           Expanded(
-            child: Column(
-              children: genres.map((genre) {
-                final isSelected = selectedGenres.contains(genre['name']);
-                
-                return GestureDetector(
-                  onTap: () => toggleGenre(genre['name']),
-                  child: Container(
-                    width: double.infinity,
-                    height: 80,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: isSelected ? const Color(0xFF001F3F) : Colors.white,
-                      border: Border.all(
-                        color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade300,
-                        width: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: 2.5,
+                ),
+                itemCount: availableGenres.length,
+                itemBuilder: (context, index) {
+                  final genre = availableGenres[index];
+                  final isSelected = selectedGenres.contains(genre);
+                  
+                  return GestureDetector(
+                    onTap: () => toggleGenre(genre),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isSelected ? const Color(0xFF001F3F) : Colors.white,
+                        border: Border.all(
+                          color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade300,
+                          width: 2,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              genre,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: isSelected ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            if (isSelected) const SizedBox(width: 8),
+                            if (isSelected) const Icon(
+                              Icons.check_circle,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    child: Stack(
-                      children: [
-                        // Background Image
-                        ClipRect(
-                          child: Image.asset(
-                            genre['image'],
-                            width: double.infinity,
-                            height: 80,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                color: Colors.grey.shade200,
-                                child: Icon(
-                                  Icons.image_not_supported,
-                                  color: Colors.grey.shade400,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        // Overlay
-                        Container(
-                          width: double.infinity,
-                          height: 80,
-                          color: isSelected 
-                              ? const Color(0xFF001F3F).withOpacity(0.8)
-                              : Colors.black.withOpacity(0.3),
-                        ),
-                        // Text
-                        Positioned(
-                          left: 24,
-                          top: 0,
-                          bottom: 0,
-                          child: Center(
-                            child: Text(
-                              genre['name'],
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                        // Selection indicator
-                        if (isSelected)
-                          const Positioned(
-                            right: 24,
-                            top: 0,
-                            bottom: 0,
-                            child: Center(
-                              child: Icon(
-                                Icons.check_circle,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
+                  );
+                },
+              ),
             ),
           ),
           Padding(
@@ -205,13 +188,33 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   width: double.infinity,
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: selectedGenres.isEmpty ? null : () {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const DiscoveryHomeScreen(),
-                        ),
+                    onPressed: selectedGenres.isEmpty || _isLoading ? null : () async {
+                      setState(() {
+                        _isLoading = true;
+                      });
+                      
+                      final result = await ApiService.updateProfile(
+                        phone: widget.phoneNumber,
+                        genres: selectedGenres,
                       );
+                      
+                      setState(() {
+                        _isLoading = false;
+                      });
+                      
+                      if (result['success'] == true) {
+                        await ApiService.saveUserPhone(widget.phoneNumber);
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const DiscoveryHomeScreen(),
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(result['error'] ?? 'Failed to save preferences')),
+                        );
+                      }
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF001F3F),
@@ -221,14 +224,23 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       ),
                       elevation: 0,
                     ),
-                    child: const Text(
-                      'SAVE PREFERENCES',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1,
-                      ),
-                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Text(
+                            'SAVE PREFERENCES',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1,
+                            ),
+                          ),
                   ),
                 ),
               ],

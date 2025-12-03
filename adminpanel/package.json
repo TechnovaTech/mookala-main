@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "init-admin": "node scripts/init-admin.js"
+    "init-admin": "node scripts/init-admin.js",
+    "init-genres": "node scripts/init-genres.js"
   },
   "dependencies": {
     "next": "14.0.0",
@@ -18,7 +19,8 @@
     "mongodb": "^6.3.0",
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
-    "next-auth": "^4.24.5"
+    "next-auth": "^4.24.5",
+    "cors": "^2.8.5"
   },
   "devDependencies": {
     "@types/node": "^20",

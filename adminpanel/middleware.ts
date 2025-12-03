@@ -5,16 +5,8 @@ import { verifyTokenEdge } from './lib/jwt-edge';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  console.log('Middleware:', pathname);
-
-  // Skip middleware for API routes, static files, and login
-  if (
-    pathname.startsWith('/api') ||
-    pathname.startsWith('/_next') ||
-    pathname.includes('.') ||
-    pathname === '/login'
-  ) {
-    console.log('Skipping middleware for:', pathname);
+  // Allow login page
+  if (pathname === '/login') {
     return NextResponse.next();
   }
 
