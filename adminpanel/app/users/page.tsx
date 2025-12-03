@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
-import { Search, Filter, UserCheck, UserX, Eye, Users, Shield, Clock, Bell, ChevronDown, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
+import { Search, Filter, UserCheck, UserX, Eye, Users, Shield, Clock, Bell, ChevronDown, LogOut, User, Settings as SettingsIcon, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'
 
 export default function UserManagement() {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -23,6 +23,40 @@ export default function UserManagement() {
       console.error('Error fetching users:', error)
     } finally {
       setLoading(false)
+    }
+  }
+  
+  const toggleUserStatus = async (userId, currentStatus) => {
+    try {
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle' })
+      })
+      
+      if (response.ok) {
+        setUsers(users.map(user => 
+          user.id === userId ? { ...user, isActive: !currentStatus } : user
+        ))
+      }
+    } catch (error) {
+      console.error('Error toggling user status:', error)
+    }
+  }
+  
+  const deleteUser = async (userId) => {
+    if (!confirm('Are you sure you want to delete this user?')) return
+    
+    try {
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'DELETE'
+      })
+      
+      if (response.ok) {
+        setUsers(users.filter(user => user.id !== userId))
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error)
     }
   }
   
@@ -114,10 +148,10 @@ export default function UserManagement() {
                 <h2 className="text-xl font-bold text-gray-900">All Users</h2>
                 <div className="flex space-x-2">
                   <span className="px-3 py-1 bg-emerald/10 text-emerald rounded-full text-sm">
-                    {users.filter(u => u.status === 'completed').length} Completed
+                    {users.filter(u => u.isActive).length} Active
                   </span>
-                  <span className="px-3 py-1 bg-yellow-100 text-yellow-600 rounded-full text-sm">
-                    {users.filter(u => u.status === 'pending' || u.status === 'verified').length} Pending
+                  <span className="px-3 py-1 bg-red-100 text-red-600 rounded-full text-sm">
+                    {users.filter(u => !u.isActive).length} Inactive
                   </span>
                 </div>
               </div>
@@ -129,7 +163,6 @@ export default function UserManagement() {
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">KYC Status</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location & Activity</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Joined</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -138,13 +171,13 @@ export default function UserManagement() {
                 <tbody className="divide-y divide-gray-100">
                   {loading ? (
                     <tr>
-                      <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
                         Loading users...
                       </td>
                     </tr>
                   ) : users.length === 0 ? (
                     <tr>
-                      <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
                         No users found
                       </td>
                     </tr>
@@ -167,35 +200,25 @@ export default function UserManagement() {
                           <div className="text-sm text-gray-500">{user.phone}</div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex items-center">
-                            {user.status === 'completed' ? (
-                              <>
-                                <Shield className="w-4 h-4 text-emerald mr-1" />
-                                <span className="px-2 py-1 text-xs rounded-full bg-emerald/10 text-emerald">Completed</span>
-                              </>
-                            ) : (
-                              <>
-                                <Clock className="w-4 h-4 text-yellow-600 mr-1" />
-                                <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">{user.status}</span>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
                           <div className="text-sm text-gray-900">{user.city}</div>
                           <div className="text-sm text-gray-500">Genres: {user.genres?.length || 0}</div>
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500">{formatDate(user.createdAt)}</td>
                         <td className="px-6 py-4">
                           <div className="flex space-x-2">
-                            <button className="p-1 text-teal hover:bg-teal/10 rounded" title="View Details">
-                              <Eye size={16} />
+                            <button 
+                              onClick={() => toggleUserStatus(user.id, user.isActive)}
+                              className={`p-1 rounded ${user.isActive ? 'text-emerald hover:bg-emerald/10' : 'text-gray-400 hover:bg-gray-100'}`} 
+                              title={user.isActive ? 'Deactivate User' : 'Activate User'}
+                            >
+                              {user.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
                             </button>
-                            <button className="p-1 text-emerald hover:bg-emerald/10 rounded" title="Approve">
-                              <UserCheck size={16} />
-                            </button>
-                            <button className="p-1 text-red-600 hover:bg-red-50 rounded" title="Block User">
-                              <UserX size={16} />
+                            <button 
+                              onClick={() => deleteUser(user.id)}
+                              className="p-1 text-red-600 hover:bg-red-50 rounded" 
+                              title="Delete User"
+                            >
+                              <Trash2 size={16} />
                             </button>
                           </div>
                         </td>

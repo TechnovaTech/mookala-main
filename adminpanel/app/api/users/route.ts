@@ -20,6 +20,7 @@ export async function GET() {
         email: user.email || 'N/A',
         city: user.city || 'N/A',
         status: user.status || 'pending',
+        isActive: user.isActive !== false,
         genres: user.genres || [],
         createdAt: user.createdAt,
         updatedAt: user.updatedAt
