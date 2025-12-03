@@ -6,19 +6,26 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "init-admin": "node scripts/init-admin.js"
   },
   "dependencies": {
     "next": "14.0.0",
     "react": "^18",
     "react-dom": "^18",
     "lucide-react": "^0.294.0",
-    "recharts": "^2.8.0"
+    "recharts": "^2.8.0",
+    "mongodb": "^6.3.0",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "next-auth": "^4.24.5"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.5",
     "eslint": "^8",
     "eslint-config-next": "14.0.0",
     "typescript": "^5",
