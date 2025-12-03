@@ -1,10 +1,39 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
 import { Search, Filter, UserCheck, UserX, Eye, Users, Shield, Clock, Bell, ChevronDown, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
 
 export default function UserManagement() {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  
+  useEffect(() => {
+    fetchUsers()
+  }, [])
+  
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch('/api/users')
+      const data = await response.json()
+      if (data.success) {
+        setUsers(data.users)
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A'
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short', 
+      day: 'numeric'
+    })
+  }
   
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -84,8 +113,12 @@ export default function UserManagement() {
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-gray-900">All Users</h2>
                 <div className="flex space-x-2">
-                  <span className="px-3 py-1 bg-emerald/10 text-emerald rounded-full text-sm">1,247 Active</span>
-                  <span className="px-3 py-1 bg-red-100 text-red-600 rounded-full text-sm">23 Pending KYC</span>
+                  <span className="px-3 py-1 bg-emerald/10 text-emerald rounded-full text-sm">
+                    {users.filter(u => u.status === 'completed').length} Completed
+                  </span>
+                  <span className="px-3 py-1 bg-yellow-100 text-yellow-600 rounded-full text-sm">
+                    {users.filter(u => u.status === 'pending' || u.status === 'verified').length} Pending
+                  </span>
                 </div>
               </div>
             </div>
@@ -103,64 +136,72 @@ export default function UserManagement() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {[
-                    { id: 'USR001', name: 'Rajesh Kumar', email: 'rajesh.kumar@gmail.com', phone: '+91 98765 43210', kyc: 'verified', joined: 'Nov 15, 2023', location: 'Mumbai', tickets: 12, orders: 3 },
-                    { id: 'USR002', name: 'Priya Sharma', email: 'priya.sharma@yahoo.com', phone: '+91 87654 32109', kyc: 'verified', joined: 'Nov 18, 2023', location: 'Delhi', tickets: 8, orders: 1 },
-                    { id: 'USR003', name: 'Amit Patel', email: 'amit.patel@hotmail.com', phone: '+91 76543 21098', kyc: 'verified', joined: 'Nov 20, 2023', location: 'Ahmedabad', tickets: 15, orders: 5 },
-                    { id: 'USR004', name: 'Sneha Reddy', email: 'sneha.reddy@gmail.com', phone: '+91 65432 10987', kyc: 'pending', joined: 'Nov 22, 2023', location: 'Bangalore', tickets: 3, orders: 0 },
-                    { id: 'USR005', name: 'Vikram Singh', email: 'vikram.singh@outlook.com', phone: '+91 54321 09876', kyc: 'pending', joined: 'Nov 25, 2023', location: 'Jaipur', tickets: 0, orders: 0 }
-                  ].map((user) => (
-                    <tr key={user.id} className="hover:bg-teal/5 h-20 transition-all duration-200">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center">
-                          <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center">
-                            <Users className="text-white w-5 h-5" />
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                            <div className="text-sm text-gray-500">ID: {user.id}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-900">{user.email}</div>
-                        <div className="text-sm text-gray-500">{user.phone}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center">
-                          {user.kyc === 'verified' ? (
-                            <>
-                              <Shield className="w-4 h-4 text-emerald mr-1" />
-                              <span className="px-2 py-1 text-xs rounded-full bg-emerald/10 text-emerald">Verified</span>
-                            </>
-                          ) : (
-                            <>
-                              <Clock className="w-4 h-4 text-yellow-600 mr-1" />
-                              <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">Pending</span>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-900">{user.location}</div>
-                        <div className="text-sm text-gray-500">T:{user.tickets} | O:{user.orders}</div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{user.joined}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex space-x-2">
-                          <button className="p-1 text-teal hover:bg-teal/10 rounded" title="View Details">
-                            <Eye size={16} />
-                          </button>
-                          <button className="p-1 text-emerald hover:bg-emerald/10 rounded" title="Approve KYC">
-                            <UserCheck size={16} />
-                          </button>
-                          <button className="p-1 text-red-600 hover:bg-red-50 rounded" title="Block User">
-                            <UserX size={16} />
-                          </button>
-                        </div>
+                  {loading ? (
+                    <tr>
+                      <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                        Loading users...
                       </td>
                     </tr>
-                  ))}
+                  ) : users.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                        No users found
+                      </td>
+                    </tr>
+                  ) : (
+                    users.map((user) => (
+                      <tr key={user.id} className="hover:bg-teal/5 h-20 transition-all duration-200">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center">
+                            <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center">
+                              <Users className="text-white w-5 h-5" />
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">{user.name}</div>
+                              <div className="text-sm text-gray-500">Phone: {user.phone}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900">{user.email}</div>
+                          <div className="text-sm text-gray-500">{user.phone}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center">
+                            {user.status === 'completed' ? (
+                              <>
+                                <Shield className="w-4 h-4 text-emerald mr-1" />
+                                <span className="px-2 py-1 text-xs rounded-full bg-emerald/10 text-emerald">Completed</span>
+                              </>
+                            ) : (
+                              <>
+                                <Clock className="w-4 h-4 text-yellow-600 mr-1" />
+                                <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">{user.status}</span>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900">{user.city}</div>
+                          <div className="text-sm text-gray-500">Genres: {user.genres?.length || 0}</div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500">{formatDate(user.createdAt)}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex space-x-2">
+                            <button className="p-1 text-teal hover:bg-teal/10 rounded" title="View Details">
+                              <Eye size={16} />
+                            </button>
+                            <button className="p-1 text-emerald hover:bg-emerald/10 rounded" title="Approve">
+                              <UserCheck size={16} />
+                            </button>
+                            <button className="p-1 text-red-600 hover:bg-red-50 rounded" title="Block User">
+                              <UserX size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
