@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'edit_user_profile_screen.dart';
 import 'dashboard_screen.dart';
+import 'phone_login_screen.dart';
+import '../services/auth_service.dart';
 
 class UserProfileScreen extends StatelessWidget {
   const UserProfileScreen({super.key});
@@ -125,10 +127,10 @@ class UserProfileScreen extends StatelessWidget {
               const SizedBox(height: 60),
               
               // Menu Options
-              _buildMenuOption(Icons.feedback, 'Feedback', const Color(0xFF00BCD4)),
-              _buildMenuOption(Icons.help_outline, 'Help & Support', const Color(0xFF2196F3)),
-              _buildMenuOption(Icons.apps, 'Event Discovery App', const Color(0xFF4CAF50)),
-              _buildMenuOption(Icons.logout, 'Log out', const Color(0xFF9C27B0)),
+              _buildMenuOption(context, Icons.feedback, 'Feedback', const Color(0xFF00BCD4)),
+              _buildMenuOption(context, Icons.help_outline, 'Help & Support', const Color(0xFF2196F3)),
+              _buildMenuOption(context, Icons.apps, 'Event Discovery App', const Color(0xFF4CAF50)),
+              _buildMenuOption(context, Icons.logout, 'Log out', const Color(0xFF9C27B0)),
               const SizedBox(height: 20),
             ],
           ),
@@ -138,7 +140,7 @@ class UserProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildMenuOption(IconData icon, String title, Color iconColor) {
+  Widget _buildMenuOption(BuildContext context, IconData icon, String title, Color iconColor) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
@@ -160,8 +162,44 @@ class UserProfileScreen extends StatelessWidget {
           ),
         ),
         trailing: Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey.shade400),
-        onTap: () {},
+        onTap: () => _handleMenuTap(context, title),
       ),
+    );
+  }
+  
+  void _handleMenuTap(BuildContext context, String title) {
+    if (title == 'Log out') {
+      _showLogoutDialog(context);
+    }
+  }
+  
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await AuthService.logout();
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => const PhoneLoginScreen()),
+                  (route) => false,
+                );
+              },
+              child: const Text('Logout', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
     );
   }
 

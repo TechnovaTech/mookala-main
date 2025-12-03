@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'otp_verification_screen.dart';
+import 'user_type_selection_screen.dart';
+import 'dashboard_screen.dart';
+import 'artist_dashboard_screen.dart';
+import '../services/auth_service.dart';
 
 class PhoneLoginScreen extends StatefulWidget {
   const PhoneLoginScreen({super.key});
@@ -26,12 +30,13 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       _isLoading = true;
     });
 
-    await Future.delayed(const Duration(seconds: 2));
-
+    await Future.delayed(const Duration(seconds: 1));
+    
     setState(() {
       _isLoading = false;
     });
 
+    // Always go to OTP screen first
     Navigator.push(
       context,
       MaterialPageRoute(

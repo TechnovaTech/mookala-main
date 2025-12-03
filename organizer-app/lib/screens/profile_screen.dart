@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'dart:convert';
 import 'kyc_verification_screen.dart';
+import '../services/auth_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -13,6 +17,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController _emailController = TextEditingController();
   String? _selectedCity;
   bool _isLoading = false;
+  File? _profileImage;
+  String? _profileImageBase64;
+  final ImagePicker _picker = ImagePicker();
 
   final List<String> _cities = [
     'Mumbai',
@@ -39,18 +46,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _isLoading = true;
     });
 
-    await Future.delayed(const Duration(seconds: 2));
-
-    setState(() {
-      _isLoading = false;
-    });
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const KYCVerificationScreen(),
-      ),
-    );
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    
+    if (phone != null) {
+      final result = await AuthService.updateOrganizerProfile(
+        phone,
+        _nameController.text,
+        _emailController.text,
+        _selectedCity!,
+        _profileImageBase64,
+      );
+      
+      setState(() {
+        _isLoading = false;
+      });
+      
+      if (result['success'] == true) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => KYCVerificationScreen(phone: phone),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['error'] ?? 'Failed to save profile')),
+        );
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User session not found')),
+      );
+    }
   }
 
   void _selectPhoto() {
@@ -66,9 +97,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 title: const Text('Choose from Gallery'),
                 onTap: () {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Gallery selected')),
-                  );
+                  _pickImage(ImageSource.gallery);
                 },
               ),
               ListTile(
@@ -76,9 +105,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 title: const Text('Take Photo'),
                 onTap: () {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Camera selected')),
-                  );
+                  _pickImage(ImageSource.camera);
                 },
               ),
             ],
@@ -86,6 +113,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
     );
+  }
+  
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 80,
+      );
+      
+      if (image != null) {
+        final File imageFile = File(image.path);
+        final bytes = await imageFile.readAsBytes();
+        final base64Image = base64Encode(bytes);
+        
+        setState(() {
+          _profileImage = imageFile;
+          _profileImageBase64 = base64Image;
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking image: $e')),
+      );
+    }
   }
 
   @override
@@ -130,11 +183,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       shape: BoxShape.circle,
                       border: Border.all(color: const Color(0xFF001F3F), width: 3),
                     ),
-                    child: Icon(
-                      Icons.person,
-                      size: 60,
-                      color: Colors.grey.shade600,
-                    ),
+                    child: _profileImage != null
+                        ? ClipOval(
+                            child: Image.file(
+                              _profileImage!,
+                              width: 120,
+                              height: 120,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : Icon(
+                            Icons.person,
+                            size: 60,
+                            color: Colors.grey.shade600,
+                          ),
                   ),
                   Positioned(
                     bottom: 0,

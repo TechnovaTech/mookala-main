@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'dart:convert';
 import 'dashboard_screen.dart';
+import '../services/auth_service.dart';
 
 class KYCVerificationScreen extends StatefulWidget {
-  const KYCVerificationScreen({super.key});
+  final String phone;
+  
+  const KYCVerificationScreen({super.key, required this.phone});
 
   @override
   State<KYCVerificationScreen> createState() => _KYCVerificationScreenState();
@@ -12,8 +18,11 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
   String _status = 'PENDING';
   final TextEditingController _aadhaarIdController = TextEditingController();
   final TextEditingController _panIdController = TextEditingController();
-  String? _aadhaarPhotoFile;
-  String? _panPhotoFile;
+  File? _aadhaarPhotoFile;
+  File? _panPhotoFile;
+  String? _aadhaarImageBase64;
+  String? _panImageBase64;
+  final ImagePicker _picker = ImagePicker();
   String _rejectionNotes = '';
   bool _isLoading = false;
 
@@ -29,13 +38,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
               title: const Text('Choose from Gallery'),
               onTap: () {
                 Navigator.pop(context);
-                setState(() {
-                  if (fileType == 'aadhaar') {
-                    _aadhaarPhotoFile = 'aadhaar_photo_gallery.jpg';
-                  } else if (fileType == 'pan') {
-                    _panPhotoFile = 'pan_photo_gallery.jpg';
-                  }
-                });
+                _pickImage(ImageSource.gallery, fileType);
               },
             ),
             ListTile(
@@ -43,19 +46,44 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
               title: const Text('Take Photo'),
               onTap: () {
                 Navigator.pop(context);
-                setState(() {
-                  if (fileType == 'aadhaar') {
-                    _aadhaarPhotoFile = 'aadhaar_photo_camera.jpg';
-                  } else if (fileType == 'pan') {
-                    _panPhotoFile = 'pan_photo_camera.jpg';
-                  }
-                });
+                _pickImage(ImageSource.camera, fileType);
               },
             ),
           ],
         ),
       ),
     );
+  }
+  
+  Future<void> _pickImage(ImageSource source, String fileType) async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 80,
+      );
+      
+      if (image != null) {
+        final File imageFile = File(image.path);
+        final bytes = await imageFile.readAsBytes();
+        final base64Image = base64Encode(bytes);
+        
+        setState(() {
+          if (fileType == 'aadhaar') {
+            _aadhaarPhotoFile = imageFile;
+            _aadhaarImageBase64 = base64Image;
+          } else if (fileType == 'pan') {
+            _panPhotoFile = imageFile;
+            _panImageBase64 = base64Image;
+          }
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking image: $e')),
+      );
+    }
   }
 
   void _submitForReview() async {
@@ -71,22 +99,32 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
       _isLoading = true;
     });
 
-    await Future.delayed(const Duration(seconds: 2));
+    final result = await AuthService.updateOrganizerKYC(
+      widget.phone,
+      _aadhaarIdController.text,
+      _panIdController.text,
+      _aadhaarImageBase64,
+      _panImageBase64,
+    );
 
     setState(() {
       _isLoading = false;
-      _status = 'PENDING';
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Documents submitted for review')),
-    );
-    
-    // Navigate to dashboard
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const DashboardScreen()),
-    );
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('KYC documents submitted successfully')),
+      );
+      
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const DashboardScreen()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['error'] ?? 'Failed to submit KYC documents')),
+      );
+    }
   }
 
   Color _getStatusColor() {
@@ -191,7 +229,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          _aadhaarPhotoFile ?? 'Choose File',
+                          _aadhaarPhotoFile != null ? 'Aadhaar image selected' : 'Choose File',
                           style: TextStyle(
                             color: _aadhaarPhotoFile != null ? Colors.black : Colors.grey.shade600,
                           ),
@@ -271,7 +309,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          _panPhotoFile ?? 'Choose File',
+                          _panPhotoFile != null ? 'PAN image selected' : 'Choose File',
                           style: TextStyle(
                             color: _panPhotoFile != null ? Colors.black : Colors.grey.shade600,
                           ),

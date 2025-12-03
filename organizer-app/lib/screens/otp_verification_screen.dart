@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'user_type_selection_screen.dart';
+import 'dashboard_screen.dart';
+import 'artist_dashboard_screen.dart';
+import 'profile_screen.dart';
+import 'artist_fill_profile_screen.dart';
+import '../services/auth_service.dart';
 
 class OTPVerificationScreen extends StatefulWidget {
   final String phoneNumber;
+  final String? userRole;
 
   const OTPVerificationScreen({
     super.key,
     required this.phoneNumber,
+    this.userRole,
   });
 
   @override
@@ -60,22 +67,68 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       return;
     }
 
+    if (otp != '1234') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid OTP. Please enter 1234')),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
-    await Future.delayed(const Duration(seconds: 2));
-
+    // Check if user exists after OTP verification
+    final result = await AuthService.checkUser(widget.phoneNumber);
+    
     setState(() {
       _isLoading = false;
     });
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const UserTypeSelectionScreen(),
-      ),
-    );
+    if (result['exists'] == true) {
+      // Existing user - check profile status and navigate accordingly
+      final role = result['role'];
+      final userStatus = result['user']['status'];
+      
+      await AuthService.loginExistingUser(widget.phoneNumber, role);
+      
+      if (userStatus == 'profile_completed' || userStatus == 'completed') {
+        // Profile complete, go to dashboard
+        if (role == 'artist') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const ArtistDashboardScreen()),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const DashboardScreen()),
+          );
+        }
+      } else {
+        // Profile incomplete, go to role selection
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => UserTypeSelectionScreen(
+              phoneNumber: widget.phoneNumber,
+              isExistingUser: true,
+            ),
+          ),
+        );
+      }
+    } else {
+      // New user - go to role selection
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => UserTypeSelectionScreen(
+            phoneNumber: widget.phoneNumber,
+            isExistingUser: false,
+          ),
+        ),
+      );
+    }
   }
 
   void _resendOTP() async {

@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'dart:convert';
 import 'artist_dashboard_screen.dart';
+import '../services/auth_service.dart';
 
 class ArtistFillProfileScreen extends StatefulWidget {
   const ArtistFillProfileScreen({super.key});
@@ -13,6 +17,13 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
   final TextEditingController _pricingController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _cityController = TextEditingController();
+  
+  bool _isLoading = false;
+  File? _profileImage;
+  String? _profileImageBase64;
+  final ImagePicker _picker = ImagePicker();
   
   String? _selectedGenre;
   final List<String> _genres = [
@@ -33,6 +44,8 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
   bool get _isFormValid {
     return _nameController.text.isNotEmpty &&
            _bioController.text.isNotEmpty &&
+           _emailController.text.isNotEmpty &&
+           _cityController.text.isNotEmpty &&
            _selectedGenre != null;
   }
 
@@ -80,11 +93,20 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
                       color: Colors.grey.shade100,
                       border: Border.all(color: Colors.grey.shade300, width: 2),
                     ),
-                    child: Icon(
-                      Icons.person,
-                      size: 60,
-                      color: Colors.grey.shade500,
-                    ),
+                    child: _profileImage != null
+                        ? ClipOval(
+                            child: Image.file(
+                              _profileImage!,
+                              width: 120,
+                              height: 120,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : Icon(
+                            Icons.person,
+                            size: 60,
+                            color: Colors.grey.shade500,
+                          ),
                   ),
                   Positioned(
                     bottom: 0,
@@ -127,6 +149,25 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
               controller: _bioController,
               hintText: 'Tell us about yourself and your musical journey...',
               maxLines: 4,
+            ),
+            const SizedBox(height: 24),
+            
+            // Email Field
+            _buildLabel('Email', true),
+            const SizedBox(height: 8),
+            _buildTextField(
+              controller: _emailController,
+              hintText: 'Enter your email address',
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 24),
+            
+            // City Field
+            _buildLabel('City', true),
+            const SizedBox(height: 8),
+            _buildTextField(
+              controller: _cityController,
+              hintText: 'Enter your city',
             ),
             const SizedBox(height: 24),
             
@@ -202,14 +243,7 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
             Container(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _isFormValid ? () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const ArtistDashboardScreen(),
-                    ),
-                  );
-                } : null,
+                onPressed: _isFormValid && !_isLoading ? _saveProfile : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _isFormValid ? const Color(0xFF001F3F) : Colors.grey.shade400,
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -217,14 +251,23 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: const Text(
-                  'Create Profile',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Text(
+                        'Create Profile',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
               ),
             ),
           ],
@@ -313,9 +356,7 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
                     Icons.camera_alt,
                     () {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Camera functionality')),
-                      );
+                      _pickImage(ImageSource.camera);
                     },
                   ),
                 ),
@@ -326,9 +367,7 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
                     Icons.photo_library,
                     () {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Gallery functionality')),
-                      );
+                      _pickImage(ImageSource.gallery);
                     },
                   ),
                 ),
@@ -338,6 +377,32 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
         ),
       ),
     );
+  }
+  
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 80,
+      );
+      
+      if (image != null) {
+        final File imageFile = File(image.path);
+        final bytes = await imageFile.readAsBytes();
+        final base64Image = base64Encode(bytes);
+        
+        setState(() {
+          _profileImage = imageFile;
+          _profileImageBase64 = base64Image;
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking image: $e')),
+      );
+    }
   }
 
   Widget _buildSourceOption(String title, IconData icon, VoidCallback onTap) {
@@ -366,11 +431,59 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
     );
   }
 
+  void _saveProfile() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    
+    if (phone != null) {
+      final result = await AuthService.updateArtistProfile(
+        phone,
+        _nameController.text,
+        _emailController.text,
+        _cityController.text,
+        _bioController.text,
+        _selectedGenre!,
+        _pricingController.text.isNotEmpty ? _pricingController.text : null,
+        _profileImageBase64,
+      );
+      
+      setState(() {
+        _isLoading = false;
+      });
+      
+      if (result['success'] == true) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const ArtistDashboardScreen(),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['error'] ?? 'Failed to save profile')),
+        );
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User session not found')),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
     _bioController.dispose();
     _pricingController.dispose();
+    _emailController.dispose();
+    _cityController.dispose();
     super.dispose();
   }
 }
