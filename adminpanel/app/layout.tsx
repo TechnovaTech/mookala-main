@@ -3,11 +3,6 @@ import { Inter } from 'next/font/google'
 
 const inter = Inter({ subsets: ['latin'] })
 
-export const metadata = {
-  title: 'Mookalla Admin Panel',
-  description: 'Cultural Event Management Platform',
-}
-
 export default function RootLayout({
   children,
 }: {
@@ -15,6 +10,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <title>Mookalla Admin Panel</title>
+      </head>
       <body className={inter.className}>{children}</body>
     </html>
   )
