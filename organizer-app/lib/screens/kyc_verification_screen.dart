@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'dashboard_screen.dart';
 import '../services/auth_service.dart';
 
@@ -18,8 +18,8 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
   String _status = 'PENDING';
   final TextEditingController _aadhaarIdController = TextEditingController();
   final TextEditingController _panIdController = TextEditingController();
-  File? _aadhaarPhotoFile;
-  File? _panPhotoFile;
+  Uint8List? _aadhaarPhotoFile;
+  Uint8List? _panPhotoFile;
   String? _aadhaarImageBase64;
   String? _panImageBase64;
   final ImagePicker _picker = ImagePicker();
@@ -65,24 +65,27 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
       );
       
       if (image != null) {
-        final File imageFile = File(image.path);
-        final bytes = await imageFile.readAsBytes();
+        final bytes = await image.readAsBytes();
         final base64Image = base64Encode(bytes);
         
-        setState(() {
-          if (fileType == 'aadhaar') {
-            _aadhaarPhotoFile = imageFile;
-            _aadhaarImageBase64 = base64Image;
-          } else if (fileType == 'pan') {
-            _panPhotoFile = imageFile;
-            _panImageBase64 = base64Image;
-          }
-        });
+        if (mounted) {
+          setState(() {
+            if (fileType == 'aadhaar') {
+              _aadhaarPhotoFile = bytes;
+              _aadhaarImageBase64 = base64Image;
+            } else if (fileType == 'pan') {
+              _panPhotoFile = bytes;
+              _panImageBase64 = base64Image;
+            }
+          });
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking image: $e')),
+        );
+      }
     }
   }
 

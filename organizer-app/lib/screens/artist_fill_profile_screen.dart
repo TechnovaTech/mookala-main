@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'artist_dashboard_screen.dart';
 import '../services/auth_service.dart';
 
@@ -21,7 +21,7 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
   final TextEditingController _cityController = TextEditingController();
   
   bool _isLoading = false;
-  File? _profileImage;
+  Uint8List? _profileImage;
   String? _profileImageBase64;
   final ImagePicker _picker = ImagePicker();
   
@@ -95,7 +95,7 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
                     ),
                     child: _profileImage != null
                         ? ClipOval(
-                            child: Image.file(
+                            child: Image.memory(
                               _profileImage!,
                               width: 120,
                               height: 120,
@@ -389,19 +389,22 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
       );
       
       if (image != null) {
-        final File imageFile = File(image.path);
-        final bytes = await imageFile.readAsBytes();
+        final bytes = await image.readAsBytes();
         final base64Image = base64Encode(bytes);
         
-        setState(() {
-          _profileImage = imageFile;
-          _profileImageBase64 = base64Image;
-        });
+        if (mounted) {
+          setState(() {
+            _profileImage = bytes;
+            _profileImageBase64 = base64Image;
+          });
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking image: $e')),
+        );
+      }
     }
   }
 

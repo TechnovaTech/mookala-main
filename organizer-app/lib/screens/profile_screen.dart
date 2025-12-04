@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'kyc_verification_screen.dart';
 import '../services/auth_service.dart';
 
@@ -17,7 +17,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController _emailController = TextEditingController();
   String? _selectedCity;
   bool _isLoading = false;
-  File? _profileImage;
+  Uint8List? _profileImage;
   String? _profileImageBase64;
   final ImagePicker _picker = ImagePicker();
 
@@ -125,19 +125,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
       
       if (image != null) {
-        final File imageFile = File(image.path);
-        final bytes = await imageFile.readAsBytes();
+        final bytes = await image.readAsBytes();
         final base64Image = base64Encode(bytes);
         
-        setState(() {
-          _profileImage = imageFile;
-          _profileImageBase64 = base64Image;
-        });
+        if (mounted) {
+          setState(() {
+            _profileImage = bytes;
+            _profileImageBase64 = base64Image;
+          });
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking image: $e')),
+        );
+      }
     }
   }
 
@@ -185,7 +188,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     child: _profileImage != null
                         ? ClipOval(
-                            child: Image.file(
+                            child: Image.memory(
                               _profileImage!,
                               width: 120,
                               height: 120,
