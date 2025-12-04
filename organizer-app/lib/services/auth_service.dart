@@ -131,6 +131,19 @@ class AuthService {
     }
   }
   
+  static Future<Map<String, dynamic>> getKYCStatus(String phone) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/organizer/kyc-status?phone=$phone'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'error': 'Network error: $e'};
+    }
+  }
+  
   static Future<Map<String, dynamic>> updateArtistProfile(
     String phone, String name, String email, String city, String bio, 
     String genre, String? pricing, String? profileImage) async {
@@ -147,6 +160,27 @@ class AuthService {
           'genre': genre,
           if (pricing != null) 'pricing': pricing,
           if (profileImage != null) 'profileImage': profileImage,
+        }),
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'error': 'Network error: $e'};
+    }
+  }
+  
+  static Future<Map<String, dynamic>> resubmitKYC(
+    String phone, String aadharId, String panId, String? aadharImage, String? panImage) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/organizer/resubmit-kyc'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'phone': phone,
+          'aadharId': aadharId,
+          'panId': panId,
+          if (aadharImage != null) 'aadharImage': aadharImage,
+          if (panImage != null) 'panImage': panImage,
         }),
       );
       

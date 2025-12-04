@@ -7,6 +7,8 @@ import 'edit_event_screen.dart';
 import 'view_event_screen.dart';
 import 'add_tickets_screen.dart';
 import 'user_profile_screen.dart';
+import 'kyc_verification_screen.dart';
+import '../services/auth_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -18,6 +20,10 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
   int _selectedTab = 0; // 0 for Upcoming, 1 for Past
+  String _kycStatus = 'pending';
+  String _rejectionNotes = '';
+  String _userPhone = '';
+  bool _isLoading = true;
 
   final List<String> _menuItems = ['Home', 'Events', 'Jatra', 'Scan'];
   final List<IconData> _menuIcons = [Icons.home, Icons.event, Icons.festival, Icons.qr_code_scanner];
@@ -65,6 +71,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _checkKYCStatus();
+  }
+
+  Future<void> _checkKYCStatus() async {
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    
+    if (phone != null) {
+      setState(() {
+        _userPhone = phone;
+      });
+      
+      final result = await AuthService.getKYCStatus(phone);
+      
+      if (result['success'] == true) {
+        setState(() {
+          _kycStatus = result['kycStatus'] ?? 'pending';
+          _rejectionNotes = result['rejectionNotes'] ?? '';
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
@@ -92,189 +133,195 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Search Box
-          Container(
-            margin: const EdgeInsets.all(16),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Search events...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(25),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: Colors.grey.shade100,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              ),
-            ),
-          ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _kycStatus != 'approved'
+              ? _buildKYCStatusWidget()
+              : Column(
+                  children: [
+                    // Search Box
+                    Container(
+                      margin: const EdgeInsets.all(16),
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Search events...',
+                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(25),
+                            borderSide: BorderSide.none,
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey.shade100,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        ),
+                      ),
+                    ),
           
-          // Tab Bar
-          Container(
-            margin: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedTab = 0;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    // Tab Bar
+                    Container(
+                      margin: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: _selectedTab == 0 ? const Color(0xFF001F3F) : Colors.transparent,
+                        color: Colors.grey.shade200,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(
-                        'Upcoming Events (3)',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: _selectedTab == 0 ? Colors.white : Colors.grey.shade600,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedTab = 0;
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: _selectedTab == 0 ? const Color(0xFF001F3F) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Upcoming Events (3)',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _selectedTab == 0 ? Colors.white : Colors.grey.shade600,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedTab = 1;
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: _selectedTab == 1 ? const Color(0xFF001F3F) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Past Events (2)',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _selectedTab == 1 ? Colors.white : Colors.grey.shade600,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
+          
+                    // Events List
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        children: _selectedTab == 0 
+                          ? _upcomingEvents.asMap().entries.map((entry) {
+                              int index = entry.key;
+                              var event = entry.value;
+                              return Column(
+                                children: [
+                                  _buildEventCard(
+                                    event['title'],
+                                    event['dateTime'],
+                                    event['location'],
+                                    event['status'],
+                                    _eventImages[index % _eventImages.length],
+                                    index,
+                                  ),
+                                  if (index < _upcomingEvents.length - 1) const SizedBox(height: 16),
+                                ],
+                              );
+                            }).toList()
+                          : _pastEvents.asMap().entries.map((entry) {
+                              int index = entry.key;
+                              var event = entry.value;
+                              return Column(
+                                children: [
+                                  _buildEventCard(
+                                    event['title'],
+                                    event['dateTime'],
+                                    event['location'],
+                                    event['status'],
+                                    _eventImages[index % _eventImages.length],
+                                    index,
+                                  ),
+                                  if (index < _pastEvents.length - 1) const SizedBox(height: 16),
+                                ],
+                              );
+                            }).toList(),
+                      ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedTab = 1;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: _selectedTab == 1 ? const Color(0xFF001F3F) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Past Events (2)',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: _selectedTab == 1 ? Colors.white : Colors.grey.shade600,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
+      bottomNavigationBar: _kycStatus == 'approved'
+          ? BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: Colors.white,
+              selectedItemColor: const Color(0xFF001F3F),
+              unselectedItemColor: Colors.grey.shade600,
+              currentIndex: _selectedIndex,
+              onTap: (index) {
+                if (index == 1) { // Events tab
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const EventManagementScreen()),
+                  ).then((_) {
+                    setState(() {
+                      _selectedIndex = 0; // Reset to Home when returning
+                    });
+                  });
+                } else if (index == 2) { // Jatra tab
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const jatra.JatraRegistrationScreen()),
+                  ).then((_) {
+                    setState(() {
+                      _selectedIndex = 0; // Reset to Home when returning
+                    });
+                  });
+                } else if (index == 3) { // Scan tab
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const QRScannerScreen()),
+                  ).then((_) {
+                    setState(() {
+                      _selectedIndex = 0; // Reset to Home when returning
+                    });
+                  });
+                } else {
+                  setState(() {
+                    _selectedIndex = index;
+                  });
+                }
+              },
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.event),
+                  label: 'Events',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.festival),
+                  label: 'Jatra',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.qr_code_scanner),
+                  label: 'Scan',
                 ),
               ],
-            ),
-          ),
-          
-          // Events List
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: _selectedTab == 0 
-                ? _upcomingEvents.asMap().entries.map((entry) {
-                    int index = entry.key;
-                    var event = entry.value;
-                    return Column(
-                      children: [
-                        _buildEventCard(
-                          event['title'],
-                          event['dateTime'],
-                          event['location'],
-                          event['status'],
-                          _eventImages[index % _eventImages.length],
-                          index,
-                        ),
-                        if (index < _upcomingEvents.length - 1) const SizedBox(height: 16),
-                      ],
-                    );
-                  }).toList()
-                : _pastEvents.asMap().entries.map((entry) {
-                    int index = entry.key;
-                    var event = entry.value;
-                    return Column(
-                      children: [
-                        _buildEventCard(
-                          event['title'],
-                          event['dateTime'],
-                          event['location'],
-                          event['status'],
-                          _eventImages[index % _eventImages.length],
-                          index,
-                        ),
-                        if (index < _pastEvents.length - 1) const SizedBox(height: 16),
-                      ],
-                    );
-                  }).toList(),
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        selectedItemColor: const Color(0xFF001F3F),
-        unselectedItemColor: Colors.grey.shade600,
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          if (index == 1) { // Events tab
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const EventManagementScreen()),
-            ).then((_) {
-              setState(() {
-                _selectedIndex = 0; // Reset to Home when returning
-              });
-            });
-          } else if (index == 2) { // Jatra tab
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const jatra.JatraRegistrationScreen()),
-            ).then((_) {
-              setState(() {
-                _selectedIndex = 0; // Reset to Home when returning
-              });
-            });
-          } else if (index == 3) { // Scan tab
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const QRScannerScreen()),
-            ).then((_) {
-              setState(() {
-                _selectedIndex = 0; // Reset to Home when returning
-              });
-            });
-          } else {
-            setState(() {
-              _selectedIndex = index;
-            });
-          }
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.event),
-            label: 'Events',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.festival),
-            label: 'Jatra',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.qr_code_scanner),
-            label: 'Scan',
-          ),
-        ],
-      ),
+            )
+          : null,
     );
   }
 
@@ -596,6 +643,104 @@ class _DashboardScreenState extends State<DashboardScreen> {
               );
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKYCStatusWidget() {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            _kycStatus == 'rejected' ? Icons.cancel : Icons.pending,
+            size: 80,
+            color: _kycStatus == 'rejected' ? Colors.red : Colors.orange,
+          ),
+          const SizedBox(height: 24),
+          Text(
+            _kycStatus == 'rejected' ? 'KYC Rejected' : 'KYC Pending',
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _kycStatus == 'rejected'
+                ? 'Your KYC documents have been rejected. Please resubmit with correct information.'
+                : 'Your KYC documents are under review. You will be able to access all features once approved.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          if (_kycStatus == 'rejected' && _rejectionNotes.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Rejection Reason:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _rejectionNotes,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 32),
+          if (_kycStatus == 'rejected')
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => KYCVerificationScreen(
+                      phone: _userPhone, 
+                      isResubmission: true,
+                    ),
+                  ),
+                ).then((_) {
+                  _checkKYCStatus();
+                });
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF001F3F),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              ),
+              child: const Text(
+                'Resubmit KYC Documents',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: () {
+              _checkKYCStatus();
+            },
+            child: const Text(
+              'Refresh Status',
+              style: TextStyle(color: Color(0xFF001F3F)),
+            ),
           ),
         ],
       ),

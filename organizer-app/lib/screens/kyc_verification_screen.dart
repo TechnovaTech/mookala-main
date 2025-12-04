@@ -7,8 +7,9 @@ import '../services/auth_service.dart';
 
 class KYCVerificationScreen extends StatefulWidget {
   final String phone;
+  final bool isResubmission;
   
-  const KYCVerificationScreen({super.key, required this.phone});
+  const KYCVerificationScreen({super.key, required this.phone, this.isResubmission = false});
 
   @override
   State<KYCVerificationScreen> createState() => _KYCVerificationScreenState();
@@ -25,6 +26,24 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
   final ImagePicker _picker = ImagePicker();
   String _rejectionNotes = '';
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isResubmission) {
+      _loadExistingKYCData();
+    }
+  }
+
+  Future<void> _loadExistingKYCData() async {
+    final result = await AuthService.getKYCStatus(widget.phone);
+    if (result['success'] == true) {
+      setState(() {
+        _aadhaarIdController.text = result['aadharId'] ?? '';
+        _panIdController.text = result['panId'] ?? '';
+      });
+    }
+  }
 
   void _selectFile(String fileType) {
     showModalBottomSheet(
@@ -90,10 +109,16 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
   }
 
   void _submitForReview() async {
-    if (_aadhaarIdController.text.isEmpty || _aadhaarPhotoFile == null || 
-        _panIdController.text.isEmpty || _panPhotoFile == null) {
+    if (_aadhaarIdController.text.isEmpty || _panIdController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please complete all Aadhaar and PAN details')),
+      );
+      return;
+    }
+
+    if (!widget.isResubmission && (_aadhaarPhotoFile == null || _panPhotoFile == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please upload both Aadhaar and PAN card photos')),
       );
       return;
     }
@@ -102,13 +127,21 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
       _isLoading = true;
     });
 
-    final result = await AuthService.updateOrganizerKYC(
-      widget.phone,
-      _aadhaarIdController.text,
-      _panIdController.text,
-      _aadhaarImageBase64,
-      _panImageBase64,
-    );
+    final result = widget.isResubmission
+        ? await AuthService.resubmitKYC(
+            widget.phone,
+            _aadhaarIdController.text,
+            _panIdController.text,
+            _aadhaarImageBase64,
+            _panImageBase64,
+          )
+        : await AuthService.updateOrganizerKYC(
+            widget.phone,
+            _aadhaarIdController.text,
+            _panIdController.text,
+            _aadhaarImageBase64,
+            _panImageBase64,
+          );
 
     setState(() {
       _isLoading = false;
@@ -116,13 +149,19 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
 
     if (result['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('KYC documents submitted successfully')),
+        SnackBar(content: Text(widget.isResubmission 
+            ? 'KYC documents resubmitted successfully' 
+            : 'KYC documents submitted successfully')),
       );
       
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const DashboardScreen()),
-      );
+      if (widget.isResubmission) {
+        Navigator.pop(context);
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const DashboardScreen()),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(result['error'] ?? 'Failed to submit KYC documents')),
@@ -152,9 +191,9 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'KYC & Business Verification',
-          style: TextStyle(
+        title: Text(
+          widget.isResubmission ? 'Resubmit KYC Documents' : 'KYC & Business Verification',
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -189,7 +228,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
               TextField(
                 controller: _aadhaarIdController,
                 decoration: InputDecoration(
-                  hintText: 'Enter  Card ID',
+                  hintText: 'Enter Aadhaar Card ID',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide(color: Colors.grey.shade300),
@@ -232,7 +271,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          _aadhaarPhotoFile != null ? 'Aadhaar image selected' : 'Choose File',
+                          _aadhaarPhotoFile != null ? 'Aadhaar image selected' : (widget.isResubmission ? 'Choose new file (optional)' : 'Choose File'),
                           style: TextStyle(
                             color: _aadhaarPhotoFile != null ? Colors.black : Colors.grey.shade600,
                           ),
@@ -259,7 +298,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
               
               // PAN Card ID Input
               const Text(
-                ' Card ID:',
+                'PAN Card ID:',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
@@ -269,7 +308,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
               TextField(
                 controller: _panIdController,
                 decoration: InputDecoration(
-                  hintText: 'Enter  Card ID',
+                  hintText: 'Enter PAN Card ID',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide(color: Colors.grey.shade300),
@@ -290,7 +329,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
               
               // PAN Card Photo Upload
               const Text(
-                ' Card Photo:',
+                'PAN Card Photo:',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w500,

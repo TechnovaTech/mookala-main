@@ -34,6 +34,7 @@ const menuItems = [
     ]
   },
   { icon: Calendar, label: 'Event Management', href: '/events' },
+  { icon: UserCheck, label: 'KYC Management', href: '/kyc' },
   { icon: Ticket, label: 'Ticketing & Finance', href: '/finance' },
   { icon: FileText, label: 'Content Management', href: '/content' },
   { 
@@ -75,6 +76,7 @@ export default function Sidebar() {
     else if (path === '/artists') setActiveItem('Artists')
     else if (path === '/organizers') setActiveItem('Organizers')
     else if (path === '/events') setActiveItem('Event Management')
+    else if (path === '/kyc') setActiveItem('KYC Management')
     else if (path === '/finance') setActiveItem('Ticketing & Finance')
     else if (path === '/content') setActiveItem('Content Management')
     else if (path === '/banners') setActiveItem('Homepage Banners')
