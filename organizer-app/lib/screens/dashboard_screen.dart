@@ -9,6 +9,10 @@ import 'add_tickets_screen.dart';
 import 'user_profile_screen.dart';
 import 'kyc_verification_screen.dart';
 import '../services/auth_service.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -19,11 +23,12 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
-  int _selectedTab = 0; // 0 for Upcoming, 1 for Past
+  int _selectedTab = 0; // 0 for Live, 1 for Upcoming, 2 for Past, 3 for All
   String _kycStatus = 'pending';
   String _rejectionNotes = '';
   String _userPhone = '';
   bool _isLoading = true;
+  List<Map<String, dynamic>> _allEvents = [];
 
   final List<String> _menuItems = ['Home', 'Events', 'Jatra', 'Scan'];
   final List<IconData> _menuIcons = [Icons.home, Icons.event, Icons.festival, Icons.qr_code_scanner];
@@ -34,46 +39,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     'assets/images/folk.jpg',
   ];
   
-  List<Map<String, dynamic>> _upcomingEvents = [
-    {
-      'title': 'Music constant tyu',
-      'dateTime': 'Tue, 02 Dec, 2025 at 12:00 am',
-      'location': 'Rajkot',
-      'status': 'Upcoming',
-    },
-    {
-      'title': 'Dance constant ttt',
-      'dateTime': 'Wed, 03 Dec, 2025 at 12:00 am',
-      'location': 'Beirut',
-      'status': 'Upcoming',
-    },
-    {
-      'title': 'Cultural Festival',
-      'dateTime': 'Thu, 04 Dec, 2025 at 6:00 pm',
-      'location': 'Mumbai',
-      'status': 'Upcoming',
-    },
-  ];
-  
-  final List<Map<String, dynamic>> _pastEvents = [
-    {
-      'title': 'Garba Night 2024',
-      'dateTime': 'Mon, 15 Oct, 2024 at 7:00 pm',
-      'location': 'Ahmedabad',
-      'status': 'Completed',
-    },
-    {
-      'title': 'Diwali Celebration',
-      'dateTime': 'Fri, 01 Nov, 2024 at 6:00 pm',
-      'location': 'Surat',
-      'status': 'Completed',
-    },
-  ];
+
 
   @override
   void initState() {
     super.initState();
     _checkKYCStatus();
+    _fetchUserEvents();
+  }
+
+  Future<void> _fetchUserEvents() async {
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    
+    if (phone != null) {
+      try {
+        final response = await http.get(
+          Uri.parse('http://localhost:3000/api/events/user/$phone'),
+          headers: {'Content-Type': 'application/json'},
+        );
+        
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          setState(() {
+            _allEvents = List<Map<String, dynamic>>.from(data['events'] ?? []);
+          });
+        }
+      } catch (e) {
+        print('Error fetching user events: $e');
+      }
+    }
   }
 
   Future<void> _checkKYCStatus() async {
@@ -166,54 +161,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       child: Row(
                         children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _selectedTab = 0;
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: _selectedTab == 0 ? const Color(0xFF001F3F) : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  'Upcoming Events (3)',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: _selectedTab == 0 ? Colors.white : Colors.grey.shade600,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _selectedTab = 1;
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: _selectedTab == 1 ? const Color(0xFF001F3F) : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  'Past Events (2)',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: _selectedTab == 1 ? Colors.white : Colors.grey.shade600,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
+                          _buildTabButton('Live', 0, _getLiveEvents().length),
+                          _buildTabButton('Upcoming', 1, _getUpcomingEvents().length),
+                          _buildTabButton('Past', 2, _getPastEvents().length),
+                          _buildTabButton('All', 3, _allEvents.length),
                         ],
                       ),
                     ),
@@ -222,41 +173,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Expanded(
                       child: ListView(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: _selectedTab == 0 
-                          ? _upcomingEvents.asMap().entries.map((entry) {
-                              int index = entry.key;
-                              var event = entry.value;
-                              return Column(
-                                children: [
-                                  _buildEventCard(
-                                    event['title'],
-                                    event['dateTime'],
-                                    event['location'],
-                                    event['status'],
-                                    _eventImages[index % _eventImages.length],
-                                    index,
-                                  ),
-                                  if (index < _upcomingEvents.length - 1) const SizedBox(height: 16),
-                                ],
-                              );
-                            }).toList()
-                          : _pastEvents.asMap().entries.map((entry) {
-                              int index = entry.key;
-                              var event = entry.value;
-                              return Column(
-                                children: [
-                                  _buildEventCard(
-                                    event['title'],
-                                    event['dateTime'],
-                                    event['location'],
-                                    event['status'],
-                                    _eventImages[index % _eventImages.length],
-                                    index,
-                                  ),
-                                  if (index < _pastEvents.length - 1) const SizedBox(height: 16),
-                                ],
-                              );
-                            }).toList(),
+                        children: _getFilteredEvents().asMap().entries.map((entry) {
+                          int index = entry.key;
+                          var event = entry.value;
+                          return Column(
+                            children: [
+                              _buildEventCard(
+                                event['name'] ?? event['title'] ?? 'Untitled Event',
+                                '${event['startDate'] ?? ''} at ${event['startTime'] ?? ''}',
+                                event['location']?['city'] ?? event['location'] ?? 'Unknown Location',
+                                _getEventStatus(event),
+                                _eventImages[index % _eventImages.length],
+                                index,
+                                event,
+                              ),
+                              if (index < _getFilteredEvents().length - 1) const SizedBox(height: 16),
+                            ],
+                          );
+                        }).toList(),
                       ),
                     ),
                   ],
@@ -325,7 +259,118 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildEventCard(String title, String dateTime, String location, String status, String imagePath, int index) {
+  Widget _buildTabButton(String title, int tabIndex, int count) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedTab = tabIndex;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: _selectedTab == tabIndex ? const Color(0xFF001F3F) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            '$title ($count)',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _selectedTab == tabIndex ? Colors.white : Colors.grey.shade600,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _getFilteredEvents() {
+    switch (_selectedTab) {
+      case 0: return _getLiveEvents();
+      case 1: return _getUpcomingEvents();
+      case 2: return _getPastEvents();
+      case 3: return _allEvents;
+      default: return [];
+    }
+  }
+
+  List<Map<String, dynamic>> _getLiveEvents() {
+    final now = DateTime.now();
+    return _allEvents.where((event) {
+      if (event['status'] != 'approved') return false;
+      final eventDate = DateTime.tryParse(event['startDate'] ?? '');
+      if (eventDate == null) return false;
+      final today = DateTime(now.year, now.month, now.day);
+      final eventDay = DateTime(eventDate.year, eventDate.month, eventDate.day);
+      return eventDay.isAtSameMomentAs(today);
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _getUpcomingEvents() {
+    final now = DateTime.now();
+    return _allEvents.where((event) {
+      if (event['status'] != 'approved') return false;
+      final eventDate = DateTime.tryParse(event['startDate'] ?? '');
+      if (eventDate == null) return false;
+      return eventDate.isAfter(now);
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _getPastEvents() {
+    final now = DateTime.now();
+    return _allEvents.where((event) {
+      if (event['status'] != 'approved') return false;
+      final eventDate = DateTime.tryParse(event['startDate'] ?? '');
+      if (eventDate == null) return false;
+      return eventDate.isBefore(now) && !_isToday(eventDate);
+    }).toList();
+  }
+
+  bool _isToday(DateTime date) {
+    final now = DateTime.now();
+    return date.year == now.year && date.month == now.month && date.day == now.day;
+  }
+
+  String _getEventStatus(Map<String, dynamic> event) {
+    final status = event['status'] ?? 'pending';
+    if (status == 'pending') return 'Pending Approval';
+    if (status == 'rejected') return 'Rejected';
+    
+    final eventDate = DateTime.tryParse(event['startDate'] ?? '');
+    if (eventDate == null) return 'Unknown';
+    
+    final now = DateTime.now();
+    if (_isToday(eventDate)) return 'Live';
+    if (eventDate.isAfter(now)) return 'Upcoming';
+    return 'Completed';
+  }
+
+  IconData _getStatusIcon(String status) {
+    switch (status) {
+      case 'Live': return Icons.live_tv;
+      case 'Upcoming': return Icons.schedule;
+      case 'Completed': return Icons.check_circle;
+      case 'Pending Approval': return Icons.pending;
+      case 'Rejected': return Icons.cancel;
+      default: return Icons.help;
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'Live': return Colors.red;
+      case 'Upcoming': return Colors.blue;
+      case 'Completed': return Colors.green;
+      case 'Pending Approval': return Colors.orange;
+      case 'Rejected': return Colors.red;
+      default: return Colors.grey;
+    }
+  }
+
+  Widget _buildEventCard(String title, String dateTime, String location, String status, String imagePath, int index, Map<String, dynamic> eventData) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -364,10 +409,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   topLeft: Radius.circular(12),
                   topRight: Radius.circular(12),
                 ),
-                image: DecorationImage(
-                  image: AssetImage(imagePath),
-                  fit: BoxFit.cover,
-                ),
+                image: eventData['media']?['bannerImage'] != null
+                    ? DecorationImage(
+                        image: MemoryImage(
+                          base64Decode(eventData['media']['bannerImage']),
+                        ),
+                        fit: BoxFit.cover,
+                      )
+                    : DecorationImage(
+                        image: AssetImage(imagePath),
+                        fit: BoxFit.cover,
+                      ),
               ),
               child: Container(
                 decoration: BoxDecoration(
@@ -401,9 +453,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  status == 'Completed' ? Icons.check_circle : Icons.schedule,
+                                  _getStatusIcon(status),
                                   size: 16,
-                                  color: status == 'Completed' ? Colors.green : Colors.orange,
+                                  color: _getStatusColor(status),
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
@@ -411,7 +463,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                    color: status == 'Completed' ? Colors.green : Colors.orange,
+                                    color: _getStatusColor(status),
                                   ),
                                 ),
                               ],
@@ -535,16 +587,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     );
                     
                     if (result != null) {
-                      setState(() {
-                        if (_selectedTab == 0) {
-                          _upcomingEvents[index] = {
-                            'title': result['title'],
-                            'dateTime': result['dateTime'],
-                            'location': result['location'],
-                            'status': _upcomingEvents[index]['status'],
-                          };
-                        }
-                      });
+                      _fetchUserEvents();
                     }
                   }),
                   _buildActionButton(Icons.visibility, 'More', () {
@@ -636,13 +679,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           TextButton(
             onPressed: () {
-              setState(() {
-                if (_selectedTab == 0) {
-                  _upcomingEvents.removeAt(index);
-                } else {
-                  _pastEvents.removeAt(index);
-                }
-              });
+              _fetchUserEvents();
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Event deleted successfully')),
