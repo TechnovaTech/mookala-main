@@ -1,10 +1,52 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 
-class ArtistBookingsScreen extends StatelessWidget {
+class ArtistBookingsScreen extends StatefulWidget {
   const ArtistBookingsScreen({super.key});
 
   @override
+  State<ArtistBookingsScreen> createState() => _ArtistBookingsScreenState();
+}
+
+class _ArtistBookingsScreenState extends State<ArtistBookingsScreen> {
+  List<Map<String, dynamic>> _bookingRequests = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBookingRequests();
+  }
+
+  Future<void> _loadBookingRequests() async {
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    
+    if (phone != null) {
+      final result = await AuthService.getArtistBookingRequests(phone);
+      
+      if (result['success'] == true) {
+        setState(() {
+          _bookingRequests = List<Map<String, dynamic>>.from(result['requests'] ?? []);
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
     return Column(
       children: [
         // Header
@@ -36,7 +78,7 @@ class ArtistBookingsScreen extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '5 pending requests',
+                      '${_bookingRequests.length} pending requests',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey.shade600,
@@ -52,7 +94,7 @@ class ArtistBookingsScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  '5 Pending',
+                  '${_bookingRequests.length} Pending',
                   style: TextStyle(
                     color: Colors.orange.shade700,
                     fontSize: 12,
@@ -66,21 +108,42 @@ class ArtistBookingsScreen extends StatelessWidget {
         
         // Booking Requests List
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: 5,
-            itemBuilder: (context, index) {
-              return _buildBookingRequestCard(
-                organizerName: 'Event Organizer ${index + 1}',
-                eventType: ['Wedding', 'Corporate Event', 'Birthday Party', 'Concert', 'Festival'][index],
-                date: 'Dec ${15 + index}, 2024',
-                location: ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Pune'][index],
-                budget: '₹${(5 + index) * 1000}',
-                description: 'Looking for a talented musician for our special event. The venue is well-equipped with sound system.',
-                isUrgent: index == 0,
-              );
-            },
-          ),
+          child: _bookingRequests.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.event_busy, size: 64, color: Colors.grey.shade400),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No booking requests yet',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _bookingRequests.length,
+                  itemBuilder: (context, index) {
+                    final request = _bookingRequests[index];
+                    return _buildBookingRequestCard(
+                      organizerName: request['organizerName'] ?? 'Unknown Organizer',
+                      eventType: request['eventType'] ?? 'Event',
+                      eventTitle: request['eventTitle'] ?? '',
+                      date: request['eventDate'] ?? '',
+                      time: request['eventTime'] ?? '',
+                      location: request['city'] ?? '',
+                      venue: request['venue'] ?? '',
+                      budget: request['budget'] ?? '',
+                      description: request['description'] ?? '',
+                      isUrgent: request['isUrgent'] ?? false,
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -89,8 +152,11 @@ class ArtistBookingsScreen extends StatelessWidget {
   Widget _buildBookingRequestCard({
     required String organizerName,
     required String eventType,
+    required String eventTitle,
     required String date,
+    required String time,
     required String location,
+    required String venue,
     required String budget,
     required String description,
     bool isUrgent = false,
@@ -151,7 +217,7 @@ class ArtistBookingsScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            organizerName,
+                            eventTitle.isNotEmpty ? eventTitle : 'Untitled Event',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -159,7 +225,7 @@ class ArtistBookingsScreen extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            eventType,
+                            '$organizerName • $eventType',
                             style: TextStyle(
                               fontSize: 14,
                               color: Colors.grey.shade600,
@@ -191,10 +257,10 @@ class ArtistBookingsScreen extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: _buildDetailItem(Icons.calendar_today, 'Date', date),
+                      child: _buildDetailItem(Icons.calendar_today, 'Date', '$date ${time.isNotEmpty ? time : ''}'),
                     ),
                     Expanded(
-                      child: _buildDetailItem(Icons.location_on, 'Location', location),
+                      child: _buildDetailItem(Icons.location_on, 'Location', venue.isNotEmpty ? '$venue, $location' : location),
                     ),
                   ],
                 ),
