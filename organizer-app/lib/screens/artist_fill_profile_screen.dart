@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'artist_dashboard_screen.dart';
+import 'kyc_verification_screen.dart';
 import '../services/auth_service.dart';
 
 class ArtistFillProfileScreen extends StatefulWidget {
@@ -462,7 +463,7 @@ class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => const ArtistDashboardScreen(),
+            builder: (context) => KYCVerificationScreen(phone: phone),
           ),
         );
       } else {

@@ -131,10 +131,35 @@ class AuthService {
     }
   }
   
+  static Future<Map<String, dynamic>> updateArtistKYC(
+    String phone, String aadharId, String panId, String? aadharImage, String? panImage) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/artist/kyc'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'phone': phone,
+          'aadharId': aadharId,
+          'panId': panId,
+          if (aadharImage != null) 'aadharImage': aadharImage,
+          if (panImage != null) 'panImage': panImage,
+        }),
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'error': 'Network error: $e'};
+    }
+  }
+  
   static Future<Map<String, dynamic>> getKYCStatus(String phone) async {
     try {
+      final userData = await getUserData();
+      final role = userData['role'];
+      final endpoint = role == 'artist' ? '/artist/kyc-status' : '/organizer/kyc-status';
+      
       final response = await http.get(
-        Uri.parse('$baseUrl/organizer/kyc-status?phone=$phone'),
+        Uri.parse('$baseUrl$endpoint?phone=$phone'),
         headers: {'Content-Type': 'application/json'},
       );
       
@@ -172,8 +197,12 @@ class AuthService {
   static Future<Map<String, dynamic>> resubmitKYC(
     String phone, String aadharId, String panId, String? aadharImage, String? panImage) async {
     try {
+      final userData = await getUserData();
+      final role = userData['role'];
+      final endpoint = role == 'artist' ? '/artist/resubmit-kyc' : '/organizer/resubmit-kyc';
+      
       final response = await http.post(
-        Uri.parse('$baseUrl/organizer/resubmit-kyc'),
+        Uri.parse('$baseUrl$endpoint'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'phone': phone,

@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dashboard_screen.dart';
+import 'artist_dashboard_screen.dart';
 import '../services/auth_service.dart';
 
 class KYCVerificationScreen extends StatefulWidget {
@@ -127,6 +128,9 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
       _isLoading = true;
     });
 
+    final userData = await AuthService.getUserData();
+    final role = userData['role'];
+    
     final result = widget.isResubmission
         ? await AuthService.resubmitKYC(
             widget.phone,
@@ -135,13 +139,21 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
             _aadhaarImageBase64,
             _panImageBase64,
           )
-        : await AuthService.updateOrganizerKYC(
-            widget.phone,
-            _aadhaarIdController.text,
-            _panIdController.text,
-            _aadhaarImageBase64,
-            _panImageBase64,
-          );
+        : role == 'artist'
+            ? await AuthService.updateArtistKYC(
+                widget.phone,
+                _aadhaarIdController.text,
+                _panIdController.text,
+                _aadhaarImageBase64,
+                _panImageBase64,
+              )
+            : await AuthService.updateOrganizerKYC(
+                widget.phone,
+                _aadhaarIdController.text,
+                _panIdController.text,
+                _aadhaarImageBase64,
+                _panImageBase64,
+              );
 
     setState(() {
       _isLoading = false;
@@ -157,10 +169,20 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> {
       if (widget.isResubmission) {
         Navigator.pop(context);
       } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const DashboardScreen()),
-        );
+        final userData = await AuthService.getUserData();
+        final role = userData['role'];
+        
+        if (role == 'artist') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const ArtistDashboardScreen()),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const DashboardScreen()),
+          );
+        }
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(

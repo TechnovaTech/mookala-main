@@ -4,6 +4,9 @@ import 'artist_tiers_screen.dart';
 import 'artist_calendar_screen.dart';
 import 'artist_bookings_screen.dart';
 import 'artist_payments_screen.dart';
+import 'kyc_verification_screen.dart';
+import 'user_profile_screen.dart';
+import '../services/auth_service.dart';
 
 class ArtistDashboardScreen extends StatefulWidget {
   const ArtistDashboardScreen({super.key});
@@ -14,6 +17,45 @@ class ArtistDashboardScreen extends StatefulWidget {
 
 class _ArtistDashboardScreenState extends State<ArtistDashboardScreen> {
   int _currentIndex = 0;
+  String _kycStatus = 'pending';
+  String _rejectionNotes = '';
+  String _userPhone = '';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkKYCStatus();
+  }
+
+  Future<void> _checkKYCStatus() async {
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    
+    if (phone != null) {
+      setState(() {
+        _userPhone = phone;
+      });
+      
+      final result = await AuthService.getKYCStatus(phone);
+      
+      if (result['success'] == true) {
+        setState(() {
+          _kycStatus = result['kycStatus'] ?? 'pending';
+          _rejectionNotes = result['rejectionNotes'] ?? '';
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
   
   final List<Widget> _screens = [
     const DashboardHomeScreen(),
@@ -45,41 +87,52 @@ class _ArtistDashboardScreenState extends State<ArtistDashboardScreen> {
             onPressed: () {},
           ),
           IconButton(
-            icon: const Icon(Icons.account_circle, color: Colors.white),
-            onPressed: () {},
+            icon: const Icon(Icons.person, color: Colors.white),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const UserProfileScreen()),
+              );
+            },
           ),
         ],
       ),
-      body: _screens[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF001F3F),
-        unselectedItemColor: Colors.grey.shade600,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today),
-            label: 'Calendar',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.event_note),
-            label: 'Bookings',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.payment),
-            label: 'Payments',
-          ),
-        ],
-      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _kycStatus != 'approved'
+              ? _buildKYCStatusWidget()
+              : _screens[_currentIndex],
+      bottomNavigationBar: _kycStatus == 'approved'
+          ? BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: (index) => setState(() => _currentIndex = index),
+              type: BottomNavigationBarType.fixed,
+              selectedItemColor: const Color(0xFF001F3F),
+              unselectedItemColor: Colors.grey.shade600,
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.dashboard),
+                  label: 'Dashboard',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.person),
+                  label: 'Profile',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.calendar_today),
+                  label: 'Calendar',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.event_note),
+                  label: 'Bookings',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.payment),
+                  label: 'Payments',
+                ),
+              ],
+            )
+          : null,
     );
   }
   
@@ -92,6 +145,104 @@ class _ArtistDashboardScreenState extends State<ArtistDashboardScreen> {
       case 4: return 'Payments & History';
       default: return 'Artist Dashboard';
     }
+  }
+
+  Widget _buildKYCStatusWidget() {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            _kycStatus == 'rejected' ? Icons.cancel : Icons.pending,
+            size: 80,
+            color: _kycStatus == 'rejected' ? Colors.red : Colors.orange,
+          ),
+          const SizedBox(height: 24),
+          Text(
+            _kycStatus == 'rejected' ? 'KYC Rejected' : 'KYC Pending',
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _kycStatus == 'rejected'
+                ? 'Your KYC documents have been rejected. Please resubmit with correct information.'
+                : 'Your KYC documents are under review. You will be able to access all features once approved.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          if (_kycStatus == 'rejected' && _rejectionNotes.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Rejection Reason:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _rejectionNotes,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 32),
+          if (_kycStatus == 'rejected')
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => KYCVerificationScreen(
+                      phone: _userPhone, 
+                      isResubmission: true,
+                    ),
+                  ),
+                ).then((_) {
+                  _checkKYCStatus();
+                });
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF001F3F),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              ),
+              child: const Text(
+                'Resubmit KYC Documents',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: () {
+              _checkKYCStatus();
+            },
+            child: const Text(
+              'Refresh Status',
+              style: TextStyle(color: Color(0xFF001F3F)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

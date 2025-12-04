@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'edit_user_profile_screen.dart';
 import 'dashboard_screen.dart';
+import 'artist_dashboard_screen.dart';
 import 'phone_login_screen.dart';
 import '../services/auth_service.dart';
 
@@ -61,11 +62,21 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const DashboardScreen()),
-            );
+          onPressed: () async {
+            final userData = await AuthService.getUserData();
+            final role = userData['role'];
+            
+            if (role == 'artist') {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const ArtistDashboardScreen()),
+              );
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const DashboardScreen()),
+              );
+            }
           },
         ),
         title: const Text(

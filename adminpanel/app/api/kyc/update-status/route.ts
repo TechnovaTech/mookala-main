@@ -7,19 +7,24 @@ export async function OPTIONS() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { phone, status } = await request.json();
+    const { phone, status, role } = await request.json();
 
-    if (!phone || !status) {
-      return NextResponse.json({ error: 'Phone and status required' }, { status: 400 });
+    if (!phone || !status || !role) {
+      return NextResponse.json({ error: 'Phone, status, and role required' }, { status: 400 });
     }
 
     if (!['approved', 'rejected', 'pending'].includes(status)) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
     }
 
+    if (!['artist', 'organizer'].includes(role)) {
+      return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+    }
+
     const { db } = await connectToDatabase();
     
-    const result = await db.collection('organizers').updateOne(
+    const collection = role === 'artist' ? 'artists' : 'organizers';
+    const result = await db.collection(collection).updateOne(
       { phone },
       { 
         $set: { 
@@ -30,7 +35,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (result.matchedCount === 0) {
-      return NextResponse.json({ error: 'Organizer not found' }, { status: 404 });
+      return NextResponse.json({ error: `${role} not found` }, { status: 404 });
     }
 
     return NextResponse.json({ 

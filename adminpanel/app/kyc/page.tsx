@@ -16,14 +16,20 @@ interface KYCRecord {
   kycStatus: string;
   createdAt: string;
   updatedAt: string;
+  role: 'artist' | 'organizer';
+  bio?: string;
+  genre?: string;
+  pricing?: string;
 }
 
 export default function KYCPage() {
   const [kycRecords, setKycRecords] = useState<KYCRecord[]>([]);
+  const [filteredRecords, setFilteredRecords] = useState<KYCRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [selectedKYC, setSelectedKYC] = useState<KYCRecord | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<'all' | 'artist' | 'organizer'>('all');
 
   useEffect(() => {
     fetchKYCRecords();
@@ -32,11 +38,26 @@ export default function KYCPage() {
   const fetchKYCRecords = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/kyc');
-      const data = await response.json();
-      if (data.success) {
-        setKycRecords(data.kycRecords);
-      }
+      const [organizerResponse, artistResponse] = await Promise.all([
+        fetch('/api/kyc'),
+        fetch('/api/kyc?role=artist')
+      ]);
+      
+      const organizerData = await organizerResponse.json();
+      const artistData = await artistResponse.json();
+      
+      console.log('Organizer data:', organizerData);
+      console.log('Artist data:', artistData);
+      
+      const allRecords = [
+        ...(organizerData.success ? organizerData.kycRecords.map((record: any) => ({ ...record, role: 'organizer' as const })) : []),
+        ...(artistData.success ? artistData.kycRecords.map((record: any) => ({ ...record, role: 'artist' as const })) : [])
+      ];
+      
+      console.log('All records:', allRecords);
+      
+      setKycRecords(allRecords);
+      setFilteredRecords(allRecords);
     } catch (error) {
       console.error('Error fetching KYC records:', error);
     } finally {
@@ -44,12 +65,12 @@ export default function KYCPage() {
     }
   };
 
-  const updateKYCStatus = async (phone: string, status: string) => {
+  const updateKYCStatus = async (phone: string, status: string, role: string) => {
     try {
       const response = await fetch('/api/kyc/update-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, status })
+        body: JSON.stringify({ phone, status, role })
       });
       
       if (response.ok) {
@@ -58,6 +79,15 @@ export default function KYCPage() {
       }
     } catch (error) {
       console.error('Error updating KYC status:', error);
+    }
+  };
+
+  const filterRecords = (role: 'all' | 'artist' | 'organizer') => {
+    setSelectedRole(role);
+    if (role === 'all') {
+      setFilteredRecords(kycRecords);
+    } else {
+      setFilteredRecords(kycRecords.filter(record => record.role === role));
     }
   };
 
@@ -149,12 +179,42 @@ export default function KYCPage() {
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <div className="flex items-center">
                 <UserCheck className="text-emerald mr-3" size={24} />
-                <h2 className="text-xl font-bold text-gray-900">KYC Submissions ({kycRecords.length})</h2>
+                <h2 className="text-xl font-bold text-gray-900">KYC Submissions ({filteredRecords.length})</h2>
               </div>
-              <button className="flex items-center px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
-                <Filter size={14} className="mr-1" />
-                Filter
-              </button>
+              <div className="flex items-center space-x-2">
+                <div className="flex bg-gray-100 rounded-lg p-1">
+                  <button
+                    onClick={() => filterRecords('all')}
+                    className={`px-3 py-1 text-sm rounded-md transition-all ${
+                      selectedRole === 'all' 
+                        ? 'bg-white text-emerald shadow-sm font-medium' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    All ({kycRecords.length})
+                  </button>
+                  <button
+                    onClick={() => filterRecords('organizer')}
+                    className={`px-3 py-1 text-sm rounded-md transition-all ${
+                      selectedRole === 'organizer' 
+                        ? 'bg-white text-emerald shadow-sm font-medium' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Organizers ({kycRecords.filter(r => r.role === 'organizer').length})
+                  </button>
+                  <button
+                    onClick={() => filterRecords('artist')}
+                    className={`px-3 py-1 text-sm rounded-md transition-all ${
+                      selectedRole === 'artist' 
+                        ? 'bg-white text-emerald shadow-sm font-medium' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Artists ({kycRecords.filter(r => r.role === 'artist').length})
+                  </button>
+                </div>
+              </div>
             </div>
             
             {loading ? (
@@ -166,7 +226,7 @@ export default function KYCPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organizer</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Documents</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -175,7 +235,7 @@ export default function KYCPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {kycRecords.map((kyc) => (
+                    {filteredRecords.map((kyc) => (
                       <tr key={kyc._id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
@@ -186,7 +246,16 @@ export default function KYCPage() {
                             </div>
                             <div className="ml-4">
                               <div className="text-sm font-medium text-gray-900">{kyc.name || 'Unnamed'}</div>
-                              <div className="text-sm text-gray-500">{kyc.city || 'No city'}</div>
+                              <div className="text-sm text-gray-500">
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  kyc.role === 'artist' 
+                                    ? 'bg-purple-100 text-purple-800' 
+                                    : 'bg-blue-100 text-blue-800'
+                                }`}>
+                                  {kyc.role}
+                                </span>
+                                <span className="ml-2">{kyc.city || 'No city'}</span>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -224,14 +293,14 @@ export default function KYCPage() {
                             {kyc.kycStatus === 'pending' && (
                               <>
                                 <button
-                                  onClick={() => updateKYCStatus(kyc.phone, 'approved')}
+                                  onClick={() => updateKYCStatus(kyc.phone, 'approved', kyc.role)}
                                   className="text-green-600 hover:text-green-800 flex items-center"
                                 >
                                   <Check size={16} className="mr-1" />
                                   Accept
                                 </button>
                                 <button
-                                  onClick={() => updateKYCStatus(kyc.phone, 'rejected')}
+                                  onClick={() => updateKYCStatus(kyc.phone, 'rejected', kyc.role)}
                                   className="text-red-600 hover:text-red-800 flex items-center"
                                 >
                                   <X size={16} className="mr-1" />
@@ -248,7 +317,7 @@ export default function KYCPage() {
               </div>
             )}
 
-            {!loading && kycRecords.length === 0 && (
+            {!loading && filteredRecords.length === 0 && (
               <div className="text-center py-20">
                 <UserCheck className="mx-auto text-gray-400 mb-4" size={48} />
                 <p className="text-gray-500 text-lg font-medium">No KYC submissions found</p>
@@ -284,6 +353,22 @@ export default function KYCPage() {
                     <div><span className="font-medium">Phone:</span> {selectedKYC.phone}</div>
                     <div><span className="font-medium">Email:</span> {selectedKYC.email || 'N/A'}</div>
                     <div><span className="font-medium">City:</span> {selectedKYC.city || 'N/A'}</div>
+                    <div><span className="font-medium">Role:</span> 
+                      <span className={`ml-2 px-2 py-1 rounded text-xs font-medium ${
+                        selectedKYC.role === 'artist' 
+                          ? 'bg-purple-100 text-purple-800' 
+                          : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {selectedKYC.role}
+                      </span>
+                    </div>
+                    {selectedKYC.role === 'artist' && (
+                      <>
+                        {selectedKYC.bio && <div><span className="font-medium">Bio:</span> {selectedKYC.bio}</div>}
+                        {selectedKYC.genre && <div><span className="font-medium">Genre:</span> {selectedKYC.genre}</div>}
+                        {selectedKYC.pricing && <div><span className="font-medium">Pricing:</span> ₹{selectedKYC.pricing}</div>}
+                      </>
+                    )}
                     <div><span className="font-medium">Status:</span> 
                       <span className={`ml-2 px-2 py-1 rounded text-xs ${
                         selectedKYC.kycStatus === 'approved' ? 'bg-green-100 text-green-800' :
@@ -335,14 +420,14 @@ export default function KYCPage() {
               {selectedKYC.kycStatus === 'pending' && (
                 <div className="mt-6 flex space-x-4">
                   <button
-                    onClick={() => updateKYCStatus(selectedKYC.phone, 'approved')}
+                    onClick={() => updateKYCStatus(selectedKYC.phone, 'approved', selectedKYC.role)}
                     className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                   >
                     <Check size={16} className="mr-2" />
                     Approve KYC
                   </button>
                   <button
-                    onClick={() => updateKYCStatus(selectedKYC.phone, 'rejected')}
+                    onClick={() => updateKYCStatus(selectedKYC.phone, 'rejected', selectedKYC.role)}
                     className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                   >
                     <X size={16} className="mr-2" />
