@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 400 });
     }
 
-    const updateData = { 
+    const updateData: any = { 
       updatedAt: new Date(),
       kycStatus: 'pending',
       status: 'profile_completed'

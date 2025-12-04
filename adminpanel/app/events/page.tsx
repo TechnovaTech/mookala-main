@@ -32,6 +32,15 @@ interface Event {
     name: string;
     genre: string;
   }>;
+  media?: {
+    bannerImage?: string;
+    images?: string[];
+  };
+  tickets?: Array<{
+    name: string;
+    price: string;
+    quantity: string;
+  }>;
   createdAt: string;
 }
 

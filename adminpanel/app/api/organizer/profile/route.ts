@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 400 });
     }
 
-    const updateData = { updatedAt: new Date() };
+    const updateData: any = { updatedAt: new Date() };
     
     if (name) updateData.name = name;
     if (email) updateData.email = email;

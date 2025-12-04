@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     await db.collection('artists').updateOne(
       { phone },
       { 
-        $push: { media: mediaItem },
+        $push: { media: mediaItem } as any,
         $set: { updatedAt: new Date() }
       }
     );

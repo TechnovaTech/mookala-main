@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update user profile
-    const updateData = {
+    const updateData: any = {
       updatedAt: new Date()
     };
     

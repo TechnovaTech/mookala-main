@@ -3,9 +3,20 @@ import { useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
 import { Search, Filter, UserCheck, UserX, Eye, Users, Shield, Clock, Bell, ChevronDown, LogOut, User, Settings as SettingsIcon, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'
 
+interface UserType {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  city?: string;
+  genres?: string[];
+  isActive: boolean;
+  createdAt: string;
+}
+
 export default function UserManagement() {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
-  const [users, setUsers] = useState([])
+  const [users, setUsers] = useState<UserType[]>([])
   const [loading, setLoading] = useState(true)
   
   useEffect(() => {
@@ -26,7 +37,7 @@ export default function UserManagement() {
     }
   }
   
-  const toggleUserStatus = async (userId, currentStatus) => {
+  const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
     try {
       const response = await fetch(`/api/users/${userId}`, {
         method: 'PATCH',
@@ -44,7 +55,7 @@ export default function UserManagement() {
     }
   }
   
-  const deleteUser = async (userId) => {
+  const deleteUser = async (userId: string) => {
     if (!confirm('Are you sure you want to delete this user?')) return
     
     try {
@@ -60,7 +71,7 @@ export default function UserManagement() {
     }
   }
   
-  const formatDate = (dateString) => {
+  const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A'
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -171,13 +182,13 @@ export default function UserManagement() {
                 <tbody className="divide-y divide-gray-100">
                   {loading ? (
                     <tr>
-                      <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
                         Loading users...
                       </td>
                     </tr>
                   ) : users.length === 0 ? (
                     <tr>
-                      <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
                         No users found
                       </td>
                     </tr>
