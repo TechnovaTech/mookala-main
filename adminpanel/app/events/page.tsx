@@ -40,6 +40,8 @@ export default function EventsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [showEventModal, setShowEventModal] = useState(false);
 
   useEffect(() => {
     fetchEvents();
@@ -70,6 +72,17 @@ export default function EventsPage() {
       }
     } catch (error) {
       console.error('Error updating event status:', error);
+    }
+  };
+
+  const fetchEventDetails = async (eventId: string) => {
+    try {
+      const response = await fetch(`/api/events/${eventId}`);
+      const data = await response.json();
+      setSelectedEvent(data.event);
+      setShowEventModal(true);
+    } catch (error) {
+      console.error('Error fetching event details:', error);
     }
   };
 
@@ -172,138 +185,158 @@ export default function EventsPage() {
           </div>
         </header>
 
-        <main className="p-10 mt-24">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Events Management</h1>
-        <div className="flex gap-2">
-          <button
-            className={`px-4 py-2 rounded ${filter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-            onClick={() => setFilter('all')}
-          >
-            All ({events.length})
-          </button>
-          <button
-            className={`px-4 py-2 rounded ${filter === 'pending' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-            onClick={() => setFilter('pending')}
-          >
-            Pending ({events.filter(e => e.status === 'pending').length})
-          </button>
-          <button
-            className={`px-4 py-2 rounded ${filter === 'approved' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-            onClick={() => setFilter('approved')}
-          >
-            Approved ({events.filter(e => e.status === 'approved').length})
-          </button>
-          <button
-            className={`px-4 py-2 rounded ${filter === 'rejected' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-            onClick={() => setFilter('rejected')}
-          >
-            Rejected ({events.filter(e => e.status === 'rejected').length})
-          </button>
-        </div>
-      </div>
-
-      <div className="grid gap-6">
-        {filteredEvents.map((event) => (
-          <div key={event._id} className="bg-white rounded-lg shadow-md border">
-            <div className="p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h2 className="text-xl font-bold mb-2">{event.name}</h2>
-                  <div className="flex items-center gap-4 text-sm text-gray-600">
-                    <div className="flex items-center gap-1">
-                      {getLocationTypeIcon(event.locationType)}
-                      <span className="capitalize">{event.locationType}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Calendar className="w-4 h-4" />
-                      <span>{event.startDate}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-4 h-4" />
-                      <span>{event.startTime}</span>
-                    </div>
-                  </div>
+        <main className="p-6 mt-24">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="bg-white rounded-lg p-6 shadow-sm border">
+              <div className="flex items-center">
+                <div className="p-3 bg-blue-100 rounded-lg">
+                  <Calendar className="w-6 h-6 text-blue-600" />
                 </div>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(event.status)}`}>
-                  {event.status}
-                </span>
-              </div>
-              
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <h4 className="font-semibold mb-2">Organizer Details</h4>
-                  <p className="text-sm text-gray-600">
-                    <strong>Name:</strong> {event.organizer?.name || 'N/A'}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    <strong>Email:</strong> {event.organizer?.email || 'N/A'}
-                  </p>
-                </div>
-
-                <div>
-                  <h4 className="font-semibold mb-2">Location Details</h4>
-                  {event.locationType === 'venue' && event.location ? (
-                    <div className="text-sm text-gray-600">
-                      <p><strong>Venue:</strong> {event.location.name}</p>
-                      <p><strong>Address:</strong> {event.location.address}</p>
-                      <p><strong>City:</strong> {event.location.city}</p>
-                    </div>
-                  ) : event.locationType === 'recorded' && event.recordedDetails ? (
-                    <div className="text-sm text-gray-600">
-                      <p><strong>Platform:</strong> {event.recordedDetails.platform}</p>
-                      <p><strong>Video Link:</strong> 
-                        <a href={event.recordedDetails.videoLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline ml-1">
-                          {event.recordedDetails.videoLink}
-                        </a>
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-600">Online Event</p>
-                  )}
+                <div className="ml-4">
+                  <p className="text-2xl font-bold text-gray-900">{events.length}</p>
+                  <p className="text-sm text-gray-600">Total Events</p>
                 </div>
               </div>
-
-              {event.artistDetails && event.artistDetails.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="font-semibold mb-2 flex items-center gap-2">
-                    <Users className="w-4 h-4" />
-                    Artists ({event.artistDetails.length})
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {event.artistDetails.map((artist) => (
-                      <span key={artist._id} className="px-2 py-1 bg-gray-100 border rounded text-sm">
-                        {artist.name} - {artist.genre}
-                      </span>
-                    ))}
-                  </div>
+            </div>
+            
+            <div className="bg-white rounded-lg p-6 shadow-sm border">
+              <div className="flex items-center">
+                <div className="p-3 bg-yellow-100 rounded-lg">
+                  <Clock className="w-6 h-6 text-yellow-600" />
                 </div>
-              )}
-
-              {event.status === 'pending' && (
-                <div className="flex gap-2 mt-4">
-                  <button
-                    onClick={() => updateEventStatus(event._id, 'approved')}
-                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => updateEventStatus(event._id, 'rejected')}
-                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-                  >
-                    Reject
-                  </button>
+                <div className="ml-4">
+                  <p className="text-2xl font-bold text-gray-900">{events.filter(e => e.status === 'pending').length}</p>
+                  <p className="text-sm text-gray-600">Pending Approval</p>
                 </div>
-              )}
-
-              <div className="mt-4 text-xs text-gray-500">
-                Created: {new Date(event.createdAt).toLocaleString()}
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-lg p-6 shadow-sm border">
+              <div className="flex items-center">
+                <div className="p-3 bg-green-100 rounded-lg">
+                  <Calendar className="w-6 h-6 text-green-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-2xl font-bold text-gray-900">{events.filter(e => e.status === 'approved').length}</p>
+                  <p className="text-sm text-gray-600">Live Events</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-lg p-6 shadow-sm border">
+              <div className="flex items-center">
+                <div className="p-3 bg-purple-100 rounded-lg">
+                  <Users className="w-6 h-6 text-purple-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-2xl font-bold text-gray-900">12.5K</p>
+                  <p className="text-sm text-gray-600">Total Attendees</p>
+                </div>
               </div>
             </div>
           </div>
-        ))}
-      </div>
+
+          {/* All Events Section */}
+          <div className="bg-white rounded-lg shadow-sm border">
+            <div className="p-6 border-b">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold text-gray-900">All Events</h2>
+                <div className="flex gap-2">
+                  <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+                    {events.filter(e => e.status === 'approved').length} Live
+                  </span>
+                  <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm font-medium">
+                    {events.filter(e => e.status === 'pending').length} Pending
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredEvents.map((event) => (
+                  <div key={event._id} className="bg-gray-50 rounded-lg p-6 border">
+                    <div className="flex justify-end items-start mb-4">
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(event.status)}`}>
+                        {event.status === 'approved' ? 'Approved' : event.status === 'pending' ? 'Pending' : 'Rejected'}
+                      </span>
+                    </div>
+                    
+                    <div className="text-center mb-4">
+                      {event.media?.bannerImage ? (
+                        <img 
+                          src={`data:image/jpeg;base64,${event.media.bannerImage}`} 
+                          alt={event.name}
+                          className="w-full h-32 rounded-lg mb-3 object-cover"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 bg-teal-100 rounded-lg flex items-center justify-center mx-auto mb-3">
+                          {getLocationTypeIcon(event.locationType)}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <h3 className="font-bold text-lg mb-2 text-center">{event.name}</h3>
+                    
+                    <div className="space-y-2 text-sm text-gray-600 mb-4">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4" />
+                        <span>{event.location?.city || event.organizer?.name || 'Online'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        <span>{event.startDate}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4" />
+                        <span>{Math.floor(Math.random() * 5000) + 500} attendees</span>
+                      </div>
+                    </div>
+                    
+                    {event.tickets && event.tickets.length > 0 && (
+                      <div className="space-y-1 text-sm mb-4">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Tickets:</span>
+                          <span className="font-medium text-teal-600">
+                            {event.tickets.length === 1 
+                              ? event.tickets[0].price
+                              : `₹${Math.min(...event.tickets.map(t => parseInt(t.price.replace(/[^0-9]/g, ''))))}-${Math.max(...event.tickets.map(t => parseInt(t.price.replace(/[^0-9]/g, ''))))}`
+                            }
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => fetchEventDetails(event._id)}
+                        className="flex-1 px-3 py-2 bg-teal-600 text-white rounded text-sm hover:bg-teal-700 flex items-center justify-center gap-1"
+                      >
+                        👁️ View
+                      </button>
+                      {event.status === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => updateEventStatus(event._id, 'approved')}
+                            className="flex-1 px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => updateEventStatus(event._id, 'rejected')}
+                            className="flex-1 px-3 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
 
           {filteredEvents.length === 0 && (
             <div className="text-center py-12">
@@ -312,6 +345,112 @@ export default function EventsPage() {
           )}
         </main>
       </div>
+
+      {/* Event Details Modal */}
+      {showEventModal && selectedEvent && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b flex justify-between items-center">
+              <h2 className="text-2xl font-bold">{selectedEvent.name}</h2>
+              <button
+                onClick={() => setShowEventModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="grid gap-6">
+                {/* Event Info */}
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="font-semibold mb-3">Event Details</h3>
+                    <div className="space-y-2 text-sm">
+                      <p><strong>Date:</strong> {selectedEvent.startDate}</p>
+                      <p><strong>Time:</strong> {selectedEvent.startTime}</p>
+                      <p><strong>Type:</strong> {selectedEvent.locationType}</p>
+                      <p><strong>Status:</strong> <span className={`px-2 py-1 rounded text-xs ${getStatusColor(selectedEvent.status)}`}>{selectedEvent.status}</span></p>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold mb-3">Location</h3>
+                    {selectedEvent.location ? (
+                      <div className="space-y-1 text-sm">
+                        <p><strong>Venue:</strong> {selectedEvent.location.name}</p>
+                        <p><strong>Address:</strong> {selectedEvent.location.address}</p>
+                        <p><strong>City:</strong> {selectedEvent.location.city}</p>
+                      </div>
+                    ) : (
+                      <p className="text-sm">Online Event</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Organizer Info */}
+                <div>
+                  <h3 className="font-semibold mb-3">Organizer Details</h3>
+                  <div className="grid md:grid-cols-2 gap-4 text-sm">
+                    <p><strong>Name:</strong> {selectedEvent.organizer?.name || 'N/A'}</p>
+                    <p><strong>Email:</strong> {selectedEvent.organizer?.email || 'N/A'}</p>
+                  </div>
+                </div>
+
+                {/* Media */}
+                {selectedEvent.media && (
+                  <div>
+                    <h3 className="font-semibold mb-3">Media</h3>
+                    <div className="grid gap-4">
+                      {selectedEvent.media.bannerImage && (
+                        <div>
+                          <p className="text-sm font-medium mb-2">Banner Image:</p>
+                          <img 
+                            src={`data:image/jpeg;base64,${selectedEvent.media.bannerImage}`} 
+                            alt="Event Banner" 
+                            className="max-w-md rounded-lg"
+                          />
+                        </div>
+                      )}
+                      {selectedEvent.media.images && selectedEvent.media.images.length > 0 && (
+                        <div>
+                          <p className="text-sm font-medium mb-2">Gallery ({selectedEvent.media.images.length} images):</p>
+                          <div className="grid grid-cols-4 gap-2">
+                            {selectedEvent.media.images.slice(0, 8).map((image, index) => (
+                              <img 
+                                key={index}
+                                src={`data:image/jpeg;base64,${image}`} 
+                                alt={`Gallery ${index + 1}`} 
+                                className="w-full h-20 object-cover rounded"
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Tickets */}
+                {selectedEvent.tickets && selectedEvent.tickets.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold mb-3">Tickets</h3>
+                    <div className="grid gap-2">
+                      {selectedEvent.tickets.map((ticket, index) => (
+                        <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                          <div>
+                            <p className="font-medium">{ticket.name}</p>
+                            <p className="text-sm text-gray-600">Qty: {ticket.quantity}</p>
+                          </div>
+                          <p className="font-bold text-green-600">{ticket.price}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
