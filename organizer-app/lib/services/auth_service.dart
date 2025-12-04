@@ -242,6 +242,37 @@ class AuthService {
     }
   }
   
+  static Future<Map<String, dynamic>> respondToBooking(String eventId, String artistPhone, String response) async {
+    try {
+      final httpResponse = await http.post(
+        Uri.parse('$baseUrl/artist/booking-response'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'eventId': eventId,
+          'artistPhone': artistPhone,
+          'response': response,
+        }),
+      );
+      
+      return jsonDecode(httpResponse.body);
+    } catch (e) {
+      return {'error': 'Network error: $e'};
+    }
+  }
+  
+  static Future<Map<String, dynamic>> getArtistEvents(String phone) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/artist/events?phone=$phone'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'error': 'Network error: $e'};
+    }
+  }
+  
   static Future<Map<String, dynamic>> resubmitKYC(
     String phone, String aadharId, String panId, String? aadharImage, String? panImage) async {
     try {

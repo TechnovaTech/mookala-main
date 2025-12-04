@@ -23,10 +23,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Artist not found' }, { status: 404 });
     }
 
-    // Find events where this artist is in the artists array and admin approved
+    // Find events where this artist is in the artists array, admin approved, and no response yet
     const bookingRequests = await db.collection('events').find({
       artists: artist._id, // Check if artist ID is in the artists array
-      status: 'approved' // Only show admin-approved events
+      status: 'approved', // Only show admin-approved events
+      artistResponse: { $exists: false } // Only show events without artist response
     }).toArray();
 
     console.log('Found booking requests:', bookingRequests.length);

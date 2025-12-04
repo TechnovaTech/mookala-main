@@ -131,6 +131,7 @@ class _ArtistBookingsScreenState extends State<ArtistBookingsScreen> {
                   itemBuilder: (context, index) {
                     final request = _bookingRequests[index];
                     return _buildBookingRequestCard(
+                      request: request,
                       organizerName: request['organizerName'] ?? 'Unknown Organizer',
                       eventType: request['eventType'] ?? 'Event',
                       eventTitle: request['eventTitle'] ?? '',
@@ -149,7 +150,28 @@ class _ArtistBookingsScreenState extends State<ArtistBookingsScreen> {
     );
   }
 
+  Future<void> _respondToBooking(String eventId, String response) async {
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    
+    if (phone != null) {
+      final result = await AuthService.respondToBooking(eventId, phone, response);
+      
+      if (result['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Booking ${response == 'accepted' ? 'accepted' : 'declined'} successfully!')),
+        );
+        _loadBookingRequests(); // Reload the list
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to respond to booking')),
+        );
+      }
+    }
+  }
+
   Widget _buildBookingRequestCard({
+    required Map<String, dynamic> request,
     required String organizerName,
     required String eventType,
     required String eventTitle,
@@ -291,7 +313,7 @@ class _ArtistBookingsScreenState extends State<ArtistBookingsScreen> {
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () {},
+                        onPressed: () => _respondToBooking(request['_id'], 'rejected'),
                         style: OutlinedButton.styleFrom(
                           side: BorderSide(color: Colors.red),
                           foregroundColor: Colors.red,
@@ -302,7 +324,7 @@ class _ArtistBookingsScreenState extends State<ArtistBookingsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: () {},
+                        onPressed: () => _respondToBooking(request['_id'], 'accepted'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Color(0xFF001F3F),
                           foregroundColor: Colors.white,

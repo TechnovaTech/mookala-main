@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 
 class ArtistCalendarScreen extends StatefulWidget {
   const ArtistCalendarScreen({super.key});
@@ -9,11 +10,78 @@ class ArtistCalendarScreen extends StatefulWidget {
 
 class _ArtistCalendarScreenState extends State<ArtistCalendarScreen> {
   DateTime selectedDate = DateTime.now();
-  Map<DateTime, String> bookingStatus = {
-    DateTime(2024, 12, 15): 'booked',
-    DateTime(2024, 12, 20): 'busy',
-    DateTime(2024, 12, 25): 'booked',
-  };
+  List<Map<String, dynamic>> _acceptedEvents = [];
+  List<Map<String, dynamic>> _selectedDateEvents = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAcceptedEvents();
+  }
+
+  Future<void> _loadAcceptedEvents() async {
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    
+    if (phone != null) {
+      final result = await AuthService.getArtistEvents(phone);
+      
+      print('Artist events result: $result');
+      
+      if (result['success'] == true) {
+        setState(() {
+          _acceptedEvents = List<Map<String, dynamic>>.from(result['events'] ?? []);
+          _isLoading = false;
+          _updateSelectedDateEvents();
+        });
+        
+        print('Loaded ${_acceptedEvents.length} accepted events');
+        for (var event in _acceptedEvents) {
+          print('Event: ${event['eventTitle']} on ${event['eventDate']}');
+        }
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _updateSelectedDateEvents() {
+    final selectedDateStr = '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+    
+    setState(() {
+      _selectedDateEvents = _acceptedEvents.where((event) {
+        return event['eventDate'] == selectedDateStr;
+      }).toList();
+    });
+  }
+
+  bool _isDateBooked(DateTime date) {
+    final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    final isBooked = _acceptedEvents.any((event) => event['eventDate'] == dateStr);
+    if (isBooked) {
+      print('Date $dateStr is booked');
+    }
+    return isBooked;
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return months[month - 1];
+  }
+
+  int _getDaysInMonth(int year, int month) {
+    return DateTime(year, month + 1, 0).day;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +181,7 @@ class _ArtistCalendarScreenState extends State<ArtistCalendarScreen> {
                           icon: Icon(Icons.chevron_left),
                         ),
                         Text(
-                          'December 2024',
+                          '${_getMonthName(selectedDate.month)} ${selectedDate.year}',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -155,18 +223,23 @@ class _ArtistCalendarScreenState extends State<ArtistCalendarScreen> {
                         crossAxisCount: 7,
                         childAspectRatio: 1,
                       ),
-                      itemCount: 31,
+                      itemCount: _getDaysInMonth(selectedDate.year, selectedDate.month),
                       itemBuilder: (context, index) {
                         final day = index + 1;
-                        final date = DateTime(2024, 12, day);
-                        final status = bookingStatus[date];
+                        final date = DateTime(selectedDate.year, selectedDate.month, day);
+                        final isBooked = _isDateBooked(date);
                         
                         return GestureDetector(
-                          onTap: () => setState(() => selectedDate = date),
+                          onTap: () {
+                            setState(() {
+                              selectedDate = date;
+                            });
+                            _updateSelectedDateEvents();
+                          },
                           child: Container(
                             margin: const EdgeInsets.all(2),
                             decoration: BoxDecoration(
-                              color: _getDateColor(status),
+                              color: isBooked ? Colors.blue : Colors.transparent,
                               borderRadius: BorderRadius.circular(8),
                               border: selectedDate.day == day
                                   ? Border.all(color: Color(0xFF001F3F), width: 2)
@@ -176,7 +249,7 @@ class _ArtistCalendarScreenState extends State<ArtistCalendarScreen> {
                               child: Text(
                                 '$day',
                                 style: TextStyle(
-                                  color: status != null ? Colors.white : Colors.black87,
+                                  color: isBooked ? Colors.white : Colors.black87,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
@@ -192,14 +265,16 @@ class _ArtistCalendarScreenState extends State<ArtistCalendarScreen> {
           ),
         ),
         
-        // Upcoming Bookings
+        // Selected Date Events
         Container(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Upcoming Bookings',
+                _selectedDateEvents.isEmpty 
+                    ? 'No events on ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'
+                    : 'Events on ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -207,8 +282,25 @@ class _ArtistCalendarScreenState extends State<ArtistCalendarScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              _buildBookingCard('Wedding Ceremony', 'Dec 15, 2024', 'Mumbai'),
-              _buildBookingCard('Corporate Event', 'Dec 25, 2024', 'Delhi'),
+              if (_selectedDateEvents.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  child: Center(
+                    child: Text(
+                      'No events scheduled for this date',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                ..._selectedDateEvents.map((event) => _buildBookingCard(
+                  event['eventTitle'] ?? 'Event',
+                  '${event['eventDate']} ${event['eventTime'] ?? ''}',
+                  '${event['venue'] ?? ''}, ${event['city'] ?? ''}',
+                )).toList(),
             ],
           ),
         ),
@@ -236,16 +328,7 @@ class _ArtistCalendarScreenState extends State<ArtistCalendarScreen> {
     );
   }
 
-  Color _getDateColor(String? status) {
-    switch (status) {
-      case 'booked':
-        return Colors.blue;
-      case 'busy':
-        return Colors.red;
-      default:
-        return Colors.transparent;
-    }
-  }
+
 
   Widget _buildBookingCard(String title, String date, String location) {
     return Container(

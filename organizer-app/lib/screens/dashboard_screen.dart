@@ -336,16 +336,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _getEventStatus(Map<String, dynamic> event) {
     final status = event['status'] ?? 'pending';
+    final bookingStatus = event['bookingStatus'] ?? 'pending';
+    
     if (status == 'pending') return 'Pending Approval';
     if (status == 'rejected') return 'Rejected';
     
-    final eventDate = DateTime.tryParse(event['startDate'] ?? '');
-    if (eventDate == null) return 'Unknown';
+    // Show booking status for approved events
+    if (status == 'approved') {
+      if (bookingStatus == 'artist_pending') return 'Artist Pending';
+      if (bookingStatus == 'artist_declined') return 'Artist Declined';
+      if (bookingStatus == 'confirmed') {
+        final eventDate = DateTime.tryParse(event['startDate'] ?? '');
+        if (eventDate != null) {
+          final now = DateTime.now();
+          if (_isToday(eventDate)) return 'Live';
+          if (eventDate.isAfter(now)) return 'Upcoming';
+          return 'Completed';
+        }
+        return 'Confirmed';
+      }
+    }
     
-    final now = DateTime.now();
-    if (_isToday(eventDate)) return 'Live';
-    if (eventDate.isAfter(now)) return 'Upcoming';
-    return 'Completed';
+    return 'Approved';
   }
 
   IconData _getStatusIcon(String status) {
@@ -353,7 +365,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'Live': return Icons.live_tv;
       case 'Upcoming': return Icons.schedule;
       case 'Completed': return Icons.check_circle;
+      case 'Confirmed': return Icons.check_circle;
       case 'Pending Approval': return Icons.pending;
+      case 'Artist Pending': return Icons.person_search;
+      case 'Artist Declined': return Icons.person_off;
+      case 'Approved': return Icons.verified;
       case 'Rejected': return Icons.cancel;
       default: return Icons.help;
     }
@@ -364,7 +380,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'Live': return Colors.red;
       case 'Upcoming': return Colors.blue;
       case 'Completed': return Colors.green;
+      case 'Confirmed': return Colors.green;
       case 'Pending Approval': return Colors.orange;
+      case 'Artist Pending': return Colors.amber;
+      case 'Artist Declined': return Colors.red;
+      case 'Approved': return Colors.blue;
       case 'Rejected': return Colors.red;
       default: return Colors.grey;
     }

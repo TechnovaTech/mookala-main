@@ -18,7 +18,31 @@ export async function GET(request: NextRequest, { params }: { params: { phone: s
       organizerId: organizer._id 
     }).sort({ createdAt: -1 }).toArray();
 
-    return NextResponse.json({ events });
+    // Add booking status for each event
+    const eventsWithStatus = events.map(event => {
+      let bookingStatus = 'pending';
+      if (event.status === 'approved' && event.artists && event.artists.length > 0) {
+        if (event.artistResponse === 'accepted') {
+          bookingStatus = 'confirmed';
+        } else if (event.artistResponse === 'rejected') {
+          bookingStatus = 'artist_declined';
+        } else {
+          bookingStatus = 'artist_pending';
+        }
+      } else if (event.status === 'approved') {
+        bookingStatus = 'approved';
+      } else if (event.status === 'rejected') {
+        bookingStatus = 'rejected';
+      }
+
+      return {
+        ...event,
+        bookingStatus: bookingStatus,
+        artistResponse: event.artistResponse || null
+      };
+    });
+
+    return NextResponse.json({ events: eventsWithStatus });
   } catch (error) {
     console.error('Error fetching user events:', error);
     return NextResponse.json({ error: 'Failed to fetch events' }, { status: 500 });
