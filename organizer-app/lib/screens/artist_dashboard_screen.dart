@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'artist_profile_screen.dart';
+import 'artist_followers_screen.dart';
 import 'artist_tiers_screen.dart';
 import 'artist_calendar_screen.dart';
 import 'artist_bookings_screen.dart';
@@ -139,7 +140,7 @@ class _ArtistDashboardScreenState extends State<ArtistDashboardScreen> {
   String _getAppBarTitle() {
     switch (_currentIndex) {
       case 0: return 'Artist Dashboard';
-      case 1: return 'Profile & Portfolio';
+      case 1: return 'Profile';
       case 2: return 'Calendar';
       case 3: return 'Booking Requests';
       case 4: return 'Payments & History';
@@ -304,17 +305,17 @@ class DashboardHomeScreen extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _buildStatCard('Profile Views', '1,234', Icons.visibility, Colors.blue)),
+              Expanded(child: _buildStatCard('Profile Views', '1,234', Icons.visibility, Colors.blue, context)),
               const SizedBox(width: 12),
-              Expanded(child: _buildStatCard('Booking Requests', '8', Icons.event, Colors.orange)),
+              Expanded(child: _buildStatCard('Booking Requests', '8', Icons.event, Colors.orange, context)),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _buildStatCard('Upcoming Events', '3', Icons.calendar_today, Colors.green)),
+              Expanded(child: _buildStatCard('Upcoming Events', '3', Icons.calendar_today, Colors.green, context)),
               const SizedBox(width: 12),
-              Expanded(child: _buildStatCard('Total Earnings', '₹25,000', Icons.currency_rupee, Colors.purple)),
+              Expanded(child: _buildStatCard('Total Earnings', '₹25,000', Icons.currency_rupee, Colors.purple, context)),
             ],
           ),
           const SizedBox(height: 24),
@@ -403,48 +404,58 @@ class DashboardHomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 24),
-              const Spacer(),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+  Widget _buildStatCard(String title, String value, IconData icon, Color color, BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        if (title == 'Profile Views') {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const ArtistProfileScreen()),
+          );
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              spreadRadius: 1,
+              blurRadius: 4,
+              offset: const Offset(0, 2),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: color, size: 24),
+                const Spacer(),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

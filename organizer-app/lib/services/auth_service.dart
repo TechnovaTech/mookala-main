@@ -171,7 +171,7 @@ class AuthService {
   
   static Future<Map<String, dynamic>> updateArtistProfile(
     String phone, String name, String email, String city, String bio, 
-    String genre, String? pricing, String? profileImage) async {
+    String genre, String? pricing, String? profileImage, [String? bannerImage]) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/artist/profile'),
@@ -185,7 +185,42 @@ class AuthService {
           'genre': genre,
           if (pricing != null) 'pricing': pricing,
           if (profileImage != null) 'profileImage': profileImage,
+          if (bannerImage != null) 'bannerImage': bannerImage,
         }),
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'error': 'Network error: $e'};
+    }
+  }
+  
+  static Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
+    try {
+      final role = data['role'];
+      final endpoint = role == 'artist' ? '/artist/profile' : '/organizer/profile';
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(data),
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'error': 'Network error: $e'};
+    }
+  }
+  
+  static Future<Map<String, dynamic>> uploadMedia(Map<String, dynamic> data) async {
+    try {
+      final role = data['role'];
+      final endpoint = role == 'artist' ? '/artist/media' : '/organizer/media';
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(data),
       );
       
       return jsonDecode(response.body);

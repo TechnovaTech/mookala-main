@@ -1,12 +1,63 @@
 import 'package:flutter/material.dart';
-import 'edit_profile_screen.dart';
+import 'edit_user_profile_screen.dart';
+import '../services/auth_service.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:image_picker/image_picker.dart';
 
-class ArtistProfileScreen extends StatelessWidget {
+class ArtistProfileScreen extends StatefulWidget {
   const ArtistProfileScreen({super.key});
 
   @override
+  State<ArtistProfileScreen> createState() => _ArtistProfileScreenState();
+}
+
+class _ArtistProfileScreenState extends State<ArtistProfileScreen> {
+  Map<String, dynamic> _userProfile = {};
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _mediaList = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserProfile();
+  }
+
+  Future<void> _loadUserProfile() async {
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    final role = userData['role'];
+    
+    if (phone != null && role != null) {
+      final result = await AuthService.getUserProfile(phone, role);
+      
+      if (result['success'] == true) {
+        setState(() {
+          _userProfile = result['user'] ?? {};
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return Scaffold(
+      body: SingleChildScrollView(
       child: Column(
         children: [
           // Cover Image & Profile Picture
@@ -18,11 +69,19 @@ class ArtistProfileScreen extends StatelessWidget {
                   height: 200,
                   width: double.infinity,
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF001F3F), Color(0xFF003366)],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
+                    gradient: _userProfile['bannerImage'] == null
+                        ? LinearGradient(
+                            colors: [Color(0xFF001F3F), Color(0xFF003366)],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          )
+                        : null,
+                    image: _userProfile['bannerImage'] != null
+                        ? DecorationImage(
+                            image: MemoryImage(base64Decode(_userProfile['bannerImage'])),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
                   ),
                   child: Stack(
                     children: [
@@ -68,9 +127,30 @@ class ArtistProfileScreen extends StatelessWidget {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 4),
-                          color: Colors.grey.shade200,
+                          color: Colors.white,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
                         ),
-                        child: Icon(Icons.person, size: 50, color: Colors.grey.shade600),
+                        child: ClipOval(
+                          child: _userProfile['profileImage'] != null
+                              ? Image.memory(
+                                  base64Decode(_userProfile['profileImage']),
+                                  width: 92,
+                                  height: 92,
+                                  fit: BoxFit.cover,
+                                )
+                              : Container(
+                                  width: 92,
+                                  height: 92,
+                                  color: Colors.grey.shade300,
+                                  child: Icon(Icons.person, size: 50, color: Colors.grey.shade600),
+                                ),
+                        ),
                       ),
                       Positioned(
                         bottom: 0,
@@ -106,14 +186,14 @@ class ArtistProfileScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'John Doe',
-                            style: TextStyle(
+                            _userProfile['name'] ?? 'Artist Name',
+                            style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           Text(
-                            'Professional Musician',
+                            _userProfile['genre'] ?? 'Artist',
                             style: TextStyle(
                               fontSize: 16,
                               color: Colors.grey.shade600,
@@ -127,9 +207,9 @@ class ArtistProfileScreen extends StatelessWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const EditProfileScreen(),
+                            builder: (context) => const EditUserProfileScreen(),
                           ),
-                        );
+                        ).then((_) => _loadUserProfile());
                       },
                       icon: Icon(Icons.edit, size: 16),
                       label: Text('Edit'),
@@ -143,79 +223,118 @@ class ArtistProfileScreen extends StatelessWidget {
                 const SizedBox(height: 24),
                 
                 // Bio Section
-                _buildSection(
-                  'Bio',
-                  'Passionate musician with 10+ years of experience in classical and contemporary music. Specialized in live performances and studio recordings.',
-                ),
+                if (_userProfile['bio'] != null && _userProfile['bio'].toString().isNotEmpty)
+                  _buildSection(
+                    'Bio',
+                    _userProfile['bio'],
+                  ),
                 
                 // Genres/Skills
-                _buildSection(
-                  'Genres & Skills',
-                  null,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: ['Classical', 'Jazz', 'Pop', 'Guitar', 'Piano']
-                        .map((skill) => Chip(
-                              label: Text(skill),
-                              backgroundColor: Color(0xFF001F3F).withOpacity(0.1),
-                              labelStyle: TextStyle(color: Color(0xFF001F3F)),
-                            ))
-                        .toList(),
+                if (_userProfile['genre'] != null && _userProfile['genre'].toString().isNotEmpty)
+                  _buildSection(
+                    'Genres & Skills',
+                    null,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [_userProfile['genre']]
+                          .map((skill) => Chip(
+                                label: Text(skill),
+                                backgroundColor: const Color(0xFF001F3F).withOpacity(0.1),
+                                labelStyle: const TextStyle(color: Color(0xFF001F3F)),
+                              ))
+                          .toList(),
+                    ),
                   ),
-                ),
                 
-                // Pricing
-                _buildSection(
-                  'Pricing',
-                  '₹5,000 per hour\n₹25,000 per event',
-                ),
                 
                 // Gallery Section
-                _buildSection(
-                  'Gallery',
-                  null,
-                  child: Column(
-                    children: [
-                      GridView.builder(
-                        shrinkWrap: true,
-                        physics: NeverScrollableScrollPhysics(),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Gallery',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
                         ),
-                        itemCount: 6,
-                        itemBuilder: (context, index) {
-                          return Container(
+                        GestureDetector(
+                          onTap: () => _showMediaSourceDialog(context),
+                          child: Icon(
+                            Icons.add,
+                            color: Color(0xFF001F3F),
+                            size: 24,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _userProfile['media'] != null && _userProfile['media'].isNotEmpty
+                        ? GridView.builder(
+                            shrinkWrap: true,
+                            physics: NeverScrollableScrollPhysics(),
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 3,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 8,
+                              childAspectRatio: 1,
+                            ),
+                            itemCount: _userProfile['media'].length,
+                            itemBuilder: (context, index) {
+                              final media = _userProfile['media'][index];
+                              return Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: media['type'] == 'image'
+                                    ? ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.memory(
+                                          base64Decode(media['data']),
+                                          fit: BoxFit.cover,
+                                        ),
+                                      )
+                                    : Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.black87,
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Icon(
+                                          Icons.play_circle_fill,
+                                          color: Colors.white,
+                                          size: 30,
+                                        ),
+                                      ),
+                              );
+                            },
+                          )
+                        : Container(
+                            height: 120,
                             decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
+                              color: Colors.grey.shade100,
                               borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade300),
                             ),
-                            child: Icon(
-                              index % 2 == 0 ? Icons.photo : Icons.videocam,
-                              color: Colors.grey.shade500,
+                            child: const Center(
+                              child: Text(
+                                'No media uploaded yet',
+                                style: TextStyle(color: Colors.grey),
+                              ),
                             ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      ElevatedButton.icon(
-                        onPressed: () => _showMediaSourceDialog(context),
-                        icon: Icon(Icons.add),
-                        label: Text('Add Media'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Color(0xFF001F3F),
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
+                          ),
+                    const SizedBox(height: 24),
+                  ],
                 ),
               ],
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -251,121 +370,179 @@ class ArtistProfileScreen extends StatelessWidget {
   void _showImageSourceDialog(BuildContext context, String type) {
     showModalBottomSheet(
       context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Select ${type == 'profile' ? 'Profile Picture' : 'Cover Image'}',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: Icon(Icons.photo_library),
+                title: Text('Gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery, type);
+                },
               ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildSourceOption(
-                    context,
-                    'Camera',
-                    Icons.camera_alt,
-                    () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Camera functionality for $type')),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildSourceOption(
-                    context,
-                    'Gallery',
-                    Icons.photo_library,
-                    () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Gallery functionality for $type')),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+              ListTile(
+                leading: Icon(Icons.photo_camera),
+                title: Text('Camera'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.camera, type);
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   void _showMediaSourceDialog(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Add Media to Gallery',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: Icon(Icons.photo_library),
+                title: Text('Photo Gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery, 'media');
+                },
               ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildSourceOption(
-                    context,
-                    'Photo',
-                    Icons.photo_camera,
-                    () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Photo picker functionality')),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildSourceOption(
-                    context,
-                    'Video',
-                    Icons.videocam,
-                    () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Video picker functionality')),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildSourceOption(
-                    context,
-                    'Gallery',
-                    Icons.photo_library,
-                    () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Gallery picker functionality')),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+              ListTile(
+                leading: Icon(Icons.photo_camera),
+                title: Text('Camera'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.camera, 'media');
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.videocam),
+                title: Text('Video'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickVideo();
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  Future<void> _pickImage(ImageSource source, String type) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: source);
+    
+    if (pickedFile != null) {
+      final bytes = await pickedFile.readAsBytes();
+      final base64Image = base64Encode(bytes);
+      
+      if (type == 'profile') {
+        await _updateProfileImage(base64Image);
+      } else if (type == 'banner') {
+        await _updateBannerImage(base64Image);
+      } else if (type == 'media') {
+        await _uploadMedia(base64Image, 'image');
+      }
+    }
+  }
+
+  Future<void> _pickVideo() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickVideo(source: ImageSource.gallery);
+    
+    if (pickedFile != null) {
+      final bytes = await pickedFile.readAsBytes();
+      final base64Video = base64Encode(bytes);
+      await _uploadMedia(base64Video, 'video');
+    }
+  }
+
+  Future<void> _uploadMedia(String base64Data, String type) async {
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    final role = userData['role'];
+    
+    if (phone != null && role != null) {
+      final result = await AuthService.uploadMedia({
+        'phone': phone,
+        'role': role,
+        'mediaData': base64Data,
+        'mediaType': type,
+      });
+      
+      if (result['success'] == true) {
+        _showSnackBar('${type == 'image' ? 'Photo' : 'Video'} uploaded successfully!');
+        _loadUserProfile();
+      } else {
+        _showSnackBar('Failed to upload ${type == 'image' ? 'photo' : 'video'}');
+      }
+    }
+  }
+
+  Future<void> _updateProfileImage(String base64Image) async {
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    
+    if (phone != null) {
+      final result = await AuthService.updateArtistProfile(
+        phone,
+        _userProfile['name'] ?? '',
+        _userProfile['email'] ?? '',
+        _userProfile['city'] ?? '',
+        _userProfile['bio'] ?? '',
+        _userProfile['genre'] ?? '',
+        _userProfile['pricing'],
+        base64Image,
+      );
+      
+      if (result['success'] == true) {
+        _showSnackBar('Profile image updated successfully!');
+        _loadUserProfile();
+      } else {
+        _showSnackBar('Failed to update profile image');
+      }
+    }
+  }
+
+  Future<void> _updateBannerImage(String base64Image) async {
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    
+    if (phone != null) {
+      final result = await AuthService.updateArtistProfile(
+        phone,
+        _userProfile['name'] ?? '',
+        _userProfile['email'] ?? '',
+        _userProfile['city'] ?? '',
+        _userProfile['bio'] ?? '',
+        _userProfile['genre'] ?? '',
+        _userProfile['pricing'],
+        null, // profileImage
+        base64Image, // bannerImage
+      );
+      
+      if (result['success'] == true) {
+        _showSnackBar('Cover image updated successfully!');
+        _loadUserProfile();
+      } else {
+        _showSnackBar('Failed to update cover image');
+      }
+    }
+  }
+
+  void _showSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
   }
 
   Widget _buildSourceOption(
