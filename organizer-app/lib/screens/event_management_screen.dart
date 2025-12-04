@@ -18,6 +18,9 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
+  final TextEditingController _accessInstructionsController = TextEditingController();
+  final TextEditingController _videoLinkController = TextEditingController();
+  String _selectedPlatform = 'youtube';
   List<Map<String, String>> _addedArtists = [];
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _timeController = TextEditingController();
@@ -193,170 +196,153 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
             const SizedBox(height: 12),
             
             // Venue Option
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedLocationType = 'venue';
-                });
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: _selectedLocationType == 'venue' ? const Color(0xFF001F3F) : Colors.grey.shade300,
-                    width: _selectedLocationType == 'venue' ? 2 : 1,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                  color: _selectedLocationType == 'venue' ? const Color(0xFF001F3F).withOpacity(0.05) : Colors.white,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: _selectedLocationType == 'venue' ? const Color(0xFF001F3F).withOpacity(0.1) : Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Icon(
-                        Icons.location_on,
-                        size: 20,
-                        color: _selectedLocationType == 'venue' ? const Color(0xFF001F3F) : Colors.grey.shade600,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Venue',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            'Host in-person events with check-in management.',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            _buildLocationOption(
+              'venue',
+              Icons.location_on,
+              'Venue',
+              'Host in-person events with check-in management.',
             ),
             
-            // Location Name Field (appears when venue is selected)
+            // Venue Fields (show immediately after venue option if selected)
             if (_selectedLocationType == 'venue') ...[
               const SizedBox(height: 20),
+              _buildTextField('Location Name *', _locationController, 'Start typing location name for suggestions'),
+              const SizedBox(height: 16),
+              _buildTextField('Address *', _addressController, 'Enter the full address'),
+              const SizedBox(height: 16),
+              _buildTextField('City *', _cityController, 'Enter city name'),
+            ],
+            
+            const SizedBox(height: 12),
+            
+            // Online Option
+            _buildLocationOption(
+              'online',
+              Icons.videocam,
+              'Online',
+              'Host virtual events, sharing access with ticket buyers.',
+            ),
+            const SizedBox(height: 12),
+            
+            // Recorded Option
+            _buildLocationOption(
+              'recorded',
+              Icons.play_circle,
+              'Recorded events',
+              'Provide instant access to pre-recorded content after purchase.',
+            ),
+            
+            // Recorded Fields (show immediately after recorded option if selected)
+            if (_selectedLocationType == 'recorded') ...[
+              const SizedBox(height: 20),
               const Text(
-                'Location Name *',
+                'Where is your recorded event hosted? *',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: Colors.black87,
                 ),
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _locationController,
-                onChanged: (value) {
-                  if (_showLocationError && value.isNotEmpty) {
-                    setState(() {
-                      _showLocationError = false;
-                    });
-                  }
-                },
-                decoration: InputDecoration(
-                  hintText: 'Start typing location name for suggestions',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: _showLocationError ? Colors.red : Colors.grey.shade300),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildPlatformOption('youtube', 'Youtube'),
                   ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: _showLocationError ? Colors.red : Colors.grey.shade300),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildPlatformOption('vimeo', 'Vimeo'),
                   ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: _showLocationError ? Colors.red : const Color(0xFF001F3F)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildPlatformOption('others', 'Others'),
                   ),
-                  contentPadding: const EdgeInsets.all(16),
-                ),
+                ],
               ),
-              if (_showLocationError) ...[
-                const SizedBox(height: 8),
+              const SizedBox(height: 20),
+              _buildVideoLinkField(),
+              // Only show access instructions for 'others' platform
+              if (_selectedPlatform == 'others') ...[
+                const SizedBox(height: 20),
                 const Text(
-                  'This field is required.',
+                  'Provide instruction to access your event content *',
                   style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.red,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _accessInstructionsController,
+                  maxLines: 6,
+                  decoration: InputDecoration(
+                    hintText: 'Enter steps to access your event video',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFF001F3F)),
+                    ),
+                    contentPadding: const EdgeInsets.all(16),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.green.shade600),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'People who register for your event will get instant access to your video content.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (_selectedPlatform == 'youtube' || _selectedPlatform == 'vimeo') ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.green.shade600),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'People who register for your event will get instant access to your video content.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
-              const SizedBox(height: 16),
-              const Text(
-                'Address *',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _addressController,
-                decoration: InputDecoration(
-                  hintText: 'Enter the full address',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFF001F3F)),
-                  ),
-                  contentPadding: const EdgeInsets.all(16),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'City *',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _cityController,
-                decoration: InputDecoration(
-                  hintText: 'Enter city name',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFF001F3F)),
-                  ),
-                  contentPadding: const EdgeInsets.all(16),
-                ),
-              ),
             ],
             
             const SizedBox(height: 32),
@@ -899,6 +885,211 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildLocationOption(String type, IconData icon, String title, String description) {
+    bool isSelected = _selectedLocationType == type;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedLocationType = type;
+        });
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade300,
+            width: isSelected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(8),
+          color: isSelected ? const Color(0xFF001F3F).withOpacity(0.05) : Colors.white,
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF001F3F).withOpacity(0.1) : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(
+                icon,
+                size: 20,
+                color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    description,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(
+                Icons.check_circle,
+                color: Color(0xFF001F3F),
+                size: 20,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField(String label, TextEditingController controller, String hint) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            hintText: hint,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFF001F3F)),
+            ),
+            contentPadding: const EdgeInsets.all(16),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlatformOption(String platform, String title) {
+    bool isSelected = _selectedPlatform == platform;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedPlatform = platform;
+          _videoLinkController.clear();
+          _accessInstructionsController.clear(); // Clear access instructions when platform changes
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade300,
+            width: isSelected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(8),
+          color: isSelected ? const Color(0xFF001F3F).withOpacity(0.05) : Colors.white,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isSelected ? const Color(0xFF001F3F) : Colors.black87,
+              ),
+            ),
+            if (isSelected) ...[
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.check_circle,
+                color: Color(0xFF001F3F),
+                size: 16,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoLinkField() {
+    String label;
+    String hint;
+    
+    switch (_selectedPlatform) {
+      case 'youtube':
+        label = 'Link of the youtube video *';
+        hint = 'ex. https://youtube.com/yourvideo';
+        break;
+      case 'vimeo':
+        label = 'Link of the vimeo video *';
+        hint = 'ex. https://vimeo.com/yourvideo';
+        break;
+      case 'others':
+        label = 'Link of the video *';
+        hint = 'ex. https://yourplatform.com/yourvideo';
+        break;
+      default:
+        label = 'Video Link *';
+        hint = 'Enter video link';
+    }
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _videoLinkController,
+          decoration: InputDecoration(
+            hintText: hint,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFF001F3F)),
+            ),
+            contentPadding: const EdgeInsets.all(16),
+          ),
+        ),
+      ],
     );
   }
 
