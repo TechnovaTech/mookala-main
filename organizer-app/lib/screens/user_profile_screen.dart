@@ -1,11 +1,56 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'edit_user_profile_screen.dart';
 import 'dashboard_screen.dart';
 import 'phone_login_screen.dart';
 import '../services/auth_service.dart';
 
-class UserProfileScreen extends StatelessWidget {
+class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
+
+  @override
+  State<UserProfileScreen> createState() => _UserProfileScreenState();
+}
+
+class _UserProfileScreenState extends State<UserProfileScreen> {
+  Map<String, dynamic> _userProfile = {};
+  bool _isLoading = true;
+  String _userPhone = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserProfile();
+  }
+
+  Future<void> _loadUserProfile() async {
+    final userData = await AuthService.getUserData();
+    final phone = userData['phone'];
+    final role = userData['role'];
+    
+    if (phone != null && role != null) {
+      setState(() {
+        _userPhone = phone;
+      });
+      
+      final result = await AuthService.getUserProfile(phone, role);
+      
+      if (result['success'] == true && result['user'] != null) {
+        setState(() {
+          _userProfile = result['user'];
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,115 +72,122 @@ class UserProfileScreen extends StatelessWidget {
           'Profile',
           style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
         ),
-
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit, color: Colors.white),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const EditUserProfileScreen()),
+              ).then((_) {
+                _loadUserProfile();
+              });
+            },
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            children: [
-              const SizedBox(height: 40),
-              
-              // Profile Avatar
-              GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const EditUserProfileScreen()),
-                  );
-                },
-                child: Stack(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
+                    const SizedBox(height: 20),
+                    
+                    // Profile Avatar
                     Container(
-                      width: 100,
-                      height: 100,
+                      width: 120,
+                      height: 120,
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.grey.shade300, width: 1),
+                        border: Border.all(color: Colors.grey.shade300, width: 2),
                       ),
-                      child: Icon(
-                        Icons.person,
-                        size: 50,
+                      child: _userProfile['profileImage'] != null
+                          ? ClipOval(
+                              child: Image.memory(
+                                base64Decode(_userProfile['profileImage']),
+                                fit: BoxFit.cover,
+                                width: 120,
+                                height: 120,
+                              ),
+                            )
+                          : Container(
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.person,
+                                size: 60,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 24),
+                    
+                    // Name
+                    Text(
+                      _userProfile['name'] ?? 'No Name',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    
+                    // Phone
+                    Text(
+                      _userPhone,
+                      style: TextStyle(
                         color: Colors.grey.shade600,
+                        fontSize: 16,
                       ),
                     ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF001F3F),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                        child: const Icon(
-                          Icons.edit,
-                          size: 16,
-                          color: Colors.white,
+                    const SizedBox(height: 32),
+                    
+                    // Profile Details Card
+                    Card(
+                      elevation: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Profile Details',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            _buildDetailRow('Email', _userProfile['email'] ?? 'Not provided'),
+                            _buildDetailRow('City', _userProfile['city'] ?? 'Not provided'),
+                            if (_userProfile['bio'] != null)
+                              _buildDetailRow('Bio', _userProfile['bio']),
+                            if (_userProfile['genre'] != null)
+                              _buildDetailRow('Genre', _userProfile['genre']),
+                            if (_userProfile['pricing'] != null)
+                              _buildDetailRow('Pricing', _userProfile['pricing']),
+                          ],
                         ),
                       ),
                     ),
+                    const SizedBox(height: 32),
+              
+                    // Menu Options
+                    _buildMenuOption(context, Icons.feedback, 'Feedback', const Color(0xFF00BCD4)),
+                    _buildMenuOption(context, Icons.help_outline, 'Help & Support', const Color(0xFF2196F3)),
+                    _buildMenuOption(context, Icons.apps, 'Event Discovery App', const Color(0xFF4CAF50)),
+                    _buildMenuOption(context, Icons.logout, 'Log out', const Color(0xFF9C27B0)),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
-              
-              // Name
-              const Text(
-                'Ishita Vadodariya',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              
-              // Location
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.location_on, color: Colors.red, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Rajkot, India',
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              
-              // Add Bio Button
-              TextButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.add, color: Color(0xFF001F3F), size: 18),
-                label: const Text(
-                  'Add Bio',
-                  style: TextStyle(
-                    color: Color(0xFF001F3F),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 60),
-              
-              // Menu Options
-              _buildMenuOption(context, Icons.feedback, 'Feedback', const Color(0xFF00BCD4)),
-              _buildMenuOption(context, Icons.help_outline, 'Help & Support', const Color(0xFF2196F3)),
-              _buildMenuOption(context, Icons.apps, 'Event Discovery App', const Color(0xFF4CAF50)),
-              _buildMenuOption(context, Icons.logout, 'Log out', const Color(0xFF9C27B0)),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
-      ),
+            ),
 
     );
   }
@@ -203,5 +255,34 @@ class UserProfileScreen extends StatelessWidget {
     );
   }
 
-
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
