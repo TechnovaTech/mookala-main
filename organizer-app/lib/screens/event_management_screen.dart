@@ -4,6 +4,8 @@ import 'jatra_registration_screen.dart';
 import 'qr_scanner_screen.dart';
 import 'event_media_upload_screen.dart';
 import 'profile_screen.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class EventManagementScreen extends StatefulWidget {
   const EventManagementScreen({super.key});
@@ -18,6 +20,9 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
+  List<Map<String, dynamic>> _locationSuggestions = [];
+  bool _showSuggestions = false;
+  final String _googleApiKey = 'YOUR_GOOGLE_PLACES_API_KEY'; // Replace with your API key
   final TextEditingController _accessInstructionsController = TextEditingController();
   final TextEditingController _videoLinkController = TextEditingController();
   String _selectedPlatform = 'youtube';
@@ -206,7 +211,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
             // Venue Fields (show immediately after venue option if selected)
             if (_selectedLocationType == 'venue') ...[
               const SizedBox(height: 20),
-              _buildTextField('Location Name *', _locationController, 'Start typing location name for suggestions'),
+              _buildLocationAutocompleteField(),
               const SizedBox(height: 16),
               _buildTextField('Address *', _addressController, 'Enter the full address'),
               const SizedBox(height: 16),
@@ -1091,6 +1096,198 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildLocationAutocompleteField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Location Name *',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _locationController,
+          onChanged: (value) {
+            if (value.length > 2) {
+              _searchPlaces(value);
+            } else {
+              setState(() {
+                _showSuggestions = false;
+                _locationSuggestions.clear();
+              });
+            }
+          },
+          decoration: InputDecoration(
+            hintText: 'Start typing location name for suggestions',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFF001F3F)),
+            ),
+            contentPadding: const EdgeInsets.all(16),
+          ),
+        ),
+        if (_showSuggestions && _locationSuggestions.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.2),
+                  spreadRadius: 1,
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _locationSuggestions.length,
+              itemBuilder: (context, index) {
+                final suggestion = _locationSuggestions[index];
+                return ListTile(
+                  leading: const Icon(Icons.location_on, color: Colors.grey),
+                  title: Text(
+                    suggestion['main_text'] ?? '',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    suggestion['secondary_text'] ?? '',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
+                  onTap: () => _selectPlace(suggestion),
+                );
+              },
+            ),
+          ),
+        if (_showSuggestions && _locationSuggestions.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  'powered by ',
+                  style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                ),
+                Image.network(
+                  'https://developers.google.com/maps/documentation/places/web-service/images/powered_by_google_on_white.png',
+                  height: 12,
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _searchPlaces(String query) async {
+    if (_googleApiKey == 'YOUR_GOOGLE_PLACES_API_KEY') {
+      // Mock data for demonstration
+      setState(() {
+        _locationSuggestions = [
+          {
+            'place_id': '1',
+            'main_text': 'Hemu Gadhvi Hall Road',
+            'secondary_text': 'Rama Krishan Nagar, Rajkot, Gujarat, India',
+          },
+          {
+            'place_id': '2',
+            'main_text': 'Hemu Gadhavi Auditorium',
+            'secondary_text': 'Tagore Road, Rama Krishan Nagar, Rajkot, Gujarat',
+          },
+          {
+            'place_id': '3',
+            'main_text': 'Hemu Raj Gautam',
+            'secondary_text': 'Minaura, Uttar Pradesh, India',
+          },
+        ];
+        _showSuggestions = true;
+      });
+      return;
+    }
+
+    try {
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$query&key=$_googleApiKey&components=country:in',
+      );
+      
+      final response = await http.get(url);
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final predictions = data['predictions'] as List;
+        
+        setState(() {
+          _locationSuggestions = predictions.map((prediction) => {
+            'place_id': prediction['place_id'],
+            'main_text': prediction['structured_formatting']['main_text'],
+            'secondary_text': prediction['structured_formatting']['secondary_text'] ?? '',
+          }).toList();
+          _showSuggestions = true;
+        });
+      }
+    } catch (e) {
+      print('Error searching places: $e');
+    }
+  }
+
+  Future<void> _selectPlace(Map<String, dynamic> place) async {
+    _locationController.text = place['main_text'];
+    setState(() {
+      _showSuggestions = false;
+    });
+
+    if (_googleApiKey == 'YOUR_GOOGLE_PLACES_API_KEY') {
+      // Mock data for demonstration
+      _addressController.text = place['secondary_text'];
+      _cityController.text = 'Rajkot';
+      return;
+    }
+
+    // Get place details to fill address and city
+    try {
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/place/details/json?place_id=${place['place_id']}&key=$_googleApiKey&fields=formatted_address,address_components',
+      );
+      
+      final response = await http.get(url);
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final result = data['result'];
+        
+        _addressController.text = result['formatted_address'] ?? '';
+        
+        // Extract city from address components
+        final addressComponents = result['address_components'] as List;
+        for (var component in addressComponents) {
+          final types = component['types'] as List;
+          if (types.contains('locality') || types.contains('administrative_area_level_2')) {
+            _cityController.text = component['long_name'];
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      print('Error getting place details: $e');
+    }
   }
 
   Widget _buildEventItem(String title, String dateTime, String status, Color statusColor, int attendees, int index) {
