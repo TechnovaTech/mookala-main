@@ -1,20 +1,31 @@
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
-import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'dart:typed_data';
+import 'dart:convert';
 import 'add_tickets_screen.dart';
 
 class EventMediaUploadScreen extends StatefulWidget {
-  const EventMediaUploadScreen({super.key});
+  final Map<String, dynamic> eventData;
+  
+  const EventMediaUploadScreen({super.key, required this.eventData});
 
   @override
   State<EventMediaUploadScreen> createState() => _EventMediaUploadScreenState();
 }
 
 class _EventMediaUploadScreenState extends State<EventMediaUploadScreen> {
-  File? _bannerImage;
+  Uint8List? _bannerImage;
   final TextEditingController _videoController = TextEditingController();
-  List<File> _uploadedImages = [];
-  List<File> _uploadedVideos = [];
+  List<Uint8List> _uploadedImages = [];
+  final ImagePicker _picker = ImagePicker();
+
+  void _showMessage(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+  }
 
   void _selectBanner() {
     showModalBottomSheet(
@@ -35,37 +46,48 @@ class _EventMediaUploadScreenState extends State<EventMediaUploadScreen> {
               onTap: () async {
                 Navigator.pop(context);
                 try {
-                  FilePickerResult? result = await FilePicker.platform.pickFiles(
-                    type: FileType.image,
-                    allowMultiple: false,
+                  final XFile? image = await _picker.pickImage(
+                    source: ImageSource.gallery,
+                    maxWidth: 1024,
+                    maxHeight: 1024,
+                    imageQuality: 80,
                   );
-
-                  if (result != null && result.files.single.path != null) {
+                  
+                  if (image != null && mounted) {
+                    final bytes = await image.readAsBytes();
                     setState(() {
-                      _bannerImage = File(result.files.single.path!);
+                      _bannerImage = bytes;
                     });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Banner image selected successfully!')),
-                    );
+                    _showMessage('Banner image selected successfully!');
                   }
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Error selecting image. Please try again.')),
-                  );
+                  _showMessage('Error selecting image. Please try again.');
                 }
               },
             ),
             ListTile(
               leading: const Icon(Icons.camera_alt),
               title: const Text('Take Photo'),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
-                setState(() {
-                  _bannerImage = File('camera_banner.jpg');
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Photo taken successfully!')),
-                );
+                try {
+                  final XFile? image = await _picker.pickImage(
+                    source: ImageSource.camera,
+                    maxWidth: 1024,
+                    maxHeight: 1024,
+                    imageQuality: 80,
+                  );
+                  
+                  if (image != null && mounted) {
+                    final bytes = await image.readAsBytes();
+                    setState(() {
+                      _bannerImage = bytes;
+                    });
+                    _showMessage('Photo taken successfully!');
+                  }
+                } catch (e) {
+                  _showMessage('Error taking photo. Please try again.');
+                }
               },
             ),
           ],
@@ -76,9 +98,11 @@ class _EventMediaUploadScreenState extends State<EventMediaUploadScreen> {
 
   void _uploadImage() {
     if (_uploadedImages.length >= 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Maximum 10 images allowed')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Maximum 10 images allowed')),
+        );
+      }
       return;
     }
 
@@ -100,51 +124,48 @@ class _EventMediaUploadScreenState extends State<EventMediaUploadScreen> {
               onTap: () async {
                 Navigator.pop(context);
                 try {
-                  FilePickerResult? result = await FilePicker.platform.pickFiles(
-                    type: FileType.image,
-                    allowMultiple: true,
+                  final XFile? image = await _picker.pickImage(
+                    source: ImageSource.gallery,
+                    maxWidth: 1024,
+                    maxHeight: 1024,
+                    imageQuality: 80,
                   );
-
-                  if (result != null) {
-                    List<File> selectedFiles = result.paths
-                        .where((path) => path != null)
-                        .map((path) => File(path!))
-                        .toList();
-
-                    int remainingSlots = 10 - _uploadedImages.length;
-                    if (selectedFiles.length > remainingSlots) {
-                      selectedFiles = selectedFiles.take(remainingSlots).toList();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Only $remainingSlots more images allowed.')),
-                      );
-                    }
-
+                  
+                  if (image != null && mounted) {
+                    final bytes = await image.readAsBytes();
                     setState(() {
-                      _uploadedImages.addAll(selectedFiles);
+                      _uploadedImages.add(bytes);
                     });
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('${selectedFiles.length} image(s) selected successfully!')),
-                    );
+                    _showMessage('Image selected successfully!');
                   }
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Error selecting images. Please try again.')),
-                  );
+                  _showMessage('Error selecting image. Please try again.');
                 }
               },
             ),
             ListTile(
               leading: const Icon(Icons.camera_alt),
               title: const Text('Take Photo'),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
-                setState(() {
-                  _uploadedImages.add(File('camera_image_${_uploadedImages.length + 1}.jpg'));
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Photo taken successfully!')),
-                );
+                try {
+                  final XFile? image = await _picker.pickImage(
+                    source: ImageSource.camera,
+                    maxWidth: 1024,
+                    maxHeight: 1024,
+                    imageQuality: 80,
+                  );
+                  
+                  if (image != null && mounted) {
+                    final bytes = await image.readAsBytes();
+                    setState(() {
+                      _uploadedImages.add(bytes);
+                    });
+                    _showMessage('Photo taken successfully!');
+                  }
+                } catch (e) {
+                  _showMessage('Error taking photo. Please try again.');
+                }
               },
             ),
           ],
@@ -153,48 +174,8 @@ class _EventMediaUploadScreenState extends State<EventMediaUploadScreen> {
     );
   }
 
-  void _uploadVideo() async {
-    if (_uploadedVideos.length >= 5) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Maximum 5 videos allowed')),
-      );
-      return;
-    }
-
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        allowMultiple: true,
-      );
-
-      if (result != null) {
-        List<File> selectedFiles = result.paths
-            .where((path) => path != null)
-            .map((path) => File(path!))
-            .toList();
-
-        // Check if adding these files would exceed the limit
-        int remainingSlots = 5 - _uploadedVideos.length;
-        if (selectedFiles.length > remainingSlots) {
-          selectedFiles = selectedFiles.take(remainingSlots).toList();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Only $remainingSlots more videos allowed. Selected first $remainingSlots files.')),
-          );
-        }
-
-        setState(() {
-          _uploadedVideos.addAll(selectedFiles);
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${selectedFiles.length} video(s) selected successfully!')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error selecting videos. Please try again.')),
-      );
-    }
+  void _uploadVideo() {
+    _showMessage('Video upload feature coming soon!');
   }
 
   @override
@@ -257,7 +238,7 @@ class _EventMediaUploadScreenState extends State<EventMediaUploadScreen> {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.file(
+                            child: Image.memory(
                               _bannerImage!,
                               width: double.infinity,
                               height: 200,
@@ -407,7 +388,7 @@ class _EventMediaUploadScreenState extends State<EventMediaUploadScreen> {
                       const SizedBox(width: 16),
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: _uploadedVideos.length < 5 ? _uploadVideo : null,
+                          onPressed: _uploadVideo,
                           icon: const Icon(Icons.play_circle_outline),
                           label: const Text('Upload Video'),
                           style: OutlinedButton.styleFrom(
@@ -424,7 +405,7 @@ class _EventMediaUploadScreenState extends State<EventMediaUploadScreen> {
               ),
             ),
             
-            // Display uploaded images outside the container
+            // Display uploaded images
             if (_uploadedImages.isNotEmpty) ...[
               const SizedBox(height: 20),
               Align(
@@ -445,70 +426,38 @@ class _EventMediaUploadScreenState extends State<EventMediaUploadScreen> {
                   scrollDirection: Axis.horizontal,
                   itemCount: _uploadedImages.length,
                   itemBuilder: (context, index) {
-                    File image = _uploadedImages[index];
-                    String fileName = image.path.split('\\').last;
                     return Container(
                       width: 100,
                       margin: const EdgeInsets.only(right: 12),
-                      child: Column(
+                      child: Stack(
                         children: [
-                          Expanded(
-                            child: Stack(
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Container(
-                                    width: 100,
-                                    height: 80,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade200,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.grey.shade300),
-                                    ),
-                                    child: image.existsSync()
-                                        ? Image.file(
-                                            image,
-                                            width: 100,
-                                            height: 80,
-                                            fit: BoxFit.cover,
-                                          )
-                                        : const Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              Icon(Icons.image, size: 30, color: Colors.grey),
-                                              Text('Image', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                                            ],
-                                          ),
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 4,
-                                  right: 4,
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      setState(() {
-                                        _uploadedImages.removeAt(index);
-                                      });
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.all(2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red,
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: const Icon(Icons.close, color: Colors.white, size: 12),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.memory(
+                              _uploadedImages[index],
+                              width: 100,
+                              height: 100,
+                              fit: BoxFit.cover,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            fileName.length > 12 ? '${fileName.substring(0, 12)}...' : fileName,
-                            style: const TextStyle(fontSize: 10),
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _uploadedImages.removeAt(index);
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.close, color: Colors.white, size: 12),
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -518,62 +467,7 @@ class _EventMediaUploadScreenState extends State<EventMediaUploadScreen> {
               ),
             ],
             
-            // Display uploaded videos
-            if (_uploadedVideos.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Selected Videos (${_uploadedVideos.length}/5)',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _uploadedVideos.asMap().entries.map((entry) {
-                  int index = entry.key;
-                  File video = entry.value;
-                  String fileName = video.path.split('\\').last;
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.green.shade200),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.videocam, size: 16, color: Colors.green),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            fileName.length > 20 ? '${fileName.substring(0, 20)}...' : fileName,
-                            style: const TextStyle(fontSize: 12, color: Colors.green),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _uploadedVideos.removeAt(index);
-                            });
-                          },
-                          child: const Icon(Icons.close, size: 16, color: Colors.green),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
+
             
             const SizedBox(height: 40),
             
@@ -582,9 +476,20 @@ class _EventMediaUploadScreenState extends State<EventMediaUploadScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
+                  // Add media data to event data
+                  final updatedEventData = Map<String, dynamic>.from(widget.eventData);
+                  updatedEventData['media'] = {
+                    'bannerImage': _bannerImage != null ? base64Encode(_bannerImage!) : null,
+                    'promotionalVideo': _videoController.text.isNotEmpty ? _videoController.text : null,
+                    'images': _uploadedImages.map((img) => base64Encode(img)).toList(),
+                    'videos': [],
+                  };
+                  
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const AddTicketsScreen()),
+                    MaterialPageRoute(
+                      builder: (context) => AddTicketsScreen(eventData: updatedEventData),
+                    ),
                   );
                 },
                 style: ElevatedButton.styleFrom(

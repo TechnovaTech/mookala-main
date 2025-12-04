@@ -6,6 +6,7 @@ import 'event_media_upload_screen.dart';
 import 'profile_screen.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class EventManagementScreen extends StatefulWidget {
   const EventManagementScreen({super.key});
@@ -26,7 +27,10 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   final TextEditingController _accessInstructionsController = TextEditingController();
   final TextEditingController _videoLinkController = TextEditingController();
   String _selectedPlatform = 'youtube';
-  List<Map<String, String>> _addedArtists = [];
+  List<Map<String, dynamic>> _addedArtists = [];
+  List<Map<String, dynamic>> _availableArtists = [];
+  final TextEditingController _eventNameController = TextEditingController();
+  bool _isLoading = false;
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _timeController = TextEditingController();
   final TextEditingController _endDateController = TextEditingController();
@@ -34,58 +38,71 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   bool _showLocationError = false;
   bool _showEndTime = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadArtists();
+  }
+
+  Future<void> _loadArtists() async {
+    try {
+      final response = await http.get(
+        Uri.parse('http://localhost:3000/api/artists'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          _availableArtists = List<Map<String, dynamic>>.from(data['artists']);
+        });
+      }
+    } catch (e) {
+      print('Error loading artists: $e');
+    }
+  }
+
   void _showAddArtistDialog() {
-    final nameController = TextEditingController();
-    final genreController = TextEditingController();
-    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Add Artist'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Artist Name',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: genreController,
-              decoration: const InputDecoration(
-                labelText: 'Genre',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
+        title: const Text('Select Artist'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 300,
+          child: _availableArtists.isEmpty
+              ? const Center(child: Text('No artists available'))
+              : ListView.builder(
+                  itemCount: _availableArtists.length,
+                  itemBuilder: (context, index) {
+                    final artist = _availableArtists[index];
+                    final isSelected = _addedArtists.any((a) => a['_id'] == artist['_id']);
+                    
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: const Color(0xFF001F3F).withOpacity(0.1),
+                        child: const Icon(Icons.person, color: Color(0xFF001F3F)),
+                      ),
+                      title: Text(artist['name'] ?? ''),
+                      subtitle: Text(artist['genre'] ?? ''),
+                      trailing: isSelected ? const Icon(Icons.check, color: Colors.green) : null,
+                      onTap: isSelected ? null : () {
+                        setState(() {
+                          _addedArtists.add(artist);
+                        });
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('${artist['name']} added successfully')),
+                        );
+                      },
+                    );
+                  },
+                ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (nameController.text.isNotEmpty && genreController.text.isNotEmpty) {
-                setState(() {
-                  _addedArtists.add({
-                    'name': nameController.text,
-                    'genre': genreController.text,
-                  });
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Artist added successfully')),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF001F3F),
-            ),
-            child: const Text('Add', style: TextStyle(color: Colors.white)),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -151,6 +168,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
             ),
             const SizedBox(height: 8),
             TextField(
+              controller: _eventNameController,
               decoration: InputDecoration(
                 hintText: 'Enter the name of your event',
                 border: OutlineInputBorder(
@@ -770,30 +788,19 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  // Validate location field if venue is selected
-                  if (_selectedLocationType == 'venue' && _locationController.text.isEmpty) {
-                    setState(() {
-                      _showLocationError = true;
-                    });
-                    return;
-                  }
-                  
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const EventMediaUploadScreen()),
-                  );
-                },
+                onPressed: _isLoading ? null : _continueToNextStep,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF001F3F),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                child: const Text(
-                  'Continue',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        'Continue',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
               ),
             ),
             
@@ -1288,6 +1295,70 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     } catch (e) {
       print('Error getting place details: $e');
     }
+  }
+
+  void _continueToNextStep() {
+    // Validation
+    if (_eventNameController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter event name')),
+      );
+      return;
+    }
+
+    if (_selectedLocationType == 'venue' && _locationController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter location details')),
+      );
+      return;
+    }
+
+    if (_selectedLocationType == 'recorded' && _videoLinkController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter video link')),
+      );
+      return;
+    }
+
+    if (_dateController.text.isEmpty || _timeController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select date and time')),
+      );
+      return;
+    }
+
+    // Prepare event data to pass to next screen
+    final eventData = {
+      'name': _eventNameController.text,
+      'locationType': _selectedLocationType,
+      'artists': _addedArtists,
+      'startDate': _dateController.text,
+      'startTime': _timeController.text,
+      'endDate': _endDateController.text,
+      'endTime': _endTimeController.text,
+    };
+
+    // Add location-specific data
+    if (_selectedLocationType == 'venue') {
+      eventData['location'] = {
+        'name': _locationController.text,
+        'address': _addressController.text,
+        'city': _cityController.text,
+      };
+    } else if (_selectedLocationType == 'recorded') {
+      eventData['recordedDetails'] = {
+        'platform': _selectedPlatform,
+        'videoLink': _videoLinkController.text,
+        'accessInstructions': _accessInstructionsController.text,
+      };
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EventMediaUploadScreen(eventData: eventData),
+      ),
+    );
   }
 
   Widget _buildEventItem(String title, String dateTime, String status, Color statusColor, int attendees, int index) {

@@ -513,7 +513,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _buildActionButton(Icons.confirmation_number, 'Issue Ticket', () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const AddTicketsScreen()),
+                    MaterialPageRoute(builder: (context) => AddTicketsScreen(
+                      eventData: {
+                        'name': title,
+                        'dateTime': dateTime,
+                        'location': location,
+                      },
+                    )),
                   );
                 }),
                   _buildActionButton(Icons.edit, 'Edit', () async {

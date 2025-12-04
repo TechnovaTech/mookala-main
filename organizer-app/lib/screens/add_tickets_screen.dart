@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'create_ticket_screen.dart';
 import 'dashboard_screen.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/auth_service.dart';
 
 class AddTicketsScreen extends StatefulWidget {
-  const AddTicketsScreen({super.key});
+  final Map<String, dynamic> eventData;
+  
+  const AddTicketsScreen({super.key, required this.eventData});
 
   @override
   State<AddTicketsScreen> createState() => _AddTicketsScreenState();
@@ -11,6 +17,7 @@ class AddTicketsScreen extends StatefulWidget {
 
 class _AddTicketsScreenState extends State<AddTicketsScreen> {
   List<Map<String, dynamic>> _tickets = [];
+  bool _isLoading = false;
 
   void _addTicket() async {
     final result = await Navigator.push(
@@ -227,6 +234,27 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
               )).toList(),
             ],
             
+            const SizedBox(height: 40),
+            
+            // Create Event Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _createCompleteEvent,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF001F3F),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        'Create Event',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
+              ),
+            ),
 
           ],
         ),
@@ -266,5 +294,78 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _createCompleteEvent() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final userData = await AuthService.getUserData();
+      final userPhone = userData['phone'];
+      final userRole = userData['role'];
+
+      if (userPhone == null || userRole == null) {
+        throw Exception('User not logged in');
+      }
+
+      // Clean and simplify event data
+      final completeEventData = {
+        'name': widget.eventData['name'] ?? 'Untitled Event',
+        'locationType': widget.eventData['locationType'] ?? 'venue',
+        'startDate': widget.eventData['startDate'] ?? '',
+        'startTime': widget.eventData['startTime'] ?? '',
+        'endDate': widget.eventData['endDate'] ?? '',
+        'endTime': widget.eventData['endTime'] ?? '',
+        'organizerPhone': userPhone,
+        'organizerRole': userRole,
+        'tickets': _tickets,
+        'status': 'pending',
+      };
+
+      // Add location data based on type
+      if (widget.eventData['location'] != null) {
+        completeEventData['location'] = widget.eventData['location'];
+      }
+      if (widget.eventData['recordedDetails'] != null) {
+        completeEventData['recordedDetails'] = widget.eventData['recordedDetails'];
+      }
+      if (widget.eventData['media'] != null) {
+        completeEventData['media'] = widget.eventData['media'];
+      }
+      if (widget.eventData['artists'] != null) {
+        completeEventData['artists'] = (widget.eventData['artists'] as List).map((artist) => artist['_id']).toList();
+      }
+
+      print('Sending event data: $completeEventData');
+
+      final response = await http.post(
+        Uri.parse('http://localhost:3000/api/events'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(completeEventData),
+      );
+
+      if (response.statusCode == 201) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Event created successfully! Waiting for admin approval.')),
+        );
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const DashboardScreen()),
+          (route) => false,
+        );
+      } else {
+        throw Exception('Failed to create event');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error creating event: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 }

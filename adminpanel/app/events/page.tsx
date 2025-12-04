@@ -1,11 +1,108 @@
-'use client'
-import { useState } from 'react'
-import Sidebar from '../../components/Sidebar'
-import { Search, Bell, ChevronDown, LogOut, User, Settings as SettingsIcon, Calendar, MapPin, Clock, Users, CheckCircle, XCircle, Eye, Edit } from 'lucide-react'
+'use client';
 
-export default function EventManagement() {
-  const [isProfileOpen, setIsProfileOpen] = useState(false)
-  
+import { useState, useEffect } from 'react';
+import { Calendar, MapPin, Users, Clock, Video, Music, Bell, Search, ChevronDown, LogOut, User, Settings as SettingsIcon } from 'lucide-react';
+import Sidebar from '@/components/Sidebar';
+
+interface Event {
+  _id: string;
+  name: string;
+  locationType: string;
+  status: string;
+  startDate: string;
+  startTime: string;
+  endDate?: string;
+  endTime?: string;
+  location?: {
+    name: string;
+    address: string;
+    city: string;
+  };
+  recordedDetails?: {
+    platform: string;
+    videoLink: string;
+    accessInstructions: string;
+  };
+  organizer: {
+    name: string;
+    email: string;
+  };
+  artistDetails: Array<{
+    _id: string;
+    name: string;
+    genre: string;
+  }>;
+  createdAt: string;
+}
+
+export default function EventsPage() {
+  const [events, setEvents] = useState<Event[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+
+  useEffect(() => {
+    fetchEvents();
+  }, []);
+
+  const fetchEvents = async () => {
+    try {
+      const response = await fetch('/api/events');
+      const data = await response.json();
+      setEvents(data.events || []);
+    } catch (error) {
+      console.error('Error fetching events:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateEventStatus = async (eventId: string, status: string) => {
+    try {
+      const response = await fetch(`/api/events/${eventId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+
+      if (response.ok) {
+        fetchEvents();
+      }
+    } catch (error) {
+      console.error('Error updating event status:', error);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'approved': return 'bg-green-100 text-green-800';
+      case 'rejected': return 'bg-red-100 text-red-800';
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getLocationTypeIcon = (type: string) => {
+    switch (type) {
+      case 'venue': return <MapPin className="w-4 h-4" />;
+      case 'online': return <Video className="w-4 h-4" />;
+      case 'recorded': return <Music className="w-4 h-4" />;
+      default: return <MapPin className="w-4 h-4" />;
+    }
+  };
+
+  const filteredEvents = events.filter(event => 
+    filter === 'all' || event.status === filter
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
@@ -14,8 +111,8 @@ export default function EventManagement() {
         <header className="bg-white shadow-lg border-b border-gray-200 px-6 py-4 fixed top-0 right-0 left-64 z-40">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-deep-blue">Event Management</h1>
-              <p className="text-slate-gray text-sm">Approve events, monitor ongoing events, and manage listings</p>
+              <h1 className="text-2xl font-bold text-deep-blue">Events Management</h1>
+              <p className="text-slate-gray text-sm">Manage and approve event requests from organizers.</p>
             </div>
             
             <div className="flex items-center space-x-4">
@@ -24,14 +121,14 @@ export default function EventManagement() {
                 <input
                   type="text"
                   placeholder="Search events..."
-                  className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none"
+                  className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none transition-all"
                 />
               </div>
               
               <button className="relative p-2 text-slate-gray hover:text-deep-blue hover:bg-teal/10 rounded-lg transition-all">
                 <Bell size={20} />
                 <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald text-white text-xs rounded-full flex items-center justify-center animate-pulse">
-                  12
+                  3
                 </span>
               </button>
               
@@ -76,127 +173,145 @@ export default function EventManagement() {
         </header>
 
         <main className="p-10 mt-24">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="flex items-center">
-                <Calendar className="text-emerald w-8 h-8" />
-                <div className="ml-3">
-                  <p className="text-2xl font-bold">156</p>
-                  <p className="text-gray-600 text-sm">Total Events</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="flex items-center">
-                <Clock className="text-yellow-600 w-8 h-8" />
-                <div className="ml-3">
-                  <p className="text-2xl font-bold">23</p>
-                  <p className="text-gray-600 text-sm">Pending Approval</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="flex items-center">
-                <CheckCircle className="text-emerald w-8 h-8" />
-                <div className="ml-3">
-                  <p className="text-2xl font-bold">89</p>
-                  <p className="text-gray-600 text-sm">Live Events</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="flex items-center">
-                <Users className="text-indigo w-8 h-8" />
-                <div className="ml-3">
-                  <p className="text-2xl font-bold">12.5K</p>
-                  <p className="text-gray-600 text-sm">Total Attendees</p>
-                </div>
-              </div>
-            </div>
-          </div>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Events Management</h1>
+        <div className="flex gap-2">
+          <button
+            className={`px-4 py-2 rounded ${filter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+            onClick={() => setFilter('all')}
+          >
+            All ({events.length})
+          </button>
+          <button
+            className={`px-4 py-2 rounded ${filter === 'pending' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+            onClick={() => setFilter('pending')}
+          >
+            Pending ({events.filter(e => e.status === 'pending').length})
+          </button>
+          <button
+            className={`px-4 py-2 rounded ${filter === 'approved' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+            onClick={() => setFilter('approved')}
+          >
+            Approved ({events.filter(e => e.status === 'approved').length})
+          </button>
+          <button
+            className={`px-4 py-2 rounded ${filter === 'rejected' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+            onClick={() => setFilter('rejected')}
+          >
+            Rejected ({events.filter(e => e.status === 'rejected').length})
+          </button>
+        </div>
+      </div>
 
-          <div className="bg-white rounded-xl shadow-lg mb-8">
-            <div className="p-8 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900">All Events</h2>
-                <div className="flex space-x-2">
-                  <span className="px-3 py-1 bg-emerald/10 text-emerald rounded-full text-sm">89 Live</span>
-                  <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm">23 Pending</span>
+      <div className="grid gap-6">
+        {filteredEvents.map((event) => (
+          <div key={event._id} className="bg-white rounded-lg shadow-md border">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h2 className="text-xl font-bold mb-2">{event.name}</h2>
+                  <div className="flex items-center gap-4 text-sm text-gray-600">
+                    <div className="flex items-center gap-1">
+                      {getLocationTypeIcon(event.locationType)}
+                      <span className="capitalize">{event.locationType}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Calendar className="w-4 h-4" />
+                      <span>{event.startDate}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-4 h-4" />
+                      <span>{event.startTime}</span>
+                    </div>
+                  </div>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(event.status)}`}>
+                  {event.status}
+                </span>
+              </div>
+              
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <h4 className="font-semibold mb-2">Organizer Details</h4>
+                  <p className="text-sm text-gray-600">
+                    <strong>Name:</strong> {event.organizer?.name || 'N/A'}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <strong>Email:</strong> {event.organizer?.email || 'N/A'}
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-2">Location Details</h4>
+                  {event.locationType === 'venue' && event.location ? (
+                    <div className="text-sm text-gray-600">
+                      <p><strong>Venue:</strong> {event.location.name}</p>
+                      <p><strong>Address:</strong> {event.location.address}</p>
+                      <p><strong>City:</strong> {event.location.city}</p>
+                    </div>
+                  ) : event.locationType === 'recorded' && event.recordedDetails ? (
+                    <div className="text-sm text-gray-600">
+                      <p><strong>Platform:</strong> {event.recordedDetails.platform}</p>
+                      <p><strong>Video Link:</strong> 
+                        <a href={event.recordedDetails.videoLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline ml-1">
+                          {event.recordedDetails.videoLink}
+                        </a>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-600">Online Event</p>
+                  )}
                 </div>
               </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-8">
-              {[
-                { id: 'EVT001', name: 'Durga Puja Mahotsav 2024', organizer: 'Mumbai Cultural Events', location: 'Mumbai, Maharashtra', date: 'Dec 20-25, 2023', attendees: 5000, ticketPrice: '₹500-2000', status: 'approved', category: 'Festival', revenue: '₹25L' },
-                { id: 'EVT002', name: 'Classical Music Concert', organizer: 'Delhi Theatre Society', location: 'Delhi, NCR', date: 'Dec 18, 2023', attendees: 800, ticketPrice: '₹1000-3000', status: 'approved', category: 'Concert', revenue: '₹12L' },
-                { id: 'EVT003', name: 'Folk Dance Festival', organizer: 'Rajasthan Folk Committee', location: 'Jaipur, Rajasthan', date: 'Dec 22-24, 2023', attendees: 2000, ticketPrice: '₹300-1500', status: 'approved', category: 'Dance', revenue: '₹18L' },
-                { id: 'EVT004', name: 'Traditional Jatra Performance', organizer: 'Bengal Jatra Organizers', location: 'Kolkata, West Bengal', date: 'Dec 28-30, 2023', attendees: 1200, ticketPrice: '₹200-800', status: 'approved', category: 'Theatre', revenue: '₹6L' },
-                { id: 'EVT005', name: 'Modern Theatre Workshop', organizer: 'Theatre Troupe Mumbai', location: 'Mumbai, Maharashtra', date: 'Jan 5-7, 2024', attendees: 300, ticketPrice: '₹1500-2500', status: 'pending', category: 'Workshop', revenue: '₹4L' },
-                { id: 'EVT006', name: 'Fusion Music Night', organizer: 'South India Classical Events', location: 'Chennai, Tamil Nadu', date: 'Jan 10, 2024', attendees: 600, ticketPrice: '₹800-2000', status: 'pending', category: 'Concert', revenue: '₹8L' }
-              ].map((event) => (
-                <div key={event.id} className="border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow mb-4">
-                  <div className="h-32 bg-gradient-to-r from-emerald/20 to-teal/20 flex items-center justify-center relative">
-                    <Calendar className="text-emerald w-12 h-12" />
-                    <span className="absolute top-2 right-2 px-2 py-1 bg-white/90 text-xs rounded-full text-gray-600">
-                      {event.category}
-                    </span>
-                  </div>
-                  
-                  <div className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-medium text-gray-900 text-sm">{event.name}</h3>
-                      <span className={`px-2 py-1 text-xs rounded-full ${event.status === 'approved' ? 'bg-emerald/10 text-emerald' : 'bg-yellow-100 text-yellow-800'}`}>
-                        {event.status === 'approved' ? 'Approved' : 'Pending'}
+
+              {event.artistDetails && event.artistDetails.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="font-semibold mb-2 flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Artists ({event.artistDetails.length})
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {event.artistDetails.map((artist) => (
+                      <span key={artist._id} className="px-2 py-1 bg-gray-100 border rounded text-sm">
+                        {artist.name} - {artist.genre}
                       </span>
-                    </div>
-                    
-                    <div className="space-y-2 mb-4 text-sm text-gray-600">
-                      <div className="flex items-center">
-                        <MapPin size={12} className="mr-2 text-slate-gray" />
-                        {event.location}
-                      </div>
-                      <div className="flex items-center">
-                        <Clock size={12} className="mr-2 text-slate-gray" />
-                        {event.date}
-                      </div>
-                      <div className="flex items-center">
-                        <Users size={12} className="mr-2 text-slate-gray" />
-                        {event.attendees.toLocaleString()} attendees
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Tickets:</span>
-                        <span className="font-medium text-emerald">{event.ticketPrice}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Revenue:</span>
-                        <span className="font-medium">{event.revenue}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="flex space-x-2">
-                      <button className="flex-1 px-3 py-2 bg-teal/10 text-teal rounded-lg text-sm hover:bg-teal/20">
-                        <Eye size={12} className="inline mr-1" />
-                        View
-                      </button>
-                      {event.status === 'pending' ? (
-                        <button className="flex-1 px-3 py-2 bg-emerald text-white rounded-lg text-sm hover:bg-emerald/90">
-                          Approve
-                        </button>
-                      ) : (
-                        <button className="flex-1 px-3 py-2 bg-slate-gray/10 text-slate-gray rounded-lg text-sm hover:bg-slate-gray/20">
-                          <Edit size={12} className="inline mr-1" />
-                          Edit
-                        </button>
-                      )}
-                    </div>
+                    ))}
                   </div>
                 </div>
-              ))}
+              )}
+
+              {event.status === 'pending' && (
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => updateEventStatus(event._id, 'approved')}
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => updateEventStatus(event._id, 'rejected')}
+                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                  >
+                    Reject
+                  </button>
+                </div>
+              )}
+
+              <div className="mt-4 text-xs text-gray-500">
+                Created: {new Date(event.createdAt).toLocaleString()}
+              </div>
             </div>
           </div>
+        ))}
+      </div>
+
+          {filteredEvents.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-gray-500">No events found.</p>
+            </div>
+          )}
         </main>
       </div>
     </div>
-  )
+  );
 }
