@@ -122,4 +122,17 @@ class ApiService {
       return {'success': false, 'error': 'Network error'};
     }
   }
+  
+  static Future<Map<String, dynamic>> getApprovedEvents() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/events/approved'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error'};
+    }
+  }
 }

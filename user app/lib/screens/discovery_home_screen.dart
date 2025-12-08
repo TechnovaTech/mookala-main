@@ -5,6 +5,8 @@ import 'user_profile_menu_screen.dart';
 import 'category_events_screen.dart';
 import 'organized_event_details_screen.dart';
 import '../services/api_service.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 
 class DiscoveryHomeScreen extends StatefulWidget {
   const DiscoveryHomeScreen({super.key});
@@ -25,6 +27,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     filteredEvents = nearbyEvents;
     _searchController.addListener(_filterEvents);
     _loadArtists();
+    _loadOrganizedEvents();
   }
   
   Future<void> _loadArtists() async {
@@ -50,6 +53,62 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     } else {
       setState(() {
         _isLoadingArtists = false;
+      });
+    }
+  }
+  
+  Future<void> _loadOrganizedEvents() async {
+    setState(() {
+      _isLoadingEvents = true;
+    });
+    
+    final result = await ApiService.getApprovedEvents();
+    print('Approved Events Result: $result');
+    
+    if (result['success'] == true && result['events'] != null) {
+      final events = result['events'] as List;
+      print('Number of events: ${events.length}');
+      
+      setState(() {
+        _organizedEvents = events.map((event) {
+          print('Event data: $event');
+          final startDate = event['startDate'] ?? '';
+          final startTime = event['startTime'] ?? '';
+          final dateDisplay = startDate.isNotEmpty && startTime.isNotEmpty 
+            ? '$startDate • $startTime' 
+            : 'TBA';
+          
+          String imageUrl = 'assets/images/concert.jpg';
+          if (event['media'] != null && event['media']['bannerImage'] != null && event['media']['bannerImage'].toString().isNotEmpty) {
+            final bannerImage = event['media']['bannerImage'];
+            // Check if it's a base64 string or URL
+            if (bannerImage.toString().startsWith('http')) {
+              imageUrl = bannerImage;
+            } else {
+              // It's base64, convert to data URL
+              imageUrl = 'data:image/jpeg;base64,$bannerImage';
+            }
+          } else if (event['eventImage'] != null && event['eventImage'].toString().isNotEmpty) {
+            imageUrl = event['eventImage'];
+          } else if (event['image'] != null && event['image'].toString().isNotEmpty) {
+            imageUrl = event['image'];
+          }
+          
+          return {
+            'title': event['name'] ?? event['title'] ?? 'Event',
+            'date': dateDisplay,
+            'description': event['description'] ?? '',
+            'price': '₹${event['ticketPrice'] ?? event['price'] ?? '0'}',
+            'image': imageUrl,
+            'id': event['_id'],
+          };
+        }).toList();
+        _isLoadingEvents = false;
+      });
+    } else {
+      print('Failed to load events: ${result['error']}');
+      setState(() {
+        _isLoadingEvents = false;
       });
     }
   }
@@ -164,16 +223,8 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     {'title': 'Custom', 'subtitle': 'Pick dates'},
   ];
 
-  final List<Map<String, String>> _organizedEvents = [
-    {'title': 'Harsh Gujral Live', 'date': 'Sun, 07 Dec • 09:00 PM', 'description': 'A hilarious stand-up comedy show featuring the best jokes and stories', 'price': '₹499', 'image': 'assets/images/concert.jpg'},
-    {'title': 'PS - I Love You by Pranav Sharma', 'date': 'Sat, 06 Dec • 04:00 PM', 'description': 'An emotional comedy special about love, relationships and life', 'price': '₹399', 'image': 'assets/images/theatre.jpg'},
-    {'title': 'Classical Music Evening', 'date': 'Fri, 05 Dec • 08:00 PM', 'description': 'Experience the beauty of Indian classical music with renowned artists', 'price': '₹799', 'image': 'assets/images/folk.jpg'},
-    {'title': 'Theatre Workshop', 'date': 'Thu, 04 Dec • 07:30 PM', 'description': 'Learn acting techniques and stage performance from industry experts', 'price': '₹299', 'image': 'assets/images/theatre.jpg'},
-    {'title': 'Folk Dance Festival', 'date': 'Wed, 03 Dec • 09:30 PM', 'description': 'Celebrate traditional folk dances from different regions of India', 'price': '₹199', 'image': 'assets/images/folk.jpg'},
-    {'title': 'Live Concert Night', 'date': 'Tue, 02 Dec • 08:30 PM', 'description': 'Rock the night with live performances by popular bands', 'price': '₹899', 'image': 'assets/images/concert.jpg'},
-    {'title': 'Drama Performance', 'date': 'Mon, 01 Dec • 07:00 PM', 'description': 'A captivating theatrical performance by acclaimed actors', 'price': '₹599', 'image': 'assets/images/theatre.jpg'},
-    {'title': 'Cultural Show', 'date': 'Sun, 30 Nov • 06:30 PM', 'description': 'A vibrant showcase of Indian culture, music and dance', 'price': '₹349', 'image': 'assets/images/folk.jpg'},
-  ];
+  List<Map<String, dynamic>> _organizedEvents = [];
+  bool _isLoadingEvents = false;
 
   Widget _buildCategoryCard(String title, String imagePath, Color backgroundColor) {
     return GestureDetector(
@@ -786,7 +837,11 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  SizedBox(
+                  _isLoadingEvents
+                    ? const Center(child: CircularProgressIndicator())
+                    : _organizedEvents.isEmpty
+                      ? const Center(child: Text('No events available'))
+                      : SizedBox(
                     height: 260,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
@@ -827,13 +882,46 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                                       topLeft: Radius.circular(12),
                                       topRight: Radius.circular(12),
                                     ),
-                                    image: DecorationImage(
-                                      image: AssetImage(event['image'] ?? 'assets/images/concert.jpg'),
-                                      fit: BoxFit.cover,
-                                    ),
+                                    color: Colors.grey.shade200,
                                   ),
                                   child: Stack(
                                     children: [
+                                      ClipRRect(
+                                        borderRadius: const BorderRadius.only(
+                                          topLeft: Radius.circular(12),
+                                          topRight: Radius.circular(12),
+                                        ),
+                                        child: event['image'].toString().startsWith('http')
+                                          ? Image.network(
+                                              event['image'],
+                                              width: double.infinity,
+                                              height: double.infinity,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (context, error, stackTrace) {
+                                                return Image.asset(
+                                                  'assets/images/concert.jpg',
+                                                  fit: BoxFit.cover,
+                                                );
+                                              },
+                                            )
+                                          : event['image'].toString().startsWith('data:image')
+                                            ? Image.memory(
+                                                base64Decode(event['image'].toString().split(',')[1]),
+                                                width: double.infinity,
+                                                height: double.infinity,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (context, error, stackTrace) {
+                                                  return Image.asset(
+                                                    'assets/images/concert.jpg',
+                                                    fit: BoxFit.cover,
+                                                  );
+                                                },
+                                              )
+                                            : Image.asset(
+                                                event['image'] ?? 'assets/images/concert.jpg',
+                                                fit: BoxFit.cover,
+                                              ),
+                                      ),
                                       Positioned(
                                         top: 8,
                                         right: 8,

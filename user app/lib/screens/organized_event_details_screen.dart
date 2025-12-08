@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class OrganizedEventDetailsScreen extends StatelessWidget {
-  final Map<String, String> event;
+  final Map<String, dynamic> event;
 
   const OrganizedEventDetailsScreen({super.key, required this.event});
 
@@ -26,16 +26,32 @@ class OrganizedEventDetailsScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Event Image
-            Container(
-              width: double.infinity,
-              height: 250,
-              decoration: BoxDecoration(
-                image: DecorationImage(
-                  image: AssetImage(event['image'] ?? 'assets/images/concert.jpg'),
-                  fit: BoxFit.cover,
+            Stack(
+              children: [
+                Container(
+                  width: double.infinity,
+                  height: 250,
+                  child: event['image'].toString().startsWith('http')
+                    ? Image.network(
+                        event['image'],
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Image.asset(
+                            'assets/images/concert.jpg',
+                            fit: BoxFit.cover,
+                          );
+                        },
+                      )
+                    : Image.asset(
+                        event['image'] ?? 'assets/images/concert.jpg',
+                        fit: BoxFit.cover,
+                      ),
                 ),
-              ),
-              child: Container(
+                Container(
+                  width: double.infinity,
+                  height: 250,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
@@ -70,8 +86,9 @@ class OrganizedEventDetailsScreen extends StatelessWidget {
                       ),
                     ],
                   ),
+                  ),
                 ),
-              ),
+              ],
             ),
             
             // Event Details
