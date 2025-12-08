@@ -30,39 +30,20 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       _isLoading = true;
     });
 
-    // Check if user already exists
-    final profileResult = await ApiService.getProfile(phone);
-    if (profileResult['success'] == true && 
-        profileResult['user'] != null && 
-        profileResult['user']['status'] == 'completed') {
-      await ApiService.saveUserPhone(phone);
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const DiscoveryHomeScreen()),
-      );
-      return;
-    }
-
-    final result = await ApiService.registerPhone(phone);
+    await Future.delayed(const Duration(milliseconds: 500));
     
     setState(() {
       _isLoading = false;
     });
 
-    if (result['success'] == true) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => OTPVerificationScreen(
-            phoneNumber: phone,
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => OTPVerificationScreen(
+          phoneNumber: phone,
         ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['error'] ?? 'Registration failed')),
-      );
-    }
+      ),
+    );
   }
 
   @override

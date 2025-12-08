@@ -63,38 +63,39 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       return;
     }
 
+    // Check static OTP
+    if (otp != '1234') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid OTP. Please enter 1234')),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
-    final result = await ApiService.verifyOTP(widget.phoneNumber, otp);
+    // Check if user profile is complete
+    final profileResult = await ApiService.getProfile(widget.phoneNumber);
     
     setState(() {
       _isLoading = false;
     });
 
-    if (result['success'] == true) {
-      // Check if user profile is complete
-      final profileResult = await ApiService.getProfile(widget.phoneNumber);
-      if (profileResult['success'] == true && 
-          profileResult['user'] != null && 
-          profileResult['user']['status'] == 'completed') {
-        await ApiService.saveUserPhone(widget.phoneNumber);
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const DiscoveryHomeScreen()),
-        );
-      } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ProfileScreen(phoneNumber: widget.phoneNumber),
-          ),
-        );
-      }
+    if (profileResult['success'] == true && 
+        profileResult['user'] != null && 
+        profileResult['user']['status'] == 'completed') {
+      await ApiService.saveUserPhone(widget.phoneNumber);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const DiscoveryHomeScreen()),
+      );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['error'] ?? 'Invalid OTP')),
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ProfileScreen(phoneNumber: widget.phoneNumber),
+        ),
       );
     }
   }
@@ -113,7 +114,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
     _startResendTimer();
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('OTP sent successfully!')),
+      const SnackBar(content: Text('OTP is 1234')),
     );
   }
 
@@ -181,7 +182,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Please type the verification code\nsent to ${widget.phoneNumber}',
+                'Please enter the verification code\n(Use: 1234)',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 16,
