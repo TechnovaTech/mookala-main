@@ -109,4 +109,17 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_phone');
   }
+  
+  static Future<Map<String, dynamic>> getArtists() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/artists'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error'};
+    }
+  }
 }

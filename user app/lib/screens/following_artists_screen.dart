@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 
 class FollowingArtistsScreen extends StatefulWidget {
   const FollowingArtistsScreen({super.key});
@@ -9,53 +10,45 @@ class FollowingArtistsScreen extends StatefulWidget {
 
 class _FollowingArtistsScreenState extends State<FollowingArtistsScreen> {
   bool notificationsEnabled = true;
-
-  final List<Map<String, dynamic>> followingArtists = [
-    {
-      'id': '1',
-      'name': 'A.R. Rahman',
-      'image': 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face',
-      'followers': '2.5M',
-      'upcomingShows': 3,
-      'isFollowing': true,
-      'genre': 'Music Composer',
-      'lastShow': 'Dec 25, 2024',
-      'notificationsEnabled': true,
-    },
-    {
-      'id': '2',
-      'name': 'Sunidhi Chauhan',
-      'image': 'https://images.unsplash.com/photo-1494790108755-2616c9c0b8d3?w=200&h=200&fit=crop&crop=face',
-      'followers': '1.8M',
-      'upcomingShows': 2,
-      'isFollowing': true,
-      'genre': 'Playback Singer',
-      'lastShow': 'Jan 15, 2025',
-      'notificationsEnabled': true,
-    },
-    {
-      'id': '3',
-      'name': 'Arijit Singh',
-      'image': 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&h=200&fit=crop&crop=face',
-      'followers': '3.2M',
-      'upcomingShows': 5,
-      'isFollowing': true,
-      'genre': 'Playback Singer',
-      'lastShow': 'Feb 10, 2025',
-      'notificationsEnabled': false,
-    },
-    {
-      'id': '4',
-      'name': 'Shreya Ghoshal',
-      'image': 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&h=200&fit=crop&crop=face',
-      'followers': '2.8M',
-      'upcomingShows': 1,
-      'isFollowing': true,
-      'genre': 'Playback Singer',
-      'lastShow': 'Mar 5, 2025',
-      'notificationsEnabled': true,
-    },
-  ];
+  List<Map<String, dynamic>> followingArtists = [];
+  bool _isLoading = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadArtists();
+  }
+  
+  Future<void> _loadArtists() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    final result = await ApiService.getArtists();
+    
+    if (result['success'] == true && result['artists'] != null) {
+      setState(() {
+        followingArtists = (result['artists'] as List).map((artist) => {
+          'id': artist['_id'],
+          'name': artist['name'] ?? 'Unknown Artist',
+          'image': (artist['profileImage'] != null && artist['profileImage'].toString().isNotEmpty) 
+            ? artist['profileImage'] 
+            : 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(artist['name'] ?? 'Artist')}&size=200&background=001F3F&color=fff',
+          'followers': '0',
+          'upcomingShows': 0,
+          'isFollowing': true,
+          'genre': artist['genre'] ?? 'Artist',
+          'lastShow': 'TBA',
+          'notificationsEnabled': true,
+        }).toList();
+        _isLoading = false;
+      });
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +76,9 @@ class _FollowingArtistsScreenState extends State<FollowingArtistsScreen> {
           ),
         ],
       ),
-      body: followingArtists.isEmpty 
+      body: _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : followingArtists.isEmpty 
         ? _buildEmptyState()
         : Column(
             children: [
@@ -218,9 +213,34 @@ class _FollowingArtistsScreenState extends State<FollowingArtistsScreen> {
         children: [
           Row(
             children: [
-              CircleAvatar(
-                radius: 35,
-                backgroundImage: NetworkImage(artist['image']),
+              Container(
+                width: 70,
+                height: 70,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.grey.shade200,
+                ),
+                child: ClipOval(
+                  child: Image.network(
+                    artist['image'],
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: const Color(0xFF001F3F),
+                        child: Center(
+                          child: Text(
+                            artist['name'].substring(0, 1).toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 30,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(

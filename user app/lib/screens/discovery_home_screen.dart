@@ -4,6 +4,7 @@ import 'filter_screen.dart';
 import 'user_profile_menu_screen.dart';
 import 'category_events_screen.dart';
 import 'organized_event_details_screen.dart';
+import '../services/api_service.dart';
 
 class DiscoveryHomeScreen extends StatefulWidget {
   const DiscoveryHomeScreen({super.key});
@@ -23,6 +24,34 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     super.initState();
     filteredEvents = nearbyEvents;
     _searchController.addListener(_filterEvents);
+    _loadArtists();
+  }
+  
+  Future<void> _loadArtists() async {
+    setState(() {
+      _isLoadingArtists = true;
+    });
+    
+    final result = await ApiService.getArtists();
+    
+    if (result['success'] == true && result['artists'] != null) {
+      setState(() {
+        artists = (result['artists'] as List).map((artist) => {
+          'name': artist['name'] ?? 'Unknown Artist',
+          'image': (artist['profileImage'] != null && artist['profileImage'].toString().isNotEmpty) 
+            ? artist['profileImage'] 
+            : 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(artist['name'] ?? 'Artist')}&size=200&background=001F3F&color=fff',
+          'followers': '0',
+          'isFollowing': false,
+          'id': artist['_id'],
+        }).toList();
+        _isLoadingArtists = false;
+      });
+    } else {
+      setState(() {
+        _isLoadingArtists = false;
+      });
+    }
   }
 
   void _filterEvents() {
@@ -207,16 +236,8 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     );
   }
 
-  final List<Map<String, dynamic>> artists = [
-    {'name': 'A. R. Rahman', 'image': 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop', 'followers': '2.5M', 'isFollowing': false},
-    {'name': 'Arijit Singh', 'image': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop', 'followers': '3.2M', 'isFollowing': false},
-    {'name': 'Shreya Ghoshal', 'image': 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&h=200&fit=crop', 'followers': '1.8M', 'isFollowing': true},
-    {'name': 'Sonu Nigam', 'image': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop', 'followers': '1.5M', 'isFollowing': false},
-    {'name': 'Sunidhi Chauhan', 'image': 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&h=200&fit=crop', 'followers': '900K', 'isFollowing': false},
-    {'name': 'Rahat Fateh Ali Khan', 'image': 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&h=200&fit=crop', 'followers': '1.2M', 'isFollowing': true},
-    {'name': 'Armaan Malik', 'image': 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=200&h=200&fit=crop', 'followers': '800K', 'isFollowing': false},
-    {'name': 'Neha Kakkar', 'image': 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=200&h=200&fit=crop', 'followers': '2.1M', 'isFollowing': false},
-  ];
+  List<Map<String, dynamic>> artists = [];
+  bool _isLoadingArtists = false;
 
   @override
   Widget build(BuildContext context) {
@@ -414,7 +435,11 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                 children: [
                   const Text('Artists', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
                   const SizedBox(height: 16),
-                  SizedBox(
+                  _isLoadingArtists
+                    ? const Center(child: CircularProgressIndicator())
+                    : artists.isEmpty
+                      ? const Center(child: Text('No artists available'))
+                      : SizedBox(
                     height: 240,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
@@ -446,11 +471,29 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                                       height: 110,
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
-                                        image: DecorationImage(
-                                          image: NetworkImage(artist['image']),
-                                          fit: BoxFit.cover,
-                                        ),
                                         border: Border.all(color: Colors.grey.shade300, width: 2),
+                                        color: Colors.grey.shade200,
+                                      ),
+                                      child: ClipOval(
+                                        child: Image.network(
+                                          artist['image'],
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) {
+                                            return Container(
+                                              color: const Color(0xFF001F3F),
+                                              child: Center(
+                                                child: Text(
+                                                  artist['name'].substring(0, 1).toUpperCase(),
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 40,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(height: 8),
