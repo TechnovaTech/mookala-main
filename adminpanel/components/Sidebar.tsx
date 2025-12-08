@@ -47,18 +47,7 @@ const menuItems = [
       { icon: CreditCard, label: 'Sponsored Ads', href: '/ads' }
     ]
   },
-  { 
-    icon: Tag, 
-    label: 'Category Manager', 
-    href: '/categories',
-    hasDropdown: true,
-    subItems: [
-      { icon: Tag, label: 'Main Categories', href: '/categories/main' },
-      { icon: Music, label: 'Event Types', href: '/categories/events' },
-      { icon: Users, label: 'Artist Genres', href: '/categories/artists' },
-      { icon: Building2, label: 'Organizer Types', href: '/categories/organizers' }
-    ]
-  },
+  { icon: Tag, label: 'Category Manager', href: '/categories' },
   { icon: Settings, label: 'Master Settings', href: '/settings' },
 ]
 
@@ -81,10 +70,7 @@ export default function Sidebar() {
     else if (path === '/content') setActiveItem('Content Management')
     else if (path === '/banners') setActiveItem('Homepage Banners')
     else if (path === '/ads') setActiveItem('Sponsored Ads')
-    else if (path === '/categories/main') setActiveItem('Main Categories')
-    else if (path === '/categories/events') setActiveItem('Event Types')
-    else if (path === '/categories/artists') setActiveItem('Artist Genres')
-    else if (path === '/categories/organizers') setActiveItem('Organizer Types')
+    else if (path === '/categories') setActiveItem('Category Manager')
     else if (path === '/settings') setActiveItem('Master Settings')
   }, [])
 
