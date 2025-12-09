@@ -1,17 +1,108 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
-import { Tag, Plus, Edit2, Trash2, Bell, Search, ChevronDown, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
+import { Tag, Plus, Edit2, Trash2, Bell, Search, ChevronDown, LogOut, User, Settings as SettingsIcon, X } from 'lucide-react'
+
+interface SubCategory {
+  name: string
+}
+
+interface Category {
+  _id?: string
+  name: string
+  type: string
+  subCategories: SubCategory[]
+}
 
 export default function CategoryManager() {
-  const [categories, setCategories] = useState([
-    { id: 1, name: 'Concerts', type: 'Event', count: 45 },
-    { id: 2, name: 'Theatre', type: 'Event', count: 32 },
-    { id: 3, name: 'Jatra', type: 'Event', count: 18 },
-    { id: 4, name: 'Classical', type: 'Genre', count: 25 },
-    { id: 5, name: 'Rock', type: 'Genre', count: 38 },
-  ])
+  const [categories, setCategories] = useState<Category[]>([])
   const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [showModal, setShowModal] = useState(false)
+  const [categoryName, setCategoryName] = useState('')
+  const [categoryType, setCategoryType] = useState('')
+  const [subCategories, setSubCategories] = useState<SubCategory[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchCategories()
+  }, [])
+
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch('/api/categories')
+      const data = await res.json()
+      setCategories(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error('Failed to fetch categories')
+      setCategories([])
+    }
+  }
+
+  const handleAddSubCategory = () => {
+    setSubCategories([...subCategories, { name: '' }])
+  }
+
+  const handleSubCategoryChange = (index: number, value: string) => {
+    const updated = [...subCategories]
+    updated[index].name = value
+    setSubCategories(updated)
+  }
+
+  const handleDeleteSubCategory = (index: number) => {
+    setSubCategories(subCategories.filter((_, i) => i !== index))
+  }
+
+  const handleSaveCategory = async () => {
+    if (!categoryName || !categoryType) {
+      alert('Please fill all required fields')
+      return
+    }
+
+    try {
+      const url = editingId ? `/api/categories?id=${editingId}` : '/api/categories'
+      const method = editingId ? 'PUT' : 'POST'
+      
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: categoryName,
+          type: categoryType,
+          subCategories: subCategories.filter(sc => sc.name.trim() !== '')
+        })
+      })
+
+      if (res.ok) {
+        fetchCategories()
+        setShowModal(false)
+        setCategoryName('')
+        setCategoryType('')
+        setSubCategories([])
+        setEditingId(null)
+      }
+    } catch (error) {
+      console.error('Failed to save category')
+    }
+  }
+
+  const handleEditCategory = (category: Category) => {
+    setEditingId(category._id!)
+    setCategoryName(category.name)
+    setCategoryType(category.type)
+    setSubCategories(category.subCategories || [])
+    setShowModal(true)
+  }
+
+  const handleDeleteCategory = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this category?')) return
+
+    try {
+      await fetch(`/api/categories?id=${id}`, { method: 'DELETE' })
+      fetchCategories()
+    } catch (error) {
+      console.error('Failed to delete category')
+    }
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -84,53 +175,147 @@ export default function CategoryManager() {
 
         <main className="p-10 mt-24">
           <div className="flex items-center justify-between mb-6">
-            <button className="bg-gradient-to-r from-emerald to-teal text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:shadow-lg transition-all">
+            <button 
+              onClick={() => setShowModal(true)}
+              className="bg-gradient-to-r from-emerald to-teal text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:shadow-lg transition-all"
+            >
               <Plus size={20} />
               Add Category
             </button>
           </div>
 
-          <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left text-gray-700 font-semibold px-6 py-4">Category Name</th>
-                  <th className="text-left text-gray-700 font-semibold px-6 py-4">Type</th>
-                  <th className="text-left text-gray-700 font-semibold px-6 py-4">Count</th>
-                  <th className="text-right text-gray-700 font-semibold px-6 py-4">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {categories.map((category) => (
-                  <tr key={category.id} className="border-t border-gray-100 hover:bg-gray-50 transition-all">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-lg flex items-center justify-center">
-                          <Tag size={20} className="text-white" />
+          {showModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between p-6 border-b">
+                  <h2 className="text-2xl font-bold text-gray-900">{editingId ? 'Edit Category' : 'Add New Category'}</h2>
+                  <button onClick={() => { setShowModal(false); setEditingId(null); setCategoryName(''); setCategoryType(''); setSubCategories([]); }} className="text-gray-500 hover:text-gray-700">
+                    <X size={24} />
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Category Name *</label>
+                    <input
+                      type="text"
+                      value={categoryName}
+                      onChange={(e) => setCategoryName(e.target.value)}
+                      placeholder="Enter category name"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
+                    <input
+                      type="text"
+                      value={categoryType}
+                      onChange={(e) => setCategoryType(e.target.value)}
+                      placeholder="e.g., Event, Genre, etc."
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">Sub Categories</label>
+                      <button
+                        onClick={handleAddSubCategory}
+                        className="flex items-center gap-1 text-sm text-teal hover:text-teal/80"
+                      >
+                        <Plus size={16} />
+                        Add Sub Category
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {subCategories.map((sub, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={sub.name}
+                            onChange={(e) => handleSubCategoryChange(index, e.target.value)}
+                            placeholder="Sub category name"
+                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none"
+                          />
+                          <button
+                            onClick={() => handleDeleteSubCategory(index)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                          >
+                            <Trash2 size={18} />
+                          </button>
                         </div>
-                        <span className="text-gray-900 font-medium">{category.name}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 p-6 border-t">
+                  <button
+                    onClick={() => { setShowModal(false); setEditingId(null); setCategoryName(''); setCategoryType(''); setSubCategories([]); }}
+                    className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveCategory}
+                    className="px-6 py-2 bg-gradient-to-r from-emerald to-teal text-white rounded-lg hover:shadow-lg"
+                  >
+                    {editingId ? 'Update Category' : 'Save Category'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {categories && categories.length > 0 ? categories.map((category) => (
+              <div key={category._id} className="bg-white rounded-xl shadow-lg border border-gray-100 hover:shadow-xl transition-all">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-gradient-to-r from-emerald to-teal rounded-lg flex items-center justify-center">
+                        <Tag size={24} className="text-white" />
                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-gray-600">{category.type}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-gray-600">{category.count} items</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-2">
-                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-all text-gray-600 hover:text-gray-900">
-                          <Edit2 size={18} />
-                        </button>
-                        <button className="p-2 hover:bg-red-50 rounded-lg transition-all text-gray-600 hover:text-red-600">
-                          <Trash2 size={18} />
-                        </button>
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900">{category.name}</h3>
+                        <p className="text-sm text-gray-500">{category.type}</p>
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">Sub Categories</span>
+                      <span className="text-sm font-bold text-teal">{category.subCategories?.length || 0}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
+                    <button 
+                      onClick={() => handleEditCategory(category)}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all"
+                    >
+                      <Edit2 size={16} />
+                      Edit
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteCategory(category._id!)}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-all"
+                    >
+                      <Trash2 size={16} />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )) : (
+              <div className="col-span-full bg-white rounded-xl shadow-lg border border-gray-100 p-12 text-center">
+                <Tag size={48} className="mx-auto text-gray-300 mb-4" />
+                <p className="text-gray-500 text-lg">No categories found. Click "Add Category" to create one.</p>
+              </div>
+            )}
           </div>
         </main>
       </div>
