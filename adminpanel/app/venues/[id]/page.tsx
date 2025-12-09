@@ -32,13 +32,16 @@ export default function VenueDetailsPage() {
   const [loading, setLoading] = useState(true)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [showSeatModal, setShowSeatModal] = useState(false)
-  const [seatCategories, setSeatCategories] = useState({
+  const [seatCategories, setSeatCategories] = useState<{[key: string]: string}>({
     VIP: '',
     Premium: '',
     Normal: '',
     Balcony: ''
   })
+  const [editingCategoryName, setEditingCategoryName] = useState<string | null>(null)
+  const [newCategoryName, setNewCategoryName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [seatConflicts, setSeatConflicts] = useState<{[key: string]: string[]}>({})
   const [showEditModal, setShowEditModal] = useState(false)
   const [editFormData, setEditFormData] = useState({
     name: '',
@@ -55,6 +58,10 @@ export default function VenueDetailsPage() {
     }
   }, [params.id])
 
+  useEffect(() => {
+    checkSeatConflicts()
+  }, [seatCategories])
+
   const fetchVenueDetails = async () => {
     setLoading(true)
     try {
@@ -64,6 +71,13 @@ export default function VenueDetailsPage() {
         setVenue(data.venue)
         if (data.venue.seatCategories) {
           setSeatCategories(data.venue.seatCategories)
+        } else {
+          setSeatCategories({
+            VIP: '',
+            Premium: '',
+            Normal: '',
+            Balcony: ''
+          })
         }
         setEditFormData({
           name: data.venue.name,
@@ -81,7 +95,57 @@ export default function VenueDetailsPage() {
     }
   }
 
+  const parseSeatNumbers = (seatString: string): number[] => {
+    const seats: number[] = []
+    const parts = seatString.split(',').map(p => p.trim())
+    parts.forEach(part => {
+      if (part.includes('-')) {
+        const [start, end] = part.split('-').map(n => parseInt(n.trim()))
+        if (!isNaN(start) && !isNaN(end)) {
+          for (let i = start; i <= end; i++) {
+            seats.push(i)
+          }
+        }
+      } else {
+        const num = parseInt(part)
+        if (!isNaN(num)) seats.push(num)
+      }
+    })
+    return seats
+  }
+
+  const checkSeatConflicts = () => {
+    const conflicts: {[key: string]: string[]} = {}
+    const categorySeats: {[key: string]: number[]} = {}
+    
+    Object.entries(seatCategories).forEach(([category, seatString]) => {
+      if (seatString.trim()) {
+        categorySeats[category] = parseSeatNumbers(seatString)
+      }
+    })
+    
+    Object.entries(categorySeats).forEach(([category, seats]) => {
+      seats.forEach(seat => {
+        Object.entries(categorySeats).forEach(([otherCategory, otherSeats]) => {
+          if (category !== otherCategory && otherSeats.includes(seat)) {
+            if (!conflicts[category]) conflicts[category] = []
+            if (!conflicts[category].includes(`${seat} is used in ${otherCategory}`)) {
+              conflicts[category].push(`${seat} is used in ${otherCategory}`)
+            }
+          }
+        })
+      })
+    })
+    
+    setSeatConflicts(conflicts)
+    return Object.keys(conflicts).length === 0
+  }
+
   const handleSaveSeatCategories = async () => {
+    if (!checkSeatConflicts()) {
+      alert('Please resolve seat conflicts before saving')
+      return
+    }
     setSaving(true)
     try {
       const response = await fetch(`/api/venues/${params.id}/seats`, {
@@ -371,69 +435,91 @@ export default function VenueDetailsPage() {
                 </p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <span className="inline-flex items-center">
-                    <span className="w-3 h-3 bg-purple-500 rounded-full mr-2"></span>
-                    VIP Seats
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  value={seatCategories.VIP}
-                  onChange={(e) => setSeatCategories({ ...seatCategories, VIP: e.target.value })}
-                  placeholder="e.g., 1-10, 13, 14, 20"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal"
-                />
-              </div>
+              {Object.keys(seatCategories).map((categoryName) => (
+                <div key={categoryName} className="flex items-start space-x-2">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {editingCategoryName === categoryName ? (
+                        <input
+                          type="text"
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          onBlur={() => {
+                            if (newCategoryName && newCategoryName !== categoryName) {
+                              const newCategories = { ...seatCategories }
+                              newCategories[newCategoryName] = newCategories[categoryName]
+                              delete newCategories[categoryName]
+                              setSeatCategories(newCategories)
+                            }
+                            setEditingCategoryName(null)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.currentTarget.blur()
+                            }
+                          }}
+                          className="px-2 py-1 border border-teal rounded text-sm"
+                          autoFocus
+                        />
+                      ) : (
+                        <span className="inline-flex items-center">
+                          <span className="w-3 h-3 bg-purple-500 rounded-full mr-2"></span>
+                          {categoryName}
+                          <button
+                            onClick={() => {
+                              setEditingCategoryName(categoryName)
+                              setNewCategoryName(categoryName)
+                            }}
+                            className="ml-2 text-blue-600 hover:text-blue-800"
+                          >
+                            <Edit size={14} />
+                          </button>
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="text"
+                      value={seatCategories[categoryName]}
+                      onChange={(e) => setSeatCategories({ ...seatCategories, [categoryName]: e.target.value })}
+                      placeholder="e.g., 1-10, 13, 14, 20"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal"
+                    />
+                    {seatConflicts[categoryName] && (
+                      <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                        {seatConflicts[categoryName].map((conflict, idx) => (
+                          <div key={idx}>⚠️ {conflict}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newCategories = { ...seatCategories }
+                      delete newCategories[categoryName]
+                      setSeatCategories(newCategories)
+                    }}
+                    className="mt-8 p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                    title="Delete category"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 6h18"/>
+                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                    </svg>
+                  </button>
+                </div>
+              ))}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <span className="inline-flex items-center">
-                    <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
-                    Premium Seats
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  value={seatCategories.Premium}
-                  onChange={(e) => setSeatCategories({ ...seatCategories, Premium: e.target.value })}
-                  placeholder="e.g., 11-30, 45"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <span className="inline-flex items-center">
-                    <span className="w-3 h-3 bg-green-500 rounded-full mr-2"></span>
-                    Normal Seats
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  value={seatCategories.Normal}
-                  onChange={(e) => setSeatCategories({ ...seatCategories, Normal: e.target.value })}
-                  placeholder="e.g., 31-100"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <span className="inline-flex items-center">
-                    <span className="w-3 h-3 bg-orange-500 rounded-full mr-2"></span>
-                    Balcony Seats
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  value={seatCategories.Balcony}
-                  onChange={(e) => setSeatCategories({ ...seatCategories, Balcony: e.target.value })}
-                  placeholder="e.g., 101-150"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal"
-                />
-              </div>
+              <button
+                onClick={() => {
+                  const newCategoryKey = `Category ${Object.keys(seatCategories).length + 1}`
+                  setSeatCategories({ ...seatCategories, [newCategoryKey]: '' })
+                }}
+                className="w-full py-2 border-2 border-dashed border-gray-300 text-gray-600 rounded-lg hover:border-teal hover:text-teal transition-all flex items-center justify-center"
+              >
+                <Plus size={16} className="mr-2" />
+                Add New Category
+              </button>
 
               <div className="flex space-x-3 pt-4">
                 <button
