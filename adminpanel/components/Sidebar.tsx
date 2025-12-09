@@ -48,7 +48,7 @@ const menuItems = [
     ]
   },
   { icon: Tag, label: 'Category Manager', href: '/categories' },
-  { icon: Settings, label: 'Master Settings', href: '/settings' },
+  { icon: Settings, label: 'Settings', href: '/settings' },
 ]
 
 export default function Sidebar() {
@@ -86,7 +86,7 @@ export default function Sidebar() {
     }
     else if (path === '/categories') setActiveItem('Category Manager')
     else if (path === '/venues' || path.startsWith('/venues/')) setActiveItem('Venue Manager')
-    else if (path === '/settings') setActiveItem('Master Settings')
+    else if (path === '/settings') setActiveItem('Settings')
   }, [])
 
   return (
@@ -116,7 +116,7 @@ export default function Sidebar() {
       </div>
 
       {/* Menu Items */}
-      <nav className="mt-6 flex-1 overflow-y-auto pb-20 scrollbar-hide">
+      <nav className="mt-6 flex-1 overflow-y-auto scrollbar-hide">
         {menuItems.map((item) => {
           const Icon = item.icon
           const isActive = activeItem === item.label
@@ -192,22 +192,7 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom Profile */}
-      {!isCollapsed && (
-        <div className="absolute bottom-4 left-4 right-4 bg-gradient-to-b from-deep-blue to-indigo pt-4">
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-            <div className="flex items-center">
-              <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-lg">
-                <span className="text-white text-sm font-bold">A</span>
-              </div>
-              <div className="ml-3">
-                <p className="text-white text-sm font-semibold">Admin User</p>
-                <p className="text-white/70 text-xs">Super Admin</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   )
 }
