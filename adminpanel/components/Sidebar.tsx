@@ -36,6 +36,7 @@ const menuItems = [
   { icon: Calendar, label: 'Event Management', href: '/events' },
   { icon: UserCheck, label: 'KYC Management', href: '/kyc' },
   { icon: Ticket, label: 'Ticketing & Finance', href: '/finance' },
+  { icon: Building2, label: 'Venue Manager', href: '/venues' },
   { 
     icon: Image, 
     label: 'Banner/Ads Manager', 
@@ -69,6 +70,7 @@ export default function Sidebar() {
     else if (path === '/banners') setActiveItem('Homepage Banners')
     else if (path === '/ads') setActiveItem('Sponsored Ads')
     else if (path === '/categories') setActiveItem('Category Manager')
+    else if (path === '/venues') setActiveItem('Venue Manager')
     else if (path === '/settings') setActiveItem('Master Settings')
   }, [])
 
