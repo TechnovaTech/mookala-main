@@ -206,7 +206,12 @@ export default function VenuesPage() {
                         </span>
                       </div>
 
-                      <h3 className="text-lg font-bold text-deep-blue mb-2">{venue.name}</h3>
+                      <button 
+                        onClick={() => window.location.href = `/venues/${venue._id}`}
+                        className="text-lg font-bold text-deep-blue mb-2 hover:text-teal cursor-pointer transition-colors"
+                      >
+                        {venue.name}
+                      </button>
                       
                       <div className="space-y-2 text-sm text-slate-gray">
                         <div className="flex items-start">
