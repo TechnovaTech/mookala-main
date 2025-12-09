@@ -156,9 +156,12 @@ export default function ArtistsPage() {
                       </span>
                     </div>
 
-                    <h3 className="text-lg font-bold text-deep-blue mb-2">
+                    <button 
+                      onClick={() => window.location.href = `/artists/${artist._id}`}
+                      className="text-lg font-bold text-deep-blue mb-2 hover:text-teal cursor-pointer transition-colors"
+                    >
                       {artist.name || 'Unnamed Artist'}
-                    </h3>
+                    </button>
                     
                     <div className="space-y-2 text-sm text-slate-gray">
                       <p><span className="font-medium text-deep-blue">Phone:</span> {artist.phone}</p>
