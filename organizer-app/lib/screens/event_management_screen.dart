@@ -7,6 +7,7 @@ import 'profile_screen.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
 
 class EventManagementScreen extends StatefulWidget {
   const EventManagementScreen({super.key});
@@ -37,11 +38,33 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   final TextEditingController _endTimeController = TextEditingController();
   bool _showLocationError = false;
   bool _showEndTime = false;
+  List<Map<String, dynamic>> _categories = [];
+  List<String> _languages = [];
+  String? _selectedCategory;
+  String? _selectedLanguage;
 
   @override
   void initState() {
     super.initState();
-    _loadArtists();
+    _loadData();
+  }
+  
+  Future<void> _loadData() async {
+    await Future.wait([_loadArtists(), _loadCategories(), _loadLanguages()]);
+  }
+  
+  Future<void> _loadCategories() async {
+    final result = await ApiService.getCategories();
+    if (result['success'] == true && result['categories'] != null) {
+      setState(() => _categories = List<Map<String, dynamic>>.from(result['categories']));
+    }
+  }
+  
+  Future<void> _loadLanguages() async {
+    final result = await ApiService.getLanguages();
+    if (result['success'] == true && result['languages'] != null) {
+      setState(() => _languages = List<String>.from(result['languages']));
+    }
   }
 
   Future<void> _loadArtists() async {
@@ -185,6 +208,82 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                 ),
                 contentPadding: const EdgeInsets.all(16),
               ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Category Dropdown
+            const Text(
+              'Category *',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _selectedCategory,
+              decoration: InputDecoration(
+                hintText: 'Select event category',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFF001F3F)),
+                ),
+                contentPadding: const EdgeInsets.all(16),
+              ),
+              items: _categories.map((category) {
+                return DropdownMenuItem<String>(
+                  value: category['name'],
+                  child: Text(category['name']),
+                );
+              }).toList(),
+              onChanged: (value) => setState(() => _selectedCategory = value),
+            ),
+            const SizedBox(height: 16),
+            
+            // Language Dropdown
+            const Text(
+              'Language *',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _selectedLanguage,
+              decoration: InputDecoration(
+                hintText: 'Select event language',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFF001F3F)),
+                ),
+                contentPadding: const EdgeInsets.all(16),
+              ),
+              items: _languages.map((language) {
+                return DropdownMenuItem<String>(
+                  value: language,
+                  child: Text(language),
+                );
+              }).toList(),
+              onChanged: (value) => setState(() => _selectedLanguage = value),
             ),
             
             const SizedBox(height: 32),
@@ -1305,6 +1404,20 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
       );
       return;
     }
+    
+    if (_selectedCategory == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a category')),
+      );
+      return;
+    }
+    
+    if (_selectedLanguage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a language')),
+      );
+      return;
+    }
 
     if (_selectedLocationType == 'venue' && _locationController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1330,6 +1443,8 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     // Prepare event data to pass to next screen
     final eventData = {
       'name': _eventNameController.text,
+      'category': _selectedCategory,
+      'language': _selectedLanguage,
       'locationType': _selectedLocationType,
       'artists': _addedArtists,
       'startDate': _dateController.text,

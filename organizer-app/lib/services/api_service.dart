@@ -188,4 +188,76 @@ class ApiService {
     await prefs.remove('user_phone');
     await prefs.remove('user_type');
   }
+  
+  static Future<Map<String, dynamic>> getCategories() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/categories'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        final categories = jsonDecode(response.body) as List;
+        return {'success': true, 'categories': categories};
+      }
+      return {'success': false, 'error': 'Failed to fetch categories'};
+    } catch (e) {
+      return {'success': false, 'error': 'Network error'};
+    }
+  }
+  
+  static Future<Map<String, dynamic>> getLanguages() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/languages'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error'};
+    }
+  }
+  
+  static Future<Map<String, dynamic>> createEvent({
+    required String name,
+    required String category,
+    required String language,
+    required String venue,
+    required String date,
+    required String time,
+    String? description,
+    List<String>? artists,
+    List<String>? committeeMembers,
+  }) async {
+    try {
+      final phone = await getUserPhone();
+      if (phone == null) {
+        return {'success': false, 'error': 'User not logged in'};
+      }
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl/events'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': name,
+          'category': category,
+          'language': language,
+          'venue': venue,
+          'date': date,
+          'time': time,
+          'description': description,
+          'artists': artists,
+          'committeeMembers': committeeMembers,
+          'organizerPhone': phone,
+          'status': 'pending',
+        }),
+      );
+      
+      if (response.statusCode == 201) {
+        return {'success': true, 'message': 'Event created successfully'};
+      }
+      return {'success': false, 'error': 'Failed to create event'};
+    } catch (e) {
+      return {'success': false, 'error': 'Network error'};
+    }
+  }
 }

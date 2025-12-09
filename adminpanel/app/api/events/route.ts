@@ -75,6 +75,9 @@ export async function POST(request: NextRequest) {
     
     const newEvent = {
       ...eventData,
+      category: eventData.category || null,
+      language: eventData.language || null,
+      status: eventData.status || 'pending',
       createdAt: new Date(),
       updatedAt: new Date(),
     };

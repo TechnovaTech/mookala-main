@@ -313,6 +313,8 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
       // Clean and simplify event data
       final completeEventData = {
         'name': widget.eventData['name'] ?? 'Untitled Event',
+        'category': widget.eventData['category'],
+        'language': widget.eventData['language'],
         'locationType': widget.eventData['locationType'] ?? 'venue',
         'startDate': widget.eventData['startDate'] ?? '',
         'startTime': widget.eventData['startTime'] ?? '',
