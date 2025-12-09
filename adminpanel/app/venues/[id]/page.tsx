@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Sidebar from '../../../components/Sidebar'
-import { Bell, ChevronDown, LogOut, User, Settings as SettingsIcon, Building2, MapPin, Users, ArrowLeft, Armchair, Plus, X, Save } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, User, Settings as SettingsIcon, Building2, MapPin, Users, ArrowLeft, Armchair, Plus, X, Save, Edit, Upload } from 'lucide-react'
 
 interface Venue {
   _id: string
@@ -39,6 +39,15 @@ export default function VenueDetailsPage() {
     Balcony: ''
   })
   const [saving, setSaving] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    address: '',
+    city: '',
+    state: '',
+    capacity: '',
+    image: ''
+  })
 
   useEffect(() => {
     if (params.id) {
@@ -56,6 +65,14 @@ export default function VenueDetailsPage() {
         if (data.venue.seatCategories) {
           setSeatCategories(data.venue.seatCategories)
         }
+        setEditFormData({
+          name: data.venue.name,
+          address: data.venue.location.address,
+          city: data.venue.location.city,
+          state: data.venue.location.state,
+          capacity: data.venue.capacity.toString(),
+          image: data.venue.image || ''
+        })
       }
     } catch (error) {
       console.error('Error fetching venue details:', error)
@@ -83,6 +100,47 @@ export default function VenueDetailsPage() {
     } catch (error) {
       console.error('Error saving seat categories:', error)
       alert('Failed to save seat categories')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const validTypes = ['image/png', 'image/jpg', 'image/jpeg', 'image/svg+xml']
+      if (!validTypes.includes(file.type)) {
+        alert('Only PNG, JPG, and SVG files are allowed')
+        return
+      }
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setEditFormData({ ...editFormData, image: reader.result as string })
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleUpdateVenue = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const response = await fetch(`/api/venues/${params.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData)
+      })
+      const data = await response.json()
+      if (data.success) {
+        alert('Venue updated successfully!')
+        setShowEditModal(false)
+        fetchVenueDetails()
+      } else {
+        alert(data.error || 'Failed to update venue')
+      }
+    } catch (error) {
+      console.error('Error updating venue:', error)
+      alert('Failed to update venue')
     } finally {
       setSaving(false)
     }
@@ -209,13 +267,22 @@ export default function VenueDetailsPage() {
                   </span>
                 </div>
               </div>
-              <button
-                onClick={() => setShowSeatModal(true)}
-                className="flex items-center px-4 py-2 bg-emerald text-white rounded-lg hover:bg-emerald/90 transition-all"
-              >
-                <Armchair size={16} className="mr-2" />
-                Manage Seats
-              </button>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowEditModal(true)}
+                  className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all"
+                >
+                  <Edit size={16} className="mr-2" />
+                  Edit Venue
+                </button>
+                <button
+                  onClick={() => setShowSeatModal(true)}
+                  className="flex items-center px-4 py-2 bg-emerald text-white rounded-lg hover:bg-emerald/90 transition-all"
+                >
+                  <Armchair size={16} className="mr-2" />
+                  Manage Seats
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -385,6 +452,60 @@ export default function VenueDetailsPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900">Edit Venue</h3>
+              <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateVenue} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Venue Image</label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                  {editFormData.image ? (
+                    <img src={editFormData.image} alt="Preview" className="w-full h-32 object-cover rounded-lg mb-2" />
+                  ) : (
+                    <Upload className="mx-auto text-gray-400 mb-2" size={32} />
+                  )}
+                  <input type="file" accept=".png,.jpg,.jpeg,.svg" onChange={handleImageUpload} className="hidden" id="edit-image-upload" />
+                  <label htmlFor="edit-image-upload" className="cursor-pointer text-sm text-teal hover:text-teal/80">
+                    {editFormData.image ? 'Change Image' : 'Upload Image'}
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Venue Name</label>
+                <input type="text" required value={editFormData.name} onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                <input type="text" required value={editFormData.address} onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                  <input type="text" required value={editFormData.city} onChange={(e) => setEditFormData({ ...editFormData, city: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">State</label>
+                  <input type="text" required value={editFormData.state} onChange={(e) => setEditFormData({ ...editFormData, state: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Capacity</label>
+                <input type="number" required value={editFormData.capacity} onChange={(e) => setEditFormData({ ...editFormData, capacity: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+              </div>
+              <button type="submit" disabled={saving} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Updating...' : 'Update Venue'}
+              </button>
+            </form>
           </div>
         </div>
       )}
