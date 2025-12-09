@@ -14,6 +14,7 @@ interface Venue {
   capacity: number
   amenities: string[]
   status: string
+  image?: string | null
   createdAt: string
 }
 
@@ -54,6 +55,11 @@ export default function VenuesPage() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      const validTypes = ['image/png', 'image/jpg', 'image/jpeg', 'image/svg+xml']
+      if (!validTypes.includes(file.type)) {
+        alert('Only PNG, JPG, and SVG files are allowed')
+        return
+      }
       const reader = new FileReader()
       reader.onloadend = () => {
         setFormData({ ...formData, image: reader.result as string })
@@ -73,12 +79,16 @@ export default function VenuesPage() {
       })
       const data = await response.json()
       if (data.success) {
+        alert('Venue added successfully!')
         setShowModal(false)
         setFormData({ name: '', address: '', city: '', state: '', capacity: '', image: '' })
         fetchVenues()
+      } else {
+        alert(data.error || 'Failed to add venue')
       }
     } catch (error) {
       console.error('Error adding venue:', error)
+      alert('Failed to add venue')
     } finally {
       setSubmitting(false)
     }
@@ -176,40 +186,47 @@ export default function VenuesPage() {
             ) : (
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {venues.map((venue) => (
-                  <div key={venue._id} className="bg-gradient-to-br from-gray-50 to-white rounded-xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="w-12 h-12 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-md">
-                        <Building2 size={24} className="text-white" />
+                  <div key={venue._id} className="bg-gradient-to-br from-gray-50 to-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-lg transition-all">
+                    {venue.image && (
+                      <div className="w-full h-40 overflow-hidden">
+                        <img src={venue.image} alt={venue.name} className="w-full h-full object-cover" />
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        venue.status === 'active' 
-                          ? 'bg-emerald/10 text-emerald border border-emerald/20' 
-                          : 'bg-gray-100 text-gray-800 border border-gray-200'
-                      }`}>
-                        {venue.status}
-                      </span>
-                    </div>
-
-                    <h3 className="text-lg font-bold text-deep-blue mb-2">{venue.name}</h3>
-                    
-                    <div className="space-y-2 text-sm text-slate-gray">
-                      <div className="flex items-start">
-                        <MapPin size={16} className="mr-2 mt-0.5 text-teal" />
-                        <div>
-                          <p>{venue.location.address}</p>
-                          <p>{venue.location.city}, {venue.location.state}</p>
+                    )}
+                    <div className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-md">
+                          <Building2 size={24} className="text-white" />
                         </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          venue.status === 'active' 
+                            ? 'bg-emerald/10 text-emerald border border-emerald/20' 
+                            : 'bg-gray-100 text-gray-800 border border-gray-200'
+                        }`}>
+                          {venue.status}
+                        </span>
                       </div>
-                      <p><span className="font-medium text-deep-blue">Capacity:</span> {venue.capacity} people</p>
-                      {venue.amenities && venue.amenities.length > 0 && (
-                        <p><span className="font-medium text-deep-blue">Amenities:</span> {venue.amenities.join(', ')}</p>
-                      )}
-                    </div>
 
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <p className="text-xs text-slate-gray">
-                        Added: {new Date(venue.createdAt).toLocaleDateString()}
-                      </p>
+                      <h3 className="text-lg font-bold text-deep-blue mb-2">{venue.name}</h3>
+                      
+                      <div className="space-y-2 text-sm text-slate-gray">
+                        <div className="flex items-start">
+                          <MapPin size={16} className="mr-2 mt-0.5 text-teal" />
+                          <div>
+                            <p>{venue.location.address}</p>
+                            <p>{venue.location.city}, {venue.location.state}</p>
+                          </div>
+                        </div>
+                        <p><span className="font-medium text-deep-blue">Capacity:</span> {venue.capacity} people</p>
+                        {venue.amenities && venue.amenities.length > 0 && (
+                          <p><span className="font-medium text-deep-blue">Amenities:</span> {venue.amenities.join(', ')}</p>
+                        )}
+                      </div>
+
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <p className="text-xs text-slate-gray">
+                          Added: {new Date(venue.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -226,6 +243,60 @@ export default function VenuesPage() {
           </div>
         </main>
       </div>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900">Add New Venue</h3>
+              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Venue Image</label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                  {formData.image ? (
+                    <img src={formData.image} alt="Preview" className="w-full h-32 object-cover rounded-lg mb-2" />
+                  ) : (
+                    <Upload className="mx-auto text-gray-400 mb-2" size={32} />
+                  )}
+                  <input type="file" accept=".png,.jpg,.jpeg,.svg" onChange={handleImageUpload} className="hidden" id="image-upload" />
+                  <label htmlFor="image-upload" className="cursor-pointer text-sm text-teal hover:text-teal/80">
+                    {formData.image ? 'Change Image' : 'Upload Image'}
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Venue Name</label>
+                <input type="text" required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                <input type="text" required value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                  <input type="text" required value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">State</label>
+                  <input type="text" required value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Capacity</label>
+                <input type="number" required value={formData.capacity} onChange={(e) => setFormData({ ...formData, capacity: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+              </div>
+              <button type="submit" disabled={submitting} className="w-full py-2 bg-emerald text-white rounded-lg hover:bg-emerald/90 disabled:opacity-50">
+                {submitting ? 'Adding...' : 'Add Venue'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
