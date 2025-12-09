@@ -221,31 +221,28 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _selectedCategory,
-              decoration: InputDecoration(
-                hintText: 'Select event category',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFF001F3F)),
-                ),
-                contentPadding: const EdgeInsets.all(16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
               ),
-              items: _categories.map((category) {
-                return DropdownMenuItem<String>(
-                  value: category['name'],
-                  child: Text(category['name']),
-                );
-              }).toList(),
-              onChanged: (value) => setState(() => _selectedCategory = value),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedCategory,
+                  isExpanded: true,
+                  hint: const Text('Select event category'),
+                  menuMaxHeight: 300,
+                  items: _categories.map((category) {
+                    return DropdownMenuItem<String>(
+                      value: category['name'],
+                      child: Text(category['name']),
+                    );
+                  }).toList(),
+                  onChanged: (value) => setState(() => _selectedCategory = value),
+                ),
+              ),
             ),
             const SizedBox(height: 16),
             
@@ -259,31 +256,28 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _selectedLanguage,
-              decoration: InputDecoration(
-                hintText: 'Select event language',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFF001F3F)),
-                ),
-                contentPadding: const EdgeInsets.all(16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
               ),
-              items: _languages.map((language) {
-                return DropdownMenuItem<String>(
-                  value: language,
-                  child: Text(language),
-                );
-              }).toList(),
-              onChanged: (value) => setState(() => _selectedLanguage = value),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedLanguage,
+                  isExpanded: true,
+                  hint: const Text('Select event language'),
+                  menuMaxHeight: 300,
+                  items: _languages.map((language) {
+                    return DropdownMenuItem<String>(
+                      value: language,
+                      child: Text(language),
+                    );
+                  }).toList(),
+                  onChanged: (value) => setState(() => _selectedLanguage = value),
+                ),
+              ),
             ),
             
             const SizedBox(height: 32),
