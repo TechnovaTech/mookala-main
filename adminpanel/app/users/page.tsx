@@ -201,7 +201,12 @@ export default function UserManagement() {
                               <Users className="text-white w-5 h-5" />
                             </div>
                             <div className="ml-4">
-                              <div className="text-sm font-medium text-gray-900">{user.name}</div>
+                              <button 
+                                onClick={() => window.location.href = `/users/${user.id}`}
+                                className="text-sm font-medium text-gray-900 hover:text-teal cursor-pointer"
+                              >
+                                {user.name}
+                              </button>
                               <div className="text-sm text-gray-500">Phone: {user.phone}</div>
                             </div>
                           </div>
@@ -211,8 +216,7 @@ export default function UserManagement() {
                           <div className="text-sm text-gray-500">{user.phone}</div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900">{user.city}</div>
-                          <div className="text-sm text-gray-500">Genres: {user.genres?.length || 0}</div>
+                          <div className="text-sm text-gray-900">{user.city || 'N/A'}</div>
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500">{formatDate(user.createdAt)}</td>
                         <td className="px-6 py-4">
