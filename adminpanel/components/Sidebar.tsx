@@ -61,16 +61,31 @@ export default function Sidebar() {
   React.useEffect(() => {
     const path = window.location.pathname
     if (path === '/' || path === '/dashboard') setActiveItem('Dashboard')
-    else if (path === '/users') setActiveItem('All Users')
-    else if (path === '/artists') setActiveItem('Artists')
-    else if (path === '/organizers') setActiveItem('Organizers')
+    else if (path === '/users') {
+      setActiveItem('All Users')
+      setOpenDropdown('User Management')
+    }
+    else if (path === '/artists' || path.startsWith('/artists/')) {
+      setActiveItem('Artists')
+      setOpenDropdown('User Management')
+    }
+    else if (path === '/organizers' || path.startsWith('/organizers/')) {
+      setActiveItem('Organizers')
+      setOpenDropdown('User Management')
+    }
     else if (path === '/events') setActiveItem('Event Management')
     else if (path === '/kyc') setActiveItem('KYC Management')
     else if (path === '/finance') setActiveItem('Ticketing & Finance')
-    else if (path === '/banners') setActiveItem('Homepage Banners')
-    else if (path === '/ads') setActiveItem('Sponsored Ads')
+    else if (path === '/banners') {
+      setActiveItem('Homepage Banners')
+      setOpenDropdown('Banner/Ads Manager')
+    }
+    else if (path === '/ads') {
+      setActiveItem('Sponsored Ads')
+      setOpenDropdown('Banner/Ads Manager')
+    }
     else if (path === '/categories') setActiveItem('Category Manager')
-    else if (path === '/venues') setActiveItem('Venue Manager')
+    else if (path === '/venues' || path.startsWith('/venues/')) setActiveItem('Venue Manager')
     else if (path === '/settings') setActiveItem('Master Settings')
   }, [])
 
