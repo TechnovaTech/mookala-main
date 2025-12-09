@@ -1,51 +1,56 @@
 import 'package:flutter/material.dart';
 
 class CreateTicketScreen extends StatefulWidget {
-  const CreateTicketScreen({super.key});
+  final Map<String, dynamic>? venueData;
+  
+  const CreateTicketScreen({super.key, this.venueData});
 
   @override
   State<CreateTicketScreen> createState() => _CreateTicketScreenState();
 }
 
 class _CreateTicketScreenState extends State<CreateTicketScreen> {
-  String _selectedTicketType = 'Paid';
-  bool _showMoreOptions = false;
-  final TextEditingController _ticketNameController = TextEditingController();
-  final TextEditingController _numberOfTicketsController = TextEditingController();
-  final TextEditingController _ticketPriceController = TextEditingController();
-  final TextEditingController _ticketDescriptionController = TextEditingController();
-  final TextEditingController _additionalInstructionController = TextEditingController();
-  final TextEditingController _minTicketsController = TextEditingController(text: '0');
-  final TextEditingController _maxTicketsController = TextEditingController(text: '20');
-  String _selectedCurrency = 'USD (\$)';
+  Map<String, TextEditingController> _categoryPriceControllers = {};
+  Map<String, int> _categorySeatCounts = {};
+  String _selectedCurrency = 'INR (₹)';
 
   @override
   void initState() {
     super.initState();
-    _ticketNameController.addListener(_updateButtonState);
-    _numberOfTicketsController.addListener(_updateButtonState);
-    _ticketPriceController.addListener(_updateButtonState);
+    if (widget.venueData != null && widget.venueData!['seatCategories'] != null) {
+      final seatCategories = widget.venueData!['seatCategories'] as Map<String, dynamic>;
+      seatCategories.forEach((category, seats) {
+        _categoryPriceControllers[category] = TextEditingController();
+        _categorySeatCounts[category] = _parseSeatCount(seats.toString());
+      });
+    }
   }
 
-  void _updateButtonState() {
-    setState(() {});
+  int _parseSeatCount(String seatString) {
+    int count = 0;
+    final parts = seatString.split(',').map((p) => p.trim());
+    for (var part in parts) {
+      if (part.contains('-')) {
+        final range = part.split('-');
+        if (range.length == 2) {
+          final start = int.tryParse(range[0].trim()) ?? 0;
+          final end = int.tryParse(range[1].trim()) ?? 0;
+          count += (end - start + 1);
+        }
+      } else {
+        if (int.tryParse(part) != null) count++;
+      }
+    }
+    return count;
   }
 
   bool get _isFormValid {
-    return _ticketNameController.text.isNotEmpty &&
-           _numberOfTicketsController.text.isNotEmpty &&
-           _ticketPriceController.text.isNotEmpty;
+    return _categoryPriceControllers.values.any((controller) => controller.text.isNotEmpty);
   }
 
   @override
   void dispose() {
-    _ticketNameController.dispose();
-    _numberOfTicketsController.dispose();
-    _ticketPriceController.dispose();
-    _ticketDescriptionController.dispose();
-    _additionalInstructionController.dispose();
-    _minTicketsController.dispose();
-    _maxTicketsController.dispose();
+    _categoryPriceControllers.values.forEach((controller) => controller.dispose());
     super.dispose();
   }
 
@@ -61,7 +66,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'Create new tickets',
+          'Manage tickets',
           style: TextStyle(
             color: Colors.white,
             fontSize: 18,
@@ -74,374 +79,135 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Add or edit tickets',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 24),
-            
-
-            
-            // Ticket name
-            Row(
-              children: [
-                const Text(
-                  'Ticket name*',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '${_ticketNameController.text.length}/60',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _ticketNameController,
-              maxLength: 60,
-              decoration: InputDecoration(
-                hintText: 'Ex. Early bird, VIP, Gold, Silver etc.',
-                hintStyle: const TextStyle(color: Colors.grey),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Colors.grey),
-                ),
-                counterText: '',
-              ),
-              onChanged: (value) => setState(() {}),
-            ),
-            const SizedBox(height: 24),
-            
-            // Number of tickets
-            const Text(
-              'Number of ticket(s) on sale*',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _numberOfTicketsController,
-              decoration: InputDecoration(
-                hintText: 'Number of ticket(s) on sale',
-                hintStyle: const TextStyle(color: Colors.grey),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Colors.grey),
-                ),
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 24),
-            
-            // Ticket price
-            const Text(
-              'Ticket price*',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Container(
-                  width: 120,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedCurrency,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      items: ['USD (\$)', 'EUR (€)', 'GBP (£)', 'INR (₹)']
-                          .map((currency) => DropdownMenuItem(
-                                value: currency,
-                                child: Text(currency),
-                              ))
-                          .toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedCurrency = value!;
-                        });
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _ticketPriceController,
-                    decoration: InputDecoration(
-                      hintText: '0',
-                      hintStyle: const TextStyle(color: Colors.grey),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Colors.grey),
-                      ),
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            
-            // Ticket description
-            Row(
-              children: [
-                const Text(
-                  'Ticket description',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Icon(Icons.help_outline, size: 16, color: Colors.grey),
-                const Spacer(),
-                Text(
-                  '${_ticketDescriptionController.text.length}/500',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _ticketDescriptionController,
-              maxLines: 4,
-              maxLength: 500,
-              decoration: InputDecoration(
-                hintText: 'Type your description here',
-                hintStyle: const TextStyle(color: Colors.grey),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Colors.grey),
-                ),
-                counterText: '',
-              ),
-              onChanged: (value) => setState(() {}),
-            ),
-            const SizedBox(height: 24),
-            
-            // More options
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _showMoreOptions = !_showMoreOptions;
-                });
-              },
-              child: Row(
-                children: [
-                  const Text(
-                    'More options',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const Spacer(),
-                  Icon(
-                    _showMoreOptions ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                    color: Colors.grey,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Add ticket description to join, specify sales period, mention deliverables etc.',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
-            ),
-            
-            if (_showMoreOptions) ...[
-              const SizedBox(height: 24),
-              
-              // Additional instruction
-              Row(
-                children: [
-                  const Text(
-                    'Additional instruction',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.help_outline, size: 16, color: Colors.grey),
-                  const Spacer(),
-                  Text(
-                    '${_additionalInstructionController.text.length}/1000',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _additionalInstructionController,
-                maxLines: 4,
-                maxLength: 1000,
-                decoration: InputDecoration(
-                  hintText: 'Type your instruction here',
-                  hintStyle: const TextStyle(color: Colors.grey),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.grey),
-                  ),
-                  counterText: '',
-                ),
-                onChanged: (value) => setState(() {}),
-              ),
-              const SizedBox(height: 24),
-              
-              // Ticket sales start
+            if (widget.venueData == null || _categoryPriceControllers.isEmpty) ...[
               const Text(
-                'Ticket sales start',
+                'No venue seat categories found. Please select a venue with seat categories.',
                 style: TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black87,
+                  color: Colors.red,
                 ),
               ),
-              const SizedBox(height: 8),
-              TextField(
-                decoration: InputDecoration(
-                  hintText: 'Select date',
-                  hintStyle: const TextStyle(color: Colors.grey),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.grey),
-                  ),
-                  prefixIcon: const Icon(Icons.calendar_today, color: Colors.grey),
-                  suffixIcon: const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
+            ] else ...[
+              const Text(
+                'Set prices for seat categories',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
                 ),
-                readOnly: true,
-                onTap: () async {
-                  final date = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime.now(),
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                  );
-                  if (date != null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Sales start date: ${date.toString().split(' ')[0]}')),
-                    );
-                  }
-                },
               ),
               const SizedBox(height: 24),
               
-              // Ticket sales end
-              const Text(
-                'Ticket sales end',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                decoration: InputDecoration(
-                  hintText: 'Select date',
-                  hintStyle: const TextStyle(color: Colors.grey),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.grey),
-                  ),
-                  prefixIcon: const Icon(Icons.calendar_today, color: Colors.grey),
-                  suffixIcon: const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
-                ),
-                readOnly: true,
-                onTap: () async {
-                  final date = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime.now(),
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                  );
-                  if (date != null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Sales end date: ${date.toString().split(' ')[0]}')),
-                    );
-                  }
-                },
-              ),
-              const SizedBox(height: 24),
-              
-              // Number of tickets allowed per transaction
-              const Text(
-                'Number of tickets allowed per transaction',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
+              ..._categoryPriceControllers.keys.map((category) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _minTicketsController,
-                      decoration: InputDecoration(
-                        labelText: 'Min',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Colors.grey),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF001F3F).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Icon(
+                                Icons.event_seat,
+                                color: Color(0xFF001F3F),
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    category,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Total Seats: ${_categorySeatCounts[category]}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: TextField(
-                      controller: _maxTicketsController,
-                      decoration: InputDecoration(
-                        labelText: 'Max',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Colors.grey),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Container(
+                              width: 120,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: _selectedCurrency,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                  items: ['INR (₹)', 'USD (\$)', 'EUR (€)', 'GBP (£)']
+                                      .map((currency) => DropdownMenuItem(
+                                            value: currency,
+                                            child: Text(currency),
+                                          ))
+                                      .toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedCurrency = value!;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: _categoryPriceControllers[category],
+                                decoration: InputDecoration(
+                                  hintText: 'Enter price',
+                                  hintStyle: const TextStyle(color: Colors.grey),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: const BorderSide(color: Colors.grey),
+                                  ),
+                                ),
+                                keyboardType: TextInputType.number,
+                                onChanged: (_) => setState(() {}),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      keyboardType: TextInputType.number,
+                      ],
                     ),
                   ),
+                  const SizedBox(height: 16),
                 ],
-              ),
+              )).toList(),
             ],
             
-            const SizedBox(height: 40),
+            const SizedBox(height: 24),
+            
+            // Old ticket name field - REMOVE THIS SECTION
+            const SizedBox(height: 16),
             
             // Action buttons
             Row(
@@ -471,18 +237,22 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: _isFormValid ? () {
-                      final ticketData = {
-                        'name': _ticketNameController.text,
-                        'quantity': _numberOfTicketsController.text,
-                        'price': _ticketPriceController.text,
-                        'currency': _selectedCurrency,
-                        'description': _ticketDescriptionController.text,
-                      };
+                      final tickets = <Map<String, dynamic>>[];
+                      _categoryPriceControllers.forEach((category, controller) {
+                        if (controller.text.isNotEmpty) {
+                          tickets.add({
+                            'name': category,
+                            'quantity': _categorySeatCounts[category].toString(),
+                            'price': controller.text,
+                            'currency': _selectedCurrency,
+                          });
+                        }
+                      });
                       
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Ticket created successfully!')),
+                        const SnackBar(content: Text('Tickets created successfully!')),
                       );
-                      Navigator.pop(context, ticketData);
+                      Navigator.pop(context, tickets);
                     } : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _isFormValid ? const Color(0xFF001F3F) : Colors.grey,
@@ -508,34 +278,4 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
     );
   }
 
-  Widget _buildTicketTypeButton(String type) {
-    bool isSelected = _selectedTicketType == type;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _selectedTicketType = type;
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF001F3F) : Colors.white,
-            border: Border.all(
-              color: isSelected ? const Color(0xFF001F3F) : Colors.grey,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            type,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }

@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const name = searchParams.get('name');
+    
     const { db } = await connectToDatabase();
-    const venues = await db.collection('venues').find({}).toArray();
+    const query = name ? { name: { $regex: new RegExp(`^${name}$`, 'i') } } : {};
+    const venues = await db.collection('venues').find(query).toArray();
     
     return NextResponse.json({ 
       success: true, 
@@ -16,6 +20,7 @@ export async function GET() {
         amenities: v.amenities || [],
         status: v.status || 'active',
         image: v.image || null,
+        seatCategories: v.seatCategories || {},
         createdAt: v.createdAt
       }))
     });

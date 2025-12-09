@@ -18,22 +18,59 @@ class AddTicketsScreen extends StatefulWidget {
 class _AddTicketsScreenState extends State<AddTicketsScreen> {
   List<Map<String, dynamic>> _tickets = [];
   bool _isLoading = false;
+  Map<String, dynamic>? _venueData;
+  bool _loadingVenue = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchVenueDetails();
+  }
+
+  Future<void> _fetchVenueDetails() async {
+    if (widget.eventData['location'] != null && widget.eventData['location']['name'] != null) {
+      try {
+        final response = await http.get(
+          Uri.parse('http://localhost:3000/api/venues?name=${Uri.encodeComponent(widget.eventData['location']['name'])}'),
+        );
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data['success'] && data['venues'] != null && data['venues'].isNotEmpty) {
+            setState(() {
+              _venueData = data['venues'][0];
+              _loadingVenue = false;
+            });
+          } else {
+            setState(() => _loadingVenue = false);
+          }
+        } else {
+          setState(() => _loadingVenue = false);
+        }
+      } catch (e) {
+        setState(() => _loadingVenue = false);
+      }
+    } else {
+      setState(() => _loadingVenue = false);
+    }
+  }
 
   void _addTicket() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const CreateTicketScreen()),
+      MaterialPageRoute(builder: (context) => CreateTicketScreen(venueData: _venueData)),
     );
     
-    if (result != null) {
+    if (result != null && result is List) {
       setState(() {
-        _tickets.add({
-          'id': '1211${4225 + _tickets.length}',
-          'name': result['name'],
-          'price': '₹${result['price']}.00',
-          'quantity': result['quantity'],
-          'sold': '0',
-        });
+        for (var ticket in result) {
+          _tickets.add({
+            'id': '1211${4225 + _tickets.length}',
+            'name': ticket['name'],
+            'price': '₹${ticket['price']}.00',
+            'quantity': ticket['quantity'],
+            'sold': '0',
+          });
+        }
       });
     }
   }
@@ -94,7 +131,7 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
                 onPressed: _addTicket,
                 icon: const Icon(Icons.confirmation_number, color: Colors.white),
                 label: const Text(
-                  'Add tickets',
+                  'Manage Tickets',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
