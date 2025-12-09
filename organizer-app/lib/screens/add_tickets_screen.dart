@@ -315,6 +315,8 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
         'name': widget.eventData['name'] ?? 'Untitled Event',
         'category': widget.eventData['category'],
         'language': widget.eventData['language'],
+        'description': widget.eventData['description'],
+        'terms': widget.eventData['terms'],
         'locationType': widget.eventData['locationType'] ?? 'venue',
         'startDate': widget.eventData['startDate'] ?? '',
         'startTime': widget.eventData['startTime'] ?? '',

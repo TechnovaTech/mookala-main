@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'edit_event_screen.dart';
 import 'jatra_registration_screen.dart';
 import 'qr_scanner_screen.dart';
-import 'event_media_upload_screen.dart';
+import 'event_details_screen.dart';
 import 'profile_screen.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -1471,7 +1471,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => EventMediaUploadScreen(eventData: eventData),
+        builder: (context) => EventDetailsScreen(eventData: eventData),
       ),
     );
   }

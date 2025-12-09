@@ -77,6 +77,8 @@ export async function POST(request: NextRequest) {
       ...eventData,
       category: eventData.category || null,
       language: eventData.language || null,
+      description: eventData.description || null,
+      terms: eventData.terms || null,
       status: eventData.status || 'pending',
       createdAt: new Date(),
       updatedAt: new Date(),

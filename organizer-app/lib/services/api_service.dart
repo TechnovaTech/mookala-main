@@ -225,6 +225,7 @@ class ApiService {
     required String date,
     required String time,
     String? description,
+    String? terms,
     List<String>? artists,
     List<String>? committeeMembers,
   }) async {
@@ -245,6 +246,7 @@ class ApiService {
           'date': date,
           'time': time,
           'description': description,
+          'terms': terms,
           'artists': artists,
           'committeeMembers': committeeMembers,
           'organizerPhone': phone,
