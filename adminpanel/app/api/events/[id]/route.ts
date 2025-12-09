@@ -40,13 +40,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     ]).toArray();
 
     if (event.length === 0) {
-      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Event not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ event: event[0] });
+    return NextResponse.json({ success: true, event: event[0] });
   } catch (error) {
     console.error('Error fetching event details:', error);
-    return NextResponse.json({ error: 'Failed to fetch event details' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to fetch event details' }, { status: 500 });
   }
 }
 
