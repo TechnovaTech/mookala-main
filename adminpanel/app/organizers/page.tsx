@@ -138,7 +138,11 @@ export default function OrganizersPage() {
             ) : (
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {organizers.map((organizer) => (
-                  <div key={organizer._id} className="bg-gradient-to-br from-gray-50 to-white rounded-xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all">
+                  <div 
+                    key={organizer._id} 
+                    onClick={() => window.location.href = `/organizers/${organizer._id}`}
+                    className="bg-gradient-to-br from-gray-50 to-white rounded-xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all cursor-pointer"
+                  >
                     <div className="flex items-center justify-between mb-4">
                       <div className="w-12 h-12 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-md">
                         <span className="text-white font-semibold text-lg">
