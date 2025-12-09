@@ -15,7 +15,9 @@ interface ArtistDetail {
   pricing?: string
   status: string
   createdAt: string
-  media?: string[]
+  profileImage?: string
+  bannerImage?: string
+  media?: Array<{data: string, type: string} | string>
   events?: any[]
 }
 
@@ -150,26 +152,35 @@ export default function ArtistDetailPage() {
         <main className="p-10 mt-24">
           {/* Artist Header Card */}
           <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden mb-6">
-            <div className="bg-gradient-to-r from-emerald to-teal p-8">
+            {artist.bannerImage && (
+              <div className="h-48 w-full overflow-hidden">
+                <img src={artist.bannerImage} alt="Cover" className="w-full h-full object-cover" />
+              </div>
+            )}
+            <div className={`${artist.bannerImage ? 'bg-white' : 'bg-gradient-to-r from-emerald to-teal'} p-8`}>
               <div className="flex items-center gap-6">
-                <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-lg">
-                  <Music size={48} className="text-teal" />
+                <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-lg overflow-hidden">
+                  {artist.profileImage ? (
+                    <img src={artist.profileImage} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <Music size={48} className="text-teal" />
+                  )}
                 </div>
-                <div className="text-white flex-1">
+                <div className={`${artist.bannerImage ? 'text-gray-900' : 'text-white'} flex-1`}>
                   <h2 className="text-3xl font-bold">{artist.name || 'Unnamed Artist'}</h2>
-                  <p className="text-white/80 mt-1">{artist.email || artist.phone}</p>
+                  <p className={`${artist.bannerImage ? 'text-gray-600' : 'text-white/80'} mt-1`}>{artist.email || artist.phone}</p>
                   <div className="mt-3 flex items-center gap-3">
                     <span className={`px-3 py-1 rounded-full text-sm ${
                       artist.status === 'completed' 
-                        ? 'bg-white/20 text-white' 
+                        ? artist.bannerImage ? 'bg-emerald/20 text-emerald' : 'bg-white/20 text-white'
                         : artist.status === 'verified'
                         ? 'bg-yellow-400 text-yellow-900'
-                        : 'bg-white/10 text-white'
+                        : artist.bannerImage ? 'bg-gray-200 text-gray-700' : 'bg-white/10 text-white'
                     }`}>
                       {artist.status}
                     </span>
                     {artist.genre && (
-                      <span className="px-3 py-1 bg-white/20 text-white rounded-full text-sm">
+                      <span className={`px-3 py-1 rounded-full text-sm ${artist.bannerImage ? 'bg-teal/20 text-teal' : 'bg-white/20 text-white'}`}>
                         {artist.genre}
                       </span>
                     )}
@@ -259,18 +270,21 @@ export default function ArtistDetailPage() {
                 Media Gallery ({artist.media.length})
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {artist.media.map((mediaUrl, idx) => (
-                  <div key={idx} className="aspect-square rounded-lg overflow-hidden border border-gray-200 hover:shadow-lg transition-all">
-                    <img 
-                      src={mediaUrl} 
-                      alt={`Media ${idx + 1}`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23f0f0f0" width="200" height="200"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage%3C/text%3E%3C/svg%3E'
-                      }}
-                    />
-                  </div>
-                ))}
+                {artist.media.map((media, idx) => {
+                  const mediaUrl = typeof media === 'string' ? media : media.data;
+                  return (
+                    <div key={idx} className="aspect-square rounded-lg overflow-hidden border border-gray-200 hover:shadow-lg transition-all">
+                      <img 
+                        src={mediaUrl} 
+                        alt={`Media ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23f0f0f0" width="200" height="200"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage%3C/text%3E%3C/svg%3E'
+                        }}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

@@ -18,10 +18,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       })
       .toArray();
 
+    const artistId = artist._id.toString();
+    
     return NextResponse.json({ 
       success: true, 
       artist: {
-        _id: artist._id.toString(),
+        _id: artistId,
         phone: artist.phone,
         name: artist.name,
         email: artist.email,
@@ -31,7 +33,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         pricing: artist.pricing,
         status: artist.status,
         createdAt: artist.createdAt,
-        media: artist.media || [],
+        profileImage: artist.profileImage ? `/api/images/${artistId}?type=profile` : null,
+        bannerImage: artist.bannerImage ? `/api/images/${artistId}?type=banner` : null,
+        media: artist.media ? artist.media.map((_: any, idx: number) => `/api/images/${artistId}?type=media&index=${idx}`) : [],
         events: events.map(e => ({
           id: e._id.toString(),
           name: e.name,
