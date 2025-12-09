@@ -63,28 +63,28 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       return;
     }
 
-    // Check static OTP
-    if (otp != '1234') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid OTP. Please enter 1234')),
-      );
-      return;
-    }
-
     setState(() {
       _isLoading = true;
     });
 
-    // Check if user profile is complete
-    final profileResult = await ApiService.getProfile(widget.phoneNumber);
+    // Verify OTP with backend
+    final verifyResult = await ApiService.verifyOTP(widget.phoneNumber, otp);
     
     setState(() {
       _isLoading = false;
     });
 
-    if (profileResult['success'] == true && 
-        profileResult['user'] != null && 
-        profileResult['user']['status'] == 'completed') {
+    if (verifyResult['success'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(verifyResult['error'] ?? 'Invalid OTP')),
+      );
+      return;
+    }
+
+    // Check if profile is complete
+    bool isProfileComplete = verifyResult['isProfileComplete'] == true;
+
+    if (isProfileComplete) {
       await ApiService.saveUserPhone(widget.phoneNumber);
       Navigator.pushReplacement(
         context,

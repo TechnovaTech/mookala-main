@@ -9,6 +9,8 @@ export async function POST(request: NextRequest) {
   try {
     const { phone } = await request.json();
 
+    console.log('User registration request for phone:', phone);
+
     if (!phone || !/^\d{10}$/.test(phone)) {
       return NextResponse.json({ error: 'Valid 10-digit phone number required' }, { status: 400 });
     }
@@ -19,10 +21,23 @@ export async function POST(request: NextRequest) {
     const existingUser = await db.collection('users').findOne({ phone });
     
     if (existingUser) {
-      return NextResponse.json({ error: 'Phone number already registered' }, { status: 400 });
+      console.log('Existing user found, updating OTP');
+      // User exists, update OTP for re-sending
+      await db.collection('users').updateOne(
+        { phone },
+        { $set: { otp: '1234', updatedAt: new Date() } }
+      );
+      
+      return NextResponse.json({ 
+        success: true, 
+        message: 'OTP sent successfully',
+        otp: '1234',
+        isExisting: true
+      });
     }
 
-    // Store phone with pending status
+    console.log('New user, creating record');
+    // New user - store phone with pending status
     await db.collection('users').insertOne({
       phone,
       status: 'pending',
@@ -30,12 +45,16 @@ export async function POST(request: NextRequest) {
       createdAt: new Date()
     });
 
+    console.log('User created successfully');
+
     return NextResponse.json({ 
       success: true, 
       message: 'OTP sent successfully',
-      otp: '1234' // In production, don't send OTP in response
+      otp: '1234',
+      isExisting: false
     });
   } catch (error) {
+    console.error('Registration error:', error);
     return NextResponse.json({ error: 'Registration failed' }, { status: 500 });
   }
 }
