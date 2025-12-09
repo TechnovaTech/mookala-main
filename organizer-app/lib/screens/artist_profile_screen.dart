@@ -62,6 +62,7 @@ class _ArtistProfileScreenState extends State<ArtistProfileScreen> {
         children: [
           // Cover Image & Profile Picture
           Stack(
+            clipBehavior: Clip.none,
             children: [
               GestureDetector(
                 onTap: () => _showImageSourceDialog(context, 'banner'),
@@ -140,13 +141,13 @@ class _ArtistProfileScreenState extends State<ArtistProfileScreen> {
                           child: _userProfile['profileImage'] != null
                               ? Image.memory(
                                   base64Decode(_userProfile['profileImage']),
-                                  width: 92,
-                                  height: 92,
+                                  width: 100,
+                                  height: 100,
                                   fit: BoxFit.cover,
                                 )
                               : Container(
-                                  width: 92,
-                                  height: 92,
+                                  width: 100,
+                                  height: 100,
                                   color: Colors.grey.shade300,
                                   child: Icon(Icons.person, size: 50, color: Colors.grey.shade600),
                                 ),

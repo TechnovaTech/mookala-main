@@ -4,6 +4,7 @@ import 'filter_screen.dart';
 import 'user_profile_menu_screen.dart';
 import 'category_events_screen.dart';
 import 'organized_event_details_screen.dart';
+import 'artist_detail_screen.dart';
 import '../services/api_service.dart';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -39,14 +40,35 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     
     if (result['success'] == true && result['artists'] != null) {
       setState(() {
-        artists = (result['artists'] as List).map((artist) => {
-          'name': artist['name'] ?? 'Unknown Artist',
-          'image': (artist['profileImage'] != null && artist['profileImage'].toString().isNotEmpty) 
-            ? artist['profileImage'] 
-            : 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(artist['name'] ?? 'Artist')}&size=200&background=001F3F&color=fff',
-          'followers': '0',
-          'isFollowing': false,
-          'id': artist['_id'],
+        artists = (result['artists'] as List).map((artist) {
+          String imageUrl = 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(artist['name'] ?? 'Artist')}&size=200&background=001F3F&color=fff';
+          
+          if (artist['profileImage'] != null && artist['profileImage'].toString().isNotEmpty) {
+            final profileImage = artist['profileImage'].toString();
+            if (profileImage.startsWith('http')) {
+              imageUrl = profileImage;
+            } else {
+              // Base64 image
+              imageUrl = 'data:image/jpeg;base64,$profileImage';
+            }
+          }
+          
+          return {
+            'name': artist['name'] ?? 'Unknown Artist',
+            'image': imageUrl,
+            'imageBytes': (artist['profileImage'] != null && 
+                          !artist['profileImage'].toString().startsWith('http') &&
+                          artist['profileImage'].toString().isNotEmpty)
+                ? base64Decode(artist['profileImage'])
+                : null,
+            'bannerImage': artist['bannerImage'],
+            'bio': artist['bio'],
+            'genre': artist['genre'],
+            'media': artist['media'],
+            'followers': '0',
+            'isFollowing': false,
+            'id': artist['_id'],
+          };
         }).toList();
         _isLoadingArtists = false;
       });
@@ -497,7 +519,16 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                       itemCount: artists.length,
                       itemBuilder: (context, index) {
                         final artist = artists[index];
-                        return Container(
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ArtistDetailScreen(artist: artist),
+                              ),
+                            );
+                          },
+                          child: Container(
                           width: 160,
                           margin: const EdgeInsets.only(right: 16),
                           decoration: BoxDecoration(
@@ -526,25 +557,32 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                                         color: Colors.grey.shade200,
                                       ),
                                       child: ClipOval(
-                                        child: Image.network(
-                                          artist['image'],
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) {
-                                            return Container(
-                                              color: const Color(0xFF001F3F),
-                                              child: Center(
-                                                child: Text(
-                                                  artist['name'].substring(0, 1).toUpperCase(),
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 40,
-                                                    fontWeight: FontWeight.bold,
+                                        child: artist['imageBytes'] != null
+                                          ? Image.memory(
+                                              artist['imageBytes'],
+                                              fit: BoxFit.cover,
+                                              width: 110,
+                                              height: 110,
+                                            )
+                                          : Image.network(
+                                              artist['image'],
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (context, error, stackTrace) {
+                                                return Container(
+                                                  color: const Color(0xFF001F3F),
+                                                  child: Center(
+                                                    child: Text(
+                                                      artist['name'].substring(0, 1).toUpperCase(),
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 40,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
                                                   ),
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
+                                                );
+                                              },
+                                            ),
                                       ),
                                     ),
                                     const SizedBox(height: 8),
@@ -599,6 +637,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                               ),
                             ],
                           ),
+                        ),
                         );
                       },
                     ),
