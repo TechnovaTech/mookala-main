@@ -26,20 +26,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       {
         $lookup: {
           from: 'artists',
-          localField: 'organizerId',
+          localField: 'artists',
           foreignField: '_id',
-          as: 'artist'
+          as: 'artistDetails'
         }
       },
       {
         $unwind: {
           path: '$organizer',
-          preserveNullAndEmptyArrays: true
-        }
-      },
-      {
-        $unwind: {
-          path: '$artist',
           preserveNullAndEmptyArrays: true
         }
       }

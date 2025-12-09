@@ -156,17 +156,7 @@ export default function ArtistsPage() {
                     
                     <div className="space-y-2 text-sm text-slate-gray">
                       <p><span className="font-medium text-deep-blue">Phone:</span> {artist.phone}</p>
-                      {artist.email && <p><span className="font-medium text-deep-blue">Email:</span> {artist.email}</p>}
-                      {artist.city && <p><span className="font-medium text-deep-blue">City:</span> {artist.city}</p>}
-                      {artist.genre && <p><span className="font-medium text-deep-blue">Genre:</span> {artist.genre}</p>}
-                      {artist.pricing && <p><span className="font-medium text-deep-blue">Pricing:</span> ₹{artist.pricing}/hour</p>}
                     </div>
-
-                    {artist.bio && (
-                      <div className="mt-3">
-                        <p className="text-sm text-slate-gray line-clamp-3 bg-gray-50 p-3 rounded-lg">{artist.bio}</p>
-                      </div>
-                    )}
 
                     <div className="mt-4 pt-4 border-t border-gray-200">
                       <p className="text-xs text-slate-gray">

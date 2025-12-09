@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
-import { Calendar, MapPin, Users, Clock, Video, Music, ArrowLeft, Mail, Phone } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import { Calendar, MapPin, Users, Clock, Video, Music, ArrowLeft, Mail, Phone, Bell, ChevronDown, LogOut, User, Settings as SettingsIcon } from 'lucide-react';
+import Sidebar from '@/components/Sidebar';
 
 interface Event {
   _id: string;
@@ -38,6 +39,13 @@ interface Event {
     email: string;
     phone?: string;
   };
+  artistDetails?: Array<{
+    _id: string;
+    name: string;
+    genre?: string;
+    email?: string;
+    phone?: string;
+  }>;
   tickets?: Array<{
     name: string;
     price: string;
@@ -48,8 +56,10 @@ interface Event {
 
 export default function EventDetailsPage() {
   const params = useParams();
+  const router = useRouter();
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   useEffect(() => {
     if (params.id) {
@@ -112,20 +122,79 @@ export default function EventDetailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <button
-            onClick={() => window.history.back()}
-            className="flex items-center gap-2 text-blue-600 hover:text-blue-800 mb-4"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Events
-          </button>
-          
+    <div className="flex min-h-screen bg-gray-50">
+      <Sidebar />
+      
+      <div className="flex-1 ml-64 transition-all duration-300 min-h-screen">
+        <header className="bg-white shadow-lg border-b border-gray-200 px-6 py-4 fixed top-0 right-0 left-64 z-40">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => router.push('/events')}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-all"
+              >
+                <ArrowLeft size={20} className="text-slate-gray" />
+              </button>
+              <div>
+                <h1 className="text-2xl font-bold text-deep-blue">Event Details</h1>
+                <p className="text-slate-gray text-sm">View complete event information</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <button className="relative p-2 text-slate-gray hover:text-deep-blue hover:bg-teal/10 rounded-lg transition-all">
+                <Bell size={20} />
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald text-white text-xs rounded-full flex items-center justify-center animate-pulse">
+                  3
+                </span>
+              </button>
+              
+              <div className="relative">
+                <button
+                  onClick={() => setIsProfileOpen(!isProfileOpen)}
+                  className="flex items-center space-x-3 bg-gray-50 rounded-lg px-3 py-2 hover:bg-teal/10 transition-all cursor-pointer"
+                >
+                  <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-md">
+                    <span className="text-white text-sm font-bold">A</span>
+                  </div>
+                  <div className="hidden md:block text-left">
+                    <p className="text-sm font-medium text-deep-blue">Admin User</p>
+                    <p className="text-xs text-slate-gray">Super Admin</p>
+                  </div>
+                  <ChevronDown size={16} className={`text-slate-gray transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
+                </button>
+                
+                {isProfileOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                      <User size={16} className="mr-3 text-slate-gray" />
+                      Profile Settings
+                    </button>
+                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                      <SettingsIcon size={16} className="mr-3 text-slate-gray" />
+                      Account Settings
+                    </button>
+                    <hr className="my-2 border-gray-200" />
+                    <button 
+                      onClick={() => window.location.href = '/login'}
+                      className="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <LogOut size={16} className="mr-3" />
+                      Logout
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="p-10 mt-24">
+          <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 mb-6">
           <div className="flex justify-between items-start">
             <div>
-              <h1 className="text-3xl font-bold text-gray-800 mb-2">{event.name}</h1>
+              <h2 className="text-3xl font-bold text-gray-800 mb-2">{event.name}</h2>
               <div className="flex items-center gap-4 text-gray-600">
                 <div className="flex items-center gap-2">
                   {getLocationTypeIcon(event.locationType)}
@@ -220,25 +289,49 @@ export default function EventDetailsPage() {
                 </div>
               )}
 
-              {event.artist && (
+              {(event.artist || (event.artistDetails && event.artistDetails.length > 0)) && (
                 <div>
                   <h3 className="font-semibold mb-3 flex items-center gap-2">
                     <Music className="w-4 h-4" />
                     Artist Details
                   </h3>
-                  <div className="space-y-2 text-sm">
-                    <p><strong>Name:</strong> {event.artist.name}</p>
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-gray-500" />
-                      <span>{event.artist.email}</span>
-                    </div>
-                    {event.artist.phone && (
+                  {event.artist && (
+                    <div className="space-y-2 text-sm mb-4">
+                      <p><strong>Name:</strong> {event.artist.name}</p>
                       <div className="flex items-center gap-2">
-                        <Phone className="w-4 h-4 text-gray-500" />
-                        <span>{event.artist.phone}</span>
+                        <Mail className="w-4 h-4 text-gray-500" />
+                        <span>{event.artist.email}</span>
                       </div>
-                    )}
-                  </div>
+                      {event.artist.phone && (
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-4 h-4 text-gray-500" />
+                          <span>{event.artist.phone}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {event.artistDetails && event.artistDetails.length > 0 && (
+                    <div className="space-y-3">
+                      {event.artistDetails.map((artist, index) => (
+                        <div key={artist._id} className="p-3 bg-gray-50 rounded-lg">
+                          <p className="font-medium">{artist.name}</p>
+                          {artist.genre && <p className="text-sm text-gray-600">Genre: {artist.genre}</p>}
+                          {artist.email && (
+                            <div className="flex items-center gap-2 text-sm mt-1">
+                              <Mail className="w-3 h-3 text-gray-500" />
+                              <span>{artist.email}</span>
+                            </div>
+                          )}
+                          {artist.phone && (
+                            <div className="flex items-center gap-2 text-sm mt-1">
+                              <Phone className="w-3 h-3 text-gray-500" />
+                              <span>{artist.phone}</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -323,6 +416,8 @@ export default function EventDetailsPage() {
             </div>
           </div>
         </div>
+          </div>
+        </main>
       </div>
     </div>
   );

@@ -170,14 +170,6 @@ export default function OrganizersPage() {
                     
                     <div className="space-y-2 text-sm text-slate-gray">
                       <p><span className="font-medium text-deep-blue">Phone:</span> {organizer.phone}</p>
-                      {organizer.email && <p><span className="font-medium text-deep-blue">Email:</span> {organizer.email}</p>}
-                      {organizer.city && <p><span className="font-medium text-deep-blue">City:</span> {organizer.city}</p>}
-                      {organizer.aadharId && (
-                        <p><span className="font-medium text-deep-blue">Aadhar:</span> {organizer.aadharId}</p>
-                      )}
-                      {organizer.panId && (
-                        <p><span className="font-medium text-deep-blue">PAN:</span> {organizer.panId}</p>
-                      )}
                     </div>
 
                     <div className="mt-4 pt-4 border-t border-gray-200">

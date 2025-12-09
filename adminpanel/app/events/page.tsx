@@ -286,61 +286,40 @@ export default function EventsPage() {
                       )}
                     </div>
                     
-                    <h3 className="font-bold text-lg mb-2 text-center">{event.name}</h3>
+                    <button
+                      onClick={() => window.location.href = `/events/${event._id}`}
+                      className="font-bold text-lg mb-2 text-center hover:text-teal cursor-pointer transition-colors w-full"
+                    >
+                      {event.name}
+                    </button>
                     
                     <div className="space-y-2 text-sm text-gray-600 mb-4">
                       <div className="flex items-center gap-2">
                         <MapPin className="w-4 h-4" />
-                        <span>{event.location?.city || event.organizer?.name || 'Online'}</span>
+                        <span>{event.location?.city || 'Online'}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
                         <span>{event.startDate}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4" />
-                        <span>{Math.floor(Math.random() * 5000) + 500} attendees</span>
-                      </div>
                     </div>
                     
-                    {event.tickets && event.tickets.length > 0 && (
-                      <div className="space-y-1 text-sm mb-4">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Tickets:</span>
-                          <span className="font-medium text-teal-600">
-                            {event.tickets.length === 1 
-                              ? event.tickets[0].price
-                              : `₹${Math.min(...event.tickets.map(t => parseInt(t.price.replace(/[^0-9]/g, ''))))}-${Math.max(...event.tickets.map(t => parseInt(t.price.replace(/[^0-9]/g, ''))))}`
-                            }
-                          </span>
-                        </div>
+                    {event.status === 'pending' && (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => updateEventStatus(event._id, 'approved')}
+                          className="flex-1 px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => updateEventStatus(event._id, 'rejected')}
+                          className="flex-1 px-3 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                        >
+                          Reject
+                        </button>
                       </div>
                     )}
-                    
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => fetchEventDetails(event._id)}
-                        className="flex-1 px-3 py-2 bg-teal-600 text-white rounded text-sm hover:bg-teal-700 flex items-center justify-center gap-1"
-                      >
-                        👁️ View
-                      </button>
-                      {event.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => updateEventStatus(event._id, 'approved')}
-                            className="flex-1 px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => updateEventStatus(event._id, 'rejected')}
-                            className="flex-1 px-3 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
-                    </div>
                   </div>
                 ))}
               </div>

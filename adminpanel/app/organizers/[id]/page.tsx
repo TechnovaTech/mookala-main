@@ -253,7 +253,12 @@ export default function OrganizerDetailPage() {
                         <Building2 size={24} className="text-teal" />
                       </div>
                       <div>
-                        <h4 className="font-semibold text-gray-900">{event.name}</h4>
+                        <button
+                          onClick={() => router.push(`/events/${event._id}`)}
+                          className="font-semibold text-gray-900 hover:text-teal cursor-pointer transition-colors"
+                        >
+                          {event.name}
+                        </button>
                         <p className="text-sm text-gray-500">
                           {typeof event.location === 'object' ? event.location.city : event.location}
                           {event.date && ` • ${new Date(event.date).toLocaleDateString()}`}
