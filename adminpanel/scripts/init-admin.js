@@ -1,7 +1,7 @@
 const { MongoClient } = require('mongodb');
 const bcrypt = require('bcryptjs');
 
-const uri = 'mongodb+srv://Vercel-Admin-investment-manager:S3lAmtlYEjaYMfPC@investment-manager.otkh4mu.mongodb.net/?retryWrites=true&w=majority';
+const uri = 'mongodb://localhost:27017';
 const dbName = 'mookalaa';
 
 async function initAdmin() {

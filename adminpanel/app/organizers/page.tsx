@@ -62,15 +62,6 @@ export default function OrganizersPage() {
                 />
               </div>
               
-              <button 
-                onClick={fetchOrganizers}
-                disabled={loading}
-                className="flex items-center px-4 py-2 bg-emerald text-white rounded-lg hover:bg-emerald/90 transition-all disabled:opacity-50"
-              >
-                <RefreshCw size={16} className={`mr-2 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
-              
               <button className="relative p-2 text-slate-gray hover:text-deep-blue hover:bg-teal/10 rounded-lg transition-all">
                 <Bell size={20} />
                 <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald text-white text-xs rounded-full flex items-center justify-center animate-pulse">
