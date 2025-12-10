@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../services/api_service.dart';
 import 'artist_detail_screen.dart';
+import 'booking_screen.dart';
 
 class OrganizedEventDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> event;
@@ -176,7 +177,14 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: () {
-                        // Handle booking
+                        print('Book Now button pressed!');
+                        print('Event data: $event');
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => BookingScreen(event: event),
+                          ),
+                        );
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF001F3F),

@@ -135,20 +135,21 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> with TickerProv
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => BookingScreen(
-                event: {
-                  'title': 'Birthday Party',
-                  'date': '2025-12-09',
-                  'time': '3:49 PM',
-                  'venue': 'Party Hall',
-                  'price': '₹500'
-                }
+          print('Floating Book Now button pressed!');
+          print('Event data: ${widget.event}');
+          try {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => BookingScreen(event: widget.event),
               ),
-            ),
-          );
+            );
+          } catch (e) {
+            print('Navigation error: $e');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error: $e')),
+            );
+          }
         },
         backgroundColor: const Color(0xFF001F3F),
         label: const Text('Book Now', style: TextStyle(color: Colors.white)),
@@ -238,6 +239,71 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> with TickerProv
           ),
           const SizedBox(height: 12),
           _buildTermsSection(),
+          
+          const SizedBox(height: 40),
+          
+          // Book Now Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                print('Book Now button pressed!');
+                print('Event data: ${widget.event}');
+                
+                // First show a simple dialog to test if button works
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Button Works!'),
+                    content: Text('Event: ${widget.event['title']}'),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          // Now try navigation
+                          try {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => BookingScreen(event: widget.event),
+                              ),
+                            );
+                          } catch (e) {
+                            print('Navigation error: $e');
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error: $e')),
+                            );
+                          }
+                        },
+                        child: const Text('Go to Booking'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF001F3F),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'Book Now',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          
+          const SizedBox(height: 20),
         ],
       ),
     );
