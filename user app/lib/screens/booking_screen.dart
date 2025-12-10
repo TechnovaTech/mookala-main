@@ -180,39 +180,6 @@ class _BookingScreenState extends State<BookingScreen> {
                     ),
                   ),
                   
-                  // Venue Details
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _getVenueName(),
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF001F3F),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Icon(Icons.location_on, color: Colors.grey, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _getVenueAddress(),
-                                style: TextStyle(
-                                  color: Colors.grey.shade600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -291,55 +258,7 @@ class _BookingScreenState extends State<BookingScreen> {
                     ),
                   ),
                   
-                  const SizedBox(height: 20),
-                  
-                  // Quantity Selector
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Number of Tickets',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF001F3F),
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          IconButton(
-                            onPressed: selectedTickets > 1 
-                              ? () => setState(() => selectedTickets--) 
-                              : null,
-                            icon: const Icon(Icons.remove_circle_outline),
-                            color: const Color(0xFF001F3F),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey.shade300),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              selectedTickets.toString(),
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF001F3F),
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: selectedTickets < 10 
-                              ? () => setState(() => selectedTickets++) 
-                              : null,
-                            icon: const Icon(Icons.add_circle_outline),
-                            color: const Color(0xFF001F3F),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+
                 ],
               ),
             ),
@@ -366,9 +285,9 @@ class _BookingScreenState extends State<BookingScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Total Amount',
-                  style: TextStyle(
+                Text(
+                  'Tickets $selectedTickets',
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF001F3F),
@@ -376,8 +295,8 @@ class _BookingScreenState extends State<BookingScreen> {
                 ),
                 Text(
                   selectedCategory != null 
-                    ? '₹${(_getCategoryPrice(selectedCategory!) * selectedTickets).toString()}'
-                    : '₹0',
+                    ? '₹ ${(_getCategoryPrice(selectedCategory!) * selectedTickets).toString()}'
+                    : '₹ 0',
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
