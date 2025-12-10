@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'event_details_screen.dart';
 
 class CategoryEventsScreen extends StatefulWidget {
   final String categoryName;
@@ -26,12 +27,22 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
         {
           'title': 'A.R. Rahman Live Concert',
           'date': 'Sat, 29 Nov, 2025',
+          'time': '7:00 PM',
+          'venue': 'Grand Auditorium',
+          'address': 'Main Street, City Center, State 12345',
+          'category': 'Music',
+          'price': '₹500',
           'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=200&fit=crop',
           'interested': '110+ Interested'
         },
         {
           'title': 'Classical Music Evening',
           'date': 'Sun, 30 Nov, 2025',
+          'time': '6:30 PM',
+          'venue': 'Symphony Hall',
+          'address': 'Cultural District, Downtown',
+          'category': 'Music',
+          'price': '₹400',
           'image': 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=400&h=200&fit=crop',
           'interested': '85+ Interested'
         },
@@ -40,12 +51,22 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
         {
           'title': 'Shakespeare Drama Performance',
           'date': 'Mon, 01 Dec, 2025',
+          'time': '8:00 PM',
+          'venue': 'Royal Theatre',
+          'address': 'Theatre District, Central City',
+          'category': 'Theatre',
+          'price': '₹600',
           'image': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=200&fit=crop',
           'interested': '65+ Interested'
         },
         {
           'title': 'Modern Theatre Workshop',
           'date': 'Tue, 02 Dec, 2025',
+          'time': '7:30 PM',
+          'venue': 'Studio Theatre',
+          'address': 'Arts Quarter, Midtown',
+          'category': 'Theatre',
+          'price': '₹350',
           'image': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=200&fit=crop',
           'interested': '45+ Interested'
         },
@@ -54,12 +75,22 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
         {
           'title': 'Live Rock Concert',
           'date': 'Wed, 03 Dec, 2025',
+          'time': '9:00 PM',
+          'venue': 'Rock Arena',
+          'address': 'Entertainment Complex, South Side',
+          'category': 'Concert',
+          'price': '₹800',
           'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=200&fit=crop',
           'interested': '120+ Interested'
         },
         {
           'title': 'Pop Music Concert',
           'date': 'Thu, 04 Dec, 2025',
+          'time': '8:30 PM',
+          'venue': 'Pop Stadium',
+          'address': 'Music District, North End',
+          'category': 'Concert',
+          'price': '₹700',
           'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=200&fit=crop',
           'interested': '95+ Interested'
         },
@@ -68,12 +99,24 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
         {
           'title': 'Folk Dance Festival',
           'date': 'Fri, 05 Dec, 2025',
+          'time': '6:00 PM',
+          'venue': 'Cultural Center',
+          'address': 'Heritage Park, Old Town',
+          'category': 'Jatra',
+          'price': '₹300',
+          'type': 'jatra',
           'image': 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=400&h=200&fit=crop',
           'interested': '75+ Interested'
         },
         {
           'title': 'Traditional Folk Performance',
           'date': 'Sat, 06 Dec, 2025',
+          'time': '7:00 PM',
+          'venue': 'Folk Theatre',
+          'address': 'Traditional Square, East Side',
+          'category': 'Jatra',
+          'price': '₹250',
+          'type': 'jatra',
           'image': 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=400&h=200&fit=crop',
           'interested': '60+ Interested'
         },
@@ -215,36 +258,46 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
                             // Event image
                             Expanded(
                               flex: 3,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: const BorderRadius.only(
-                                    topLeft: Radius.circular(16),
-                                    topRight: Radius.circular(16),
+                              child: GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => EventDetailsScreen(event: event),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(16),
+                                      topRight: Radius.circular(16),
+                                    ),
+                                    image: DecorationImage(
+                                      image: NetworkImage(event['image']),
+                                      fit: BoxFit.cover,
+                                    ),
                                   ),
-                                  image: DecorationImage(
-                                    image: NetworkImage(event['image']),
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                                child: Stack(
-                                  children: [
-                                    Positioned(
-                                      top: 8,
-                                      right: 8,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: const BoxDecoration(
-                                          color: Colors.white,
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.star_border,
-                                          color: Colors.grey,
-                                          size: 16,
+                                  child: Stack(
+                                    children: [
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.white,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.star_border,
+                                            color: Colors.grey,
+                                            size: 16,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
