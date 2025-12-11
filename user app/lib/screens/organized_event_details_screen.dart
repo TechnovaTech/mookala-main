@@ -200,8 +200,9 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
                       children: [
-                        _buildDetailRow(Icons.calendar_today, _getEventDate(event)),
+                        _buildDetailRow(Icons.calendar_today, _getEventDateTime(event)),
                         _buildDetailRow(Icons.access_time, _getEventDuration(event)),
+                        _buildDetailRow(Icons.person, _getArtistName(event)),
                         _buildDetailRow(Icons.language, _getEventLanguage(event)),
                         _buildDetailRow(Icons.category, _getEventCategory(event)),
                         _buildDetailRow(Icons.location_on, _getEventVenue(event)),
@@ -311,22 +312,174 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
     );
   }
 
-  String _getEventDate(Map<String, dynamic> event) {
+  String _getEventDateTime(Map<String, dynamic> event) {
+    final startDate = event['startDate']?.toString() ?? '';
+    final endDate = event['endDate']?.toString() ?? '';
+    final startTime = event['startTime']?.toString() ?? '';
+    final endTime = event['endTime']?.toString() ?? '';
+    
+    if (startDate.isNotEmpty && endDate.isNotEmpty) {
+      if (startDate == endDate) {
+        return '$startDate ${startTime.isNotEmpty ? "• $startTime" : ""}';
+      } else {
+        return '$startDate - $endDate';
+      }
+    } else if (startDate.isNotEmpty) {
+      return '$startDate ${startTime.isNotEmpty ? "• $startTime" : ""}';
+    }
+    
     return (event['date'] ?? event['eventDate'] ?? 'Date not available').toString();
   }
 
   String _getEventDuration(Map<String, dynamic> event) {
+    final startDate = event['startDate']?.toString() ?? '';
+    final endDate = event['endDate']?.toString() ?? '';
+    final startTime = event['startTime']?.toString() ?? '';
+    final endTime = event['endTime']?.toString() ?? '';
+    
+    if (startDate.isNotEmpty && startTime.isNotEmpty && endDate.isNotEmpty && endTime.isNotEmpty) {
+      try {
+        final startDateTime = _parseDateTime(startDate, startTime);
+        final endDateTime = _parseDateTime(endDate, endTime);
+        
+        if (startDateTime != null && endDateTime != null) {
+          final duration = endDateTime.difference(startDateTime);
+          final days = duration.inDays;
+          final hours = duration.inHours % 24;
+          final minutes = duration.inMinutes % 60;
+          
+          if (days > 0) {
+            return '${days}d ${hours}h';
+          } else if (hours > 0 && minutes > 0) {
+            return '${hours}h ${minutes}m';
+          } else if (hours > 0) {
+            return '${hours}h';
+          } else if (minutes > 0) {
+            return '${minutes}m';
+          }
+        }
+      } catch (e) {
+        return '$startTime - $endTime';
+      }
+    } else if (startTime.isNotEmpty && endTime.isNotEmpty) {
+      try {
+        final start = _parseTime(startTime);
+        final end = _parseTime(endTime);
+        
+        if (start != null && end != null) {
+          final duration = end.difference(start);
+          final hours = duration.inHours;
+          final minutes = duration.inMinutes % 60;
+          
+          if (hours > 0 && minutes > 0) {
+            return '${hours}h ${minutes}m';
+          } else if (hours > 0) {
+            return '${hours}h';
+          } else if (minutes > 0) {
+            return '${minutes}m';
+          }
+        }
+      } catch (e) {
+        return '$startTime - $endTime';
+      }
+    }
+    
     return (event['duration'] ?? event['eventDuration'] ?? '2 Hours').toString();
+  }
+  
+  DateTime? _parseDateTime(String dateStr, String timeStr) {
+    try {
+      final dateParts = dateStr.split('-');
+      if (dateParts.length != 3) return null;
+      
+      final year = int.tryParse(dateParts[0]) ?? 0;
+      final month = int.tryParse(dateParts[1]) ?? 0;
+      final day = int.tryParse(dateParts[2]) ?? 0;
+      
+      final timeParts = timeStr.split(':');
+      if (timeParts.length < 2) return null;
+      
+      final hour = int.tryParse(timeParts[0]) ?? 0;
+      final minute = int.tryParse(timeParts[1].split(' ')[0]) ?? 0;
+      
+      return DateTime(year, month, day, hour, minute);
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  DateTime? _parseTime(String timeStr) {
+    try {
+      // Handle different time formats
+      final now = DateTime.now();
+      
+      // Try parsing "HH:mm" format
+      if (timeStr.contains(':')) {
+        final parts = timeStr.split(':');
+        if (parts.length >= 2) {
+          final hour = int.tryParse(parts[0]) ?? 0;
+          final minute = int.tryParse(parts[1].split(' ')[0]) ?? 0;
+          return DateTime(now.year, now.month, now.day, hour, minute);
+        }
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+  
+  String _getArtistName(Map<String, dynamic> event) {
+    // Check for artistDetails from aggregation
+    if (event['artistDetails'] != null && event['artistDetails'] is List) {
+      final artistDetails = event['artistDetails'] as List;
+      if (artistDetails.isNotEmpty) {
+        final artists = artistDetails.map((artist) => artist['name']?.toString() ?? 'Artist').toList();
+        return artists.join(', ');
+      }
+    }
+    
+    // Check for organizer field from aggregation
+    if (event['organizer'] != null && event['organizer'] is Map) {
+      final organizer = event['organizer'] as Map;
+      if (organizer['name'] != null) {
+        return organizer['name'].toString();
+      }
+    }
+    
+    // Check for direct artist field
+    if (event['artist'] != null) {
+      if (event['artist'] is String) {
+        return event['artist'].toString();
+      } else if (event['artist'] is Map && event['artist']['name'] != null) {
+        return event['artist']['name'].toString();
+      }
+    }
+    
+    // Check for artistName field
+    if (event['artistName'] != null) {
+      return event['artistName'].toString();
+    }
+    
+    return 'Artist not specified';
   }
 
   String _getEventLanguage(Map<String, dynamic> event) {
     if (event['languages'] != null && event['languages'] is List) {
       final languages = event['languages'] as List;
       if (languages.isNotEmpty) {
-        return languages.join(', ');
+        return languages.map((lang) => lang.toString()).join(', ');
       }
     }
-    return (event['language'] ?? event['eventLanguage'] ?? 'Language not specified').toString();
+    
+    if (event['language'] != null && event['language'].toString().isNotEmpty) {
+      return event['language'].toString();
+    }
+    
+    if (event['eventLanguage'] != null && event['eventLanguage'].toString().isNotEmpty) {
+      return event['eventLanguage'].toString();
+    }
+    
+    return 'Language not specified';
   }
 
   String _getEventCategory(Map<String, dynamic> event) {
