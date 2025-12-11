@@ -259,6 +259,50 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
                     ),
                   ),
 
+                  const SizedBox(height: 16),
+
+                  // Terms and Conditions Section (only show if terms exist)
+                  if (_hasTermsAndConditions())
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      child: GestureDetector(
+                        onTap: () => _showTermsAndConditions(),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.description_outlined,
+                                color: Colors.grey.shade600,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'Terms and Conditions',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_forward_ios,
+                                color: Colors.grey.shade400,
+                                size: 16,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
                   const SizedBox(height: 100), // Space for bottom button
                 ],
               ),
@@ -548,5 +592,123 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
         ],
       ),
     );
+  }
+
+  void _showTermsAndConditions() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.8,
+              maxWidth: MediaQuery.of(context).size.width * 0.9,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF001F3F),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Terms and Conditions',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                ),
+                // Content
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(
+                      _getTermsAndConditions(),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.5,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  bool _hasTermsAndConditions() {
+    final event = _fullEventData ?? widget.event;
+    return (event['terms_and_conditions'] != null && event['terms_and_conditions'].toString().trim().isNotEmpty) ||
+           (event['termsAndConditions'] != null && event['termsAndConditions'].toString().trim().isNotEmpty) ||
+           (event['terms'] != null && event['terms'].toString().trim().isNotEmpty);
+  }
+
+  String _getTermsAndConditions() {
+    final event = _fullEventData ?? widget.event;
+    
+    // Check for terms and conditions in event data
+    if (event['terms_and_conditions'] != null && event['terms_and_conditions'].toString().trim().isNotEmpty) {
+      return event['terms_and_conditions'].toString();
+    }
+    
+    // Check for termsAndConditions field
+    if (event['termsAndConditions'] != null && event['termsAndConditions'].toString().trim().isNotEmpty) {
+      return event['termsAndConditions'].toString();
+    }
+    
+    // Check for terms field
+    if (event['terms'] != null && event['terms'].toString().trim().isNotEmpty) {
+      return event['terms'].toString();
+    }
+    
+    // Default terms if organizer hasn't provided any
+    return '''
+TERMS AND CONDITIONS
+
+1. TICKET PURCHASE
+• All sales are final and non-refundable unless event is cancelled.
+• Tickets subject to availability and pricing may change.
+
+2. EVENT ENTRY
+• Valid ticket and ID required for entry.
+• Entry subject to security checks and venue policies.
+
+3. CONDUCT
+• Disruptive behavior may result in removal without refund.
+• Follow all venue rules and staff instructions.
+
+4. LIABILITY
+• Attend at your own risk.
+• Event details subject to change without notice.
+
+5. CONTACT
+• For queries, contact event organizer through official channels.
+
+By purchasing tickets, you agree to these terms.''';
   }
 }
