@@ -28,7 +28,6 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
       final response = await ApiService.getEventDetails(widget.event['id']);
       if (response['success'] == true) {
         setState(() {
-          // Merge widget.event (formatted data) with API response (full data)
           _fullEventData = {
             ...widget.event,
             ...response['event'],
@@ -53,219 +52,204 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
     
     if (_isLoading) {
       return Scaffold(
-        backgroundColor: Colors.grey.shade50,
+        backgroundColor: Colors.white,
         appBar: AppBar(
-          backgroundColor: const Color(0xFF001F3F),
+          backgroundColor: Colors.white,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
             onPressed: () => Navigator.pop(context),
           ),
-          title: const Text(
-            'Event Details',
-            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          title: Text(
+            event['title'] ?? 'Event Details',
+            style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold),
           ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.share, color: Colors.black),
+              onPressed: () {},
+            ),
+          ],
         ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
+
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
+        backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           event['title'] ?? 'Event Details',
-          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share, color: Colors.black),
+            onPressed: () {},
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Event Image
-            Stack(
-              children: [
-                Container(
-                  width: double.infinity,
-                  height: 250,
-                  child: event['image'].toString().startsWith('http')
-                    ? Image.network(
-                        event['image'],
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Image.asset(
-                            'assets/images/concert.jpg',
-                            fit: BoxFit.cover,
-                          );
-                        },
-                      )
-                    : event['image'].toString().startsWith('data:image')
-                      ? Image.memory(
-                          base64Decode(event['image'].toString().split(',')[1]),
-                          width: double.infinity,
-                          height: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Image.asset(
-                              'assets/images/concert.jpg',
-                              fit: BoxFit.cover,
-                            );
-                          },
-                        )
-                      : Image.asset(
-                          event['image'] ?? 'assets/images/concert.jpg',
-                          fit: BoxFit.cover,
-                        ),
-                ),
-                Container(
-                  width: double.infinity,
-                  height: 250,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      const Color(0xFF001F3F).withOpacity(0.7),
-                    ],
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        event['title'] ?? '',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        event['date'] ?? '',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                  ),
-                ),
-              ],
-            ),
-            
-            // Event Details
-            Padding(
-              padding: const EdgeInsets.all(20),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Book Button
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        print('Book Now button pressed!');
-                        print('Event data: $event');
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => BookingScreen(event: event),
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF001F3F),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text(
-                        'Book Now',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Description Section
-                  const Text(
-                    'About This Event',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    event['description'] ?? 'No description available.',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey.shade700,
-                      height: 1.5,
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Event Category
+                  // Event Image
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    width: double.infinity,
+                    height: 200,
+                    margin: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade300),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                    child: Row(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: event['image'].toString().startsWith('http')
+                        ? Image.network(
+                            event['image'],
+                            width: double.infinity,
+                            height: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Image.asset(
+                                'assets/images/concert.jpg',
+                                fit: BoxFit.cover,
+                              );
+                            },
+                          )
+                        : event['image'].toString().startsWith('data:image')
+                          ? Image.memory(
+                              base64Decode(event['image'].toString().split(',')[1]),
+                              width: double.infinity,
+                              height: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Image.asset(
+                                  'assets/images/concert.jpg',
+                                  fit: BoxFit.cover,
+                                );
+                              },
+                            )
+                          : Image.asset(
+                              event['image'] ?? 'assets/images/concert.jpg',
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                  ),
+
+                  // Category Tags
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Wrap(
+                      spacing: 8,
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF001F3F),
-                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.grey.shade800,
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          child: const Icon(
-                            Icons.category,
-                            color: Colors.white,
-                            size: 20,
+                          child: Text(
+                            event['category'] ?? 'Event',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Event Type',
-                              style: TextStyle(
+                        if (event['subcategory'] != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade800,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              event['subcategory'],
+                              style: const TextStyle(
+                                color: Colors.white,
                                 fontSize: 12,
-                                color: Colors.grey,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                            Text(
-                              event['locationType'] ?? event['category'] ?? _getEventType(event['title'] ?? ''),
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Event Details
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      children: [
+                        _buildDetailRow(Icons.calendar_today, event['date'] ?? event['eventDate'] ?? 'Date not available'),
+                        _buildDetailRow(Icons.access_time, event['duration'] ?? event['eventDuration'] ?? 'Duration not available'),
+                        _buildDetailRow(Icons.language, event['language'] ?? event['eventLanguage'] ?? event['languages'] ?? 'Language not specified'),
+                        _buildDetailRow(Icons.category, event['category'] ?? event['eventCategory'] ?? 'Category not specified'),
+                        _buildDetailRow(Icons.location_on, event['venue'] ?? event['location'] ?? event['address'] ?? event['eventVenue'] ?? 'Venue not specified'),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // You Should Know Section
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'You should know',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              margin: const EdgeInsets.only(top: 4),
+                              child: Icon(
+                                Icons.lightbulb_outline,
+                                size: 20,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                event['additional_info'] ?? event['description'] ?? 'Additional event information will be displayed here.',
+                                style: TextStyle(
+                                  color: Colors.grey.shade700,
+                                  fontSize: 14,
+                                  height: 1.4,
+                                ),
                               ),
                             ),
                           ],
@@ -273,273 +257,78 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
                       ],
                     ),
                   ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Artists Section
-                  if (_fullEventData != null && _fullEventData!['artistDetails'] != null && _fullEventData!['artistDetails'].isNotEmpty)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Featured Artists',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 200,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: (_fullEventData!['artistDetails'] as List).length,
-                            itemBuilder: (context, index) {
-                              final artist = (_fullEventData!['artistDetails'] as List)[index];
-                              return GestureDetector(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => ArtistDetailScreen(
-                                        artist: {
-                                          'name': artist['name'],
-                                          'genre': artist['genre'],
-                                          'bio': artist['bio'],
-                                          'imageBytes': artist['profileImage'] != null
-                                              ? base64Decode(artist['profileImage'])
-                                              : null,
-                                          'bannerImage': artist['bannerImage'],
-                                          'media': artist['media'],
-                                          'isFollowing': false,
-                                          'id': artist['_id'],
-                                        },
-                                      ),
-                                    ),
-                                  );
-                                },
-                                child: Container(
-                                  width: 160,
-                                  margin: const EdgeInsets.only(right: 12),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.grey.withOpacity(0.2),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Expanded(
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            borderRadius: const BorderRadius.only(
-                                              topLeft: Radius.circular(12),
-                                              topRight: Radius.circular(12),
-                                            ),
-                                            color: Colors.grey.shade200,
-                                          ),
-                                          child: ClipRRect(
-                                            borderRadius: const BorderRadius.only(
-                                              topLeft: Radius.circular(12),
-                                              topRight: Radius.circular(12),
-                                            ),
-                                            child: artist['profileImage'] != null
-                                                ? Image.memory(
-                                                    base64Decode(artist['profileImage']),
-                                                    width: double.infinity,
-                                                    fit: BoxFit.cover,
-                                                  )
-                                                : Container(
-                                                    color: const Color(0xFF001F3F),
-                                                    child: Center(
-                                                      child: Text(
-                                                        artist['name'].substring(0, 1).toUpperCase(),
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 40,
-                                                          fontWeight: FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                          ),
-                                        ),
-                                      ),
-                                      Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: const BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.only(
-                                            bottomLeft: Radius.circular(12),
-                                            bottomRight: Radius.circular(12),
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              artist['name'] ?? 'Artist',
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.black87,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            if (artist['genre'] != null)
-                                              Text(
-                                                artist['genre'],
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey.shade600,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                      ],
-                    ),
-                  
-                  // Terms and Conditions
-                  GestureDetector(
-                    onTap: () {
-                      _showTermsDialog(context, event['termsAndConditions'] ?? 'No terms and conditions available.');
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.description_outlined,
-                            color: Color(0xFF001F3F),
-                            size: 24,
-                          ),
-                          const SizedBox(width: 12),
-                          const Text(
-                            'Terms and Conditions',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF001F3F),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
 
+                  const SizedBox(height: 100), // Space for bottom button
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  void _showTermsDialog(BuildContext context, String terms) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
           ),
-          child: Container(
-            constraints: const BoxConstraints(maxHeight: 600),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF001F3F),
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(16),
-                      topRight: Radius.circular(16),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Terms and Conditions',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ],
-                  ),
-                ),
-                Flexible(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
-                    child: Text(
-                      terms,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade800,
-                        height: 1.5,
-                      ),
-                    ),
-                  ),
+
+          // Bottom Book Now Section
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
                 ),
               ],
             ),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => BookingScreen(event: event),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF001F3F),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  'Book Now',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
-  
-  String _getEventType(String title) {
-    if (title.toLowerCase().contains('comedy') || title.toLowerCase().contains('gujral')) {
-      return 'Comedy Show';
-    } else if (title.toLowerCase().contains('classical') || title.toLowerCase().contains('music')) {
-      return 'Classical Music';
-    } else if (title.toLowerCase().contains('theatre') || title.toLowerCase().contains('workshop')) {
-      return 'Theatre';
-    } else if (title.toLowerCase().contains('dance') || title.toLowerCase().contains('folk')) {
-      return 'Folk Dance';
-    } else if (title.toLowerCase().contains('concert')) {
-      return 'Live Concert';
-    } else if (title.toLowerCase().contains('drama')) {
-      return 'Drama';
-    } else if (title.toLowerCase().contains('cultural')) {
-      return 'Cultural Show';
-    }
-    return 'Entertainment';
+
+  Widget _buildDetailRow(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: Colors.grey.shade600),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
