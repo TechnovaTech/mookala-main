@@ -119,10 +119,15 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
           return {
             'title': event['name'] ?? event['title'] ?? 'Event',
             'date': dateDisplay,
+            'time': startTime,
             'description': event['description'] ?? '',
             'price': '₹${event['ticketPrice'] ?? event['price'] ?? '0'}',
             'image': imageUrl,
             'id': event['_id'],
+            'venue': event['venue'], // This should be the venue ObjectId
+            'category': event['category'] ?? 'Event',
+            'type': event['type'] ?? 'event',
+            'tickets': event['tickets'] ?? [], // Include tickets data
           };
         }).toList();
         _isLoadingEvents = false;
@@ -176,7 +181,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     {
       'title': 'Classical Music Evening',
       'artist': 'Pandit Jasraj',
-      'venue': 'Tata Theatre',
+      'venue': '69381db0886654af332b8bfb', // Use the venue ID from database
       'date': 'Dec 30, 2024',
       'time': '7:00 PM',
       'price': '₹1,200',
@@ -186,6 +191,10 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
       'address': 'NCPA, Nariman Point, Mumbai 400021',
       'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=200&h=120&fit=crop',
       'description': 'Experience the mesmerizing classical music performance by the legendary Pandit Jasraj.',
+      'tickets': [
+        {'name': 'VIP', 'price': '1000.00', 'quantity': '10'},
+        {'name': 'Gold', 'price': '1500.00', 'quantity': '90'},
+      ],
       'artists': [
         {'name': 'Pandit Jasraj', 'role': 'Main Artist', 'image': 'https://via.placeholder.com/100'},
       ],

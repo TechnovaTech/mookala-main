@@ -148,4 +148,17 @@ class ApiService {
       return {'success': false, 'error': 'Network error'};
     }
   }
+  
+  static Future<Map<String, dynamic>> getVenueDetails(String venueId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/venues/$venueId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error'};
+    }
+  }
 }

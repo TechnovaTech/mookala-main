@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import '../services/api_service.dart';
 
 class BookingScreen extends StatefulWidget {
   final Map<String, dynamic> event;
@@ -13,52 +14,107 @@ class BookingScreen extends StatefulWidget {
 class _BookingScreenState extends State<BookingScreen> {
   int selectedTickets = 1;
   String? selectedCategory;
+  Map<String, dynamic>? venueData;
+  bool isLoadingVenue = true;
   
   @override
   void initState() {
     super.initState();
-    // Set first seat category as default if available
-    final seatCategories = _getSeatCategories();
-    if (seatCategories.isNotEmpty) {
-      selectedCategory = seatCategories.first['name'];
+    _loadVenueData();
+  }
+  
+  Future<void> _loadVenueData() async {
+    print('Event data: ${widget.event}');
+    
+    // Check if event has venue ID (from organized events) or venue name (from static events)
+    String? venueId;
+    if (widget.event['venue'] != null) {
+      // Check if venue is an ObjectId (24 character hex string) or venue name
+      final venueValue = widget.event['venue'].toString();
+      if (venueValue.length == 24 && RegExp(r'^[0-9a-fA-F]{24}$').hasMatch(venueValue)) {
+        venueId = venueValue;
+      }
+    }
+    
+    if (venueId != null) {
+      print('Loading venue data for ID: $venueId');
+      final result = await ApiService.getVenueDetails(venueId);
+      print('Venue API result: $result');
+      
+      if (result['success'] == true && result['venue'] != null) {
+        setState(() {
+          venueData = result['venue'];
+          isLoadingVenue = false;
+          // Set first seat category as default if available
+          final seatCategories = _getSeatCategories();
+          if (seatCategories.isNotEmpty) {
+            selectedCategory = seatCategories.first['name'];
+          }
+        });
+      } else {
+        print('Failed to load venue data: ${result['error']}');
+        setState(() {
+          isLoadingVenue = false;
+        });
+      }
+    } else {
+      print('No valid venue ID found, using static data');
+      setState(() {
+        isLoadingVenue = false;
+        // Set first seat category as default for static events
+        final seatCategories = _getSeatCategories();
+        if (seatCategories.isNotEmpty) {
+          selectedCategory = seatCategories.first['name'];
+        }
+      });
     }
   }
   
   List<Map<String, dynamic>> _getSeatCategories() {
-    final location = widget.event['location'];
-    if (location != null && location['seatCategories'] != null) {
-      return List<Map<String, dynamic>>.from(location['seatCategories']);
+    // Only use tickets from event data
+    if (widget.event['tickets'] != null && widget.event['tickets'] is List) {
+      final tickets = widget.event['tickets'] as List;
+      if (tickets.isNotEmpty) {
+        return tickets.map((ticket) => {
+          'name': ticket['name'] ?? 'Ticket',
+          'price': _extractPriceFromTicket(ticket['price']),
+        }).toList();
+      }
     }
-    return [
-      {'name': 'General', 'price': 500},
-      {'name': 'Premium', 'price': 800},
-      {'name': 'VIP', 'price': 1200},
-    ];
+    
+    // Return empty list if no tickets
+    return [];
   }
   
+  int _extractPriceFromTicket(dynamic price) {
+    if (price is int) return price;
+    if (price is double) return price.toInt();
+    if (price is String) {
+      // Remove currency symbols and parse
+      final cleanPrice = price.replaceAll(RegExp(r'[^0-9.]'), '');
+      return int.tryParse(cleanPrice.split('.')[0]) ?? 500;
+    }
+    return 500;
+  }
+  
+
+  
   String _getVenueImage() {
-    final location = widget.event['location'];
-    if (location != null && location['image'] != null) {
-      return location['image'];
+    if (venueData != null && venueData!['image'] != null) {
+      final image = venueData!['image'];
+      if (image.toString().startsWith('data:image')) {
+        return image;
+      } else if (image.toString().startsWith('http')) {
+        return image;
+      } else {
+        // Base64 image without data URL prefix
+        return 'data:image/jpeg;base64,$image';
+      }
     }
     return 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?w=800&h=400&fit=crop';
   }
   
-  String _getVenueName() {
-    final location = widget.event['location'];
-    if (location != null && location['name'] != null) {
-      return location['name'];
-    }
-    return widget.event['venue'] ?? 'Event Venue';
-  }
-  
-  String _getVenueAddress() {
-    final location = widget.event['location'];
-    if (location != null && location['location'] != null) {
-      return location['location'];
-    }
-    return widget.event['address'] ?? 'Venue Address';
-  }
+
   
   int _getCategoryPrice(String category) {
     final categories = _getSeatCategories();
@@ -126,7 +182,7 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
             ),
 
-            // Venue Information with Image
+            // Venue Image
             Container(
               margin: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -140,47 +196,44 @@ class _BookingScreenState extends State<BookingScreen> {
                   ),
                 ],
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Venue Image
-                  ClipRRect(
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(16),
-                      topRight: Radius.circular(16),
-                    ),
-                    child: Container(
-                      height: 200,
-                      width: double.infinity,
-                      child: _getVenueImage().startsWith('data:image')
-                        ? Image.memory(
-                            base64Decode(_getVenueImage().split(',')[1]),
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                color: Colors.grey.shade300,
-                                child: const Center(
-                                  child: Icon(Icons.image, size: 50, color: Colors.grey),
-                                ),
-                              );
-                            },
-                          )
-                        : Image.network(
-                            _getVenueImage(),
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                color: Colors.grey.shade300,
-                                child: const Center(
-                                  child: Icon(Icons.image, size: 50, color: Colors.grey),
-                                ),
-                              );
-                            },
-                          ),
-                    ),
-                  ),
-                  
-                ],
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  height: 200,
+                  width: double.infinity,
+                  child: isLoadingVenue
+                    ? Container(
+                        color: Colors.grey.shade200,
+                        child: const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    : _getVenueImage().startsWith('data:image')
+                      ? Image.memory(
+                          base64Decode(_getVenueImage().split(',')[1]),
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey.shade300,
+                              child: const Center(
+                                child: Icon(Icons.image, size: 50, color: Colors.grey),
+                              ),
+                            );
+                          },
+                        )
+                      : Image.network(
+                          _getVenueImage(),
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey.shade300,
+                              child: const Center(
+                                child: Icon(Icons.image, size: 50, color: Colors.grey),
+                              ),
+                            );
+                          },
+                        ),
+                ),
               ),
             ),
 
@@ -213,51 +266,133 @@ class _BookingScreenState extends State<BookingScreen> {
                   const SizedBox(height: 16),
                   
                   // Seat Category Dropdown
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: selectedCategory,
-                        hint: const Text('Select Category'),
-                        isExpanded: true,
-                        items: _getSeatCategories().map((category) {
-                          return DropdownMenuItem<String>(
-                            value: category['name'],
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  category['name'],
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                  isLoadingVenue
+                    ? Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    : Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: selectedCategory,
+                            hint: const Text('Select Category'),
+                            isExpanded: true,
+                            items: _getSeatCategories().map((category) {
+                              return DropdownMenuItem<String>(
+                                value: category['name'],
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      category['name'],
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    Text(
+                                      '₹${category['price']}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                Text(
-                                  '₹${category['price']}',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            selectedCategory = value;
-                          });
-                        },
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                selectedCategory = value;
+                              });
+                            },
+                          ),
+                        ),
                       ),
+                  
+
+                  
+                  // Ticket Quantity Selector
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Number of Tickets',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF001F3F),
                     ),
                   ),
-                  
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              onPressed: selectedTickets > 1
+                                  ? () {
+                                      setState(() {
+                                        selectedTickets--;
+                                      });
+                                    }
+                                  : null,
+                              icon: const Icon(Icons.remove),
+                              color: const Color(0xFF001F3F),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: Text(
+                                selectedTickets.toString(),
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF001F3F),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: selectedTickets < 10
+                                  ? () {
+                                      setState(() {
+                                        selectedTickets++;
+                                      });
+                                    }
+                                  : null,
+                              icon: const Icon(Icons.add),
+                              color: const Color(0xFF001F3F),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          'Max 10 tickets per booking',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
 
                 ],
               ),
@@ -354,7 +489,7 @@ class _BookingScreenState extends State<BookingScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Event: ${widget.event['title'] ?? 'Event Title'}'),
-              Text('Venue: ${_getVenueName()}'),
+              Text('Venue: ${widget.event['venue'] ?? 'Event Venue'}'),
               Text('Date: ${widget.event['date'] ?? 'Date TBD'}'),
               Text('Time: ${widget.event['time'] ?? 'Time TBD'}'),
               Text('Category: ${selectedCategory ?? 'None'}'),
