@@ -209,4 +209,21 @@ class ApiService {
       return {'success': false, 'error': 'Network error: $e'};
     }
   }
+  
+  static Future<dynamic> getBanners() async {
+    try {
+      final response = await http.get(
+        Uri.parse('http://localhost:3000/banners'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {'success': false, 'error': 'Failed to fetch banners'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
 }

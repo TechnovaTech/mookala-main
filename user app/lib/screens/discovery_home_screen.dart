@@ -30,7 +30,8 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     _checkUserSession();
     _loadArtists();
     _loadOrganizedEvents();
-    _loadFeaturedEvents();
+    _loadBanners();
+    _startBannerAutoScroll();
   }
   
   Future<void> _checkUserSession() async {
@@ -89,125 +90,58 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     }
   }
   
-  Future<void> _loadFeaturedEvents() async {
+  Future<void> _loadBanners() async {
+    print('Loading banners...');
     setState(() {
-      _isLoadingFeatured = true;
+      _isLoadingBanners = true;
     });
     
-    final result = await ApiService.getFeaturedEvents();
-    print('Featured Events Result: $result');
-    
-    if (result['success'] == true && result['events'] != null) {
-      final events = result['events'] as List;
-      print('Number of featured events: ${events.length}');
-      
-      // Process events and fetch venue details
-      final List<Map<String, dynamic>> processedEvents = [];
-      
-      for (final event in events.take(3)) {
-        print('Processing event: ${event['_id']}');
-        print('All event fields: ${event.keys.toList()}');
-        print('Venue field: ${event['venue']}');
-        print('Location field: ${event['location']}');
-        print('Address field: ${event['address']}');
-        
-        final startDate = (event['startDate'] ?? event['date'] ?? '').toString();
-        final startTime = (event['startTime'] ?? event['time'] ?? '').toString();
-        final dateDisplay = startDate.isNotEmpty ? startDate : 'TBA';
-        
-        String imageUrl = 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=160&fit=crop';
-        if (event['media'] != null && event['media'] is Map) {
-          final media = event['media'] as Map;
-          if (media['bannerImage'] != null) {
-            final bannerImage = media['bannerImage'].toString();
-            if (bannerImage.startsWith('http')) {
-              imageUrl = bannerImage;
-            } else if (bannerImage.isNotEmpty) {
-              imageUrl = 'data:image/jpeg;base64,$bannerImage';
-            }
-          }
-        }
-        
-        // Get venue from location field
-        String venueName = 'Event Location';
-        
-        // Handle location object structure {name: KKVHALL, address: rajkot, city: rajkot}
-        if (event['location'] != null && event['location'] is Map) {
-          final location = event['location'] as Map;
-          final name = location['name']?.toString() ?? '';
-          final city = location['city']?.toString() ?? '';
-          
-          if (name.isNotEmpty && city.isNotEmpty) {
-            venueName = '$name, $city';
-          } else if (name.isNotEmpty) {
-            venueName = name;
-          } else if (city.isNotEmpty) {
-            venueName = city;
-          }
-        }
-        
-        print('Final venue name: $venueName');
-        
-        // Get ticket price
-        String price = '0';
-        if (event['tickets'] != null && event['tickets'] is List && (event['tickets'] as List).isNotEmpty) {
-          final tickets = event['tickets'] as List;
-          final firstTicket = tickets[0];
-          if (firstTicket is Map && firstTicket['price'] != null) {
-            String rawPrice = firstTicket['price'].toString();
-            price = rawPrice.replaceAll('₹', '').replaceAll('Rs.', '').replaceAll('Rs', '').trim();
-          }
-        } else if (event['ticketPrice'] != null) {
-          String rawPrice = event['ticketPrice'].toString();
-          price = rawPrice.replaceAll('₹', '').replaceAll('Rs.', '').replaceAll('Rs', '').trim();
-        }
-        
-        final formattedPrice = '₹$price';
-        
-
-        
-        processedEvents.add({
-          'title': (event['name'] ?? event['title'] ?? 'Event').toString(),
-          'artist': _getArtistName(event),
-          'venue': venueName,
-          'date': dateDisplay,
-          'price': formattedPrice,
-          'image': imageUrl,
-          'id': event['_id']?.toString() ?? '',
-        });
-      }
+    try {
+      final bannersList = await ApiService.getBanners();
+      print('Received ${bannersList.length} banners');
       
       setState(() {
-        _featuredEvents = processedEvents;
-        _isLoadingFeatured = false;
+        if (bannersList.isNotEmpty) {
+          _banners = bannersList.map((banner) {
+            String title = banner['title']?.toString() ?? 'Banner';
+            String imageUrl = banner['image']?.toString() ?? '';
+            
+            print('Banner: $title - Image: ${imageUrl.isNotEmpty ? 'Available' : 'Missing'}');
+            
+            return {
+              'title': title,
+              'image': imageUrl,
+              'id': banner['_id']?.toString() ?? '',
+            };
+          }).toList();
+        } else {
+          _banners = [];
+        }
+        _isLoadingBanners = false;
       });
-    } else {
-      print('Failed to load featured events or no events available');
-      // Fallback to static events if API fails or returns no events
+    } catch (e) {
+      print('Error loading banners: $e');
       setState(() {
-        _featuredEvents = [
-          {
-            'title': 'AR Rahman Live Concert',
-            'artist': 'A.R. Rahman',
-            'venue': 'NSCI Dome, Mumbai',
-            'date': 'Dec 25, 2024',
-            'price': '₹2,500',
-            'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=160&fit=crop',
-            'id': 'static1',
-          },
-          {
-            'title': 'Bollywood Night',
-            'artist': 'Arijit Singh',
-            'venue': 'Phoenix Mills, Mumbai',
-            'date': 'Dec 28, 2024',
-            'price': '₹1,800',
-            'image': 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=400&h=160&fit=crop',
-            'id': 'static2',
-          },
-        ];
-        _isLoadingFeatured = false;
+        _banners = [];
+        _isLoadingBanners = false;
       });
     }
+  }
+  
+  void _startBannerAutoScroll() {
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted && _banners.isNotEmpty) {
+        setState(() {
+          _currentBannerIndex = (_currentBannerIndex + 1) % _banners.length;
+        });
+        _bannerController.animateToPage(
+          _currentBannerIndex,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+        _startBannerAutoScroll();
+      }
+    });
   }
   
   Future<void> _loadOrganizedEvents() async {
@@ -407,8 +341,10 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
 
   List<Map<String, dynamic>> _organizedEvents = [];
   bool _isLoadingEvents = false;
-  List<Map<String, dynamic>> _featuredEvents = [];
-  bool _isLoadingFeatured = false;
+  List<Map<String, dynamic>> _banners = [];
+  bool _isLoadingBanners = false;
+  PageController _bannerController = PageController();
+  int _currentBannerIndex = 0;
 
   Widget _buildCategoryCard(String title, String imagePath, Color backgroundColor) {
     return GestureDetector(
@@ -540,18 +476,23 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                 children: [
             
             // Banner Carousel
-            Padding(
-              padding: const EdgeInsets.only(top: 20),
-              child: SizedBox(
-                height: 160,
-                child: _isLoadingFeatured
-                  ? const Center(child: CircularProgressIndicator())
-                  : _featuredEvents.isEmpty
-                    ? const Center(child: Text('No featured events available'))
+            if (_banners.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 20),
+                child: SizedBox(
+                  height: 160,
+                  child: _isLoadingBanners
+                    ? const Center(child: CircularProgressIndicator())
                     : PageView.builder(
-                        itemCount: _featuredEvents.length,
+                        controller: _bannerController,
+                        itemCount: _banners.length,
+                        onPageChanged: (index) {
+                          setState(() {
+                            _currentBannerIndex = index;
+                          });
+                        },
                         itemBuilder: (context, index) {
-                          final event = _featuredEvents[index];
+                          final banner = _banners[index];
                           return Container(
                             margin: const EdgeInsets.symmetric(horizontal: 20),
                             decoration: BoxDecoration(
@@ -562,9 +503,9 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                               children: [
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(16),
-                                  child: event['image'].toString().startsWith('http')
+                                  child: banner['image'].toString().startsWith('http')
                                     ? Image.network(
-                                        event['image'],
+                                        banner['image'],
                                         width: double.infinity,
                                         height: double.infinity,
                                         fit: BoxFit.cover,
@@ -575,9 +516,9 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                                           );
                                         },
                                       )
-                                    : event['image'].toString().startsWith('data:image')
+                                    : banner['image'].toString().startsWith('data:image')
                                       ? Image.memory(
-                                          base64Decode(event['image'].toString().split(',')[1]),
+                                          base64Decode(banner['image'].toString().split(',')[1]),
                                           width: double.infinity,
                                           height: double.infinity,
                                           fit: BoxFit.cover,
@@ -593,53 +534,26 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                                     gradient: LinearGradient(
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
-                                      colors: [Colors.transparent, const Color(0xFF001F3F).withOpacity(0.8)],
+                                      colors: [Colors.transparent, const Color(0xFF001F3F).withOpacity(0.6)],
                                     ),
                                   ),
-                                  child: Stack(
-                                    children: [
-                                      Positioned(
-                                        top: 16, right: 16,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(12)),
-                                          child: const Text('FEATURED', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                                        ),
+                                  child: Center(
+                                    child: Text(
+                                      banner['title'],
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                        shadows: [
+                                          Shadow(
+                                            offset: Offset(1, 1),
+                                            blurRadius: 3,
+                                            color: Colors.black54,
+                                          ),
+                                        ],
                                       ),
-                                      Positioned(
-                                        left: 20, bottom: 20, right: 20,
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(event['title'], style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                                            const SizedBox(height: 4),
-                                            Text(event['artist'], style: const TextStyle(color: Colors.white70, fontSize: 16)),
-                                            const SizedBox(height: 8),
-                                            Row(
-                                              children: [
-                                                const Icon(Icons.location_on, color: Colors.white70, size: 16),
-                                                const SizedBox(width: 4),
-                                                Expanded(child: Text(event['venue'], style: const TextStyle(color: Colors.white70, fontSize: 14))),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Row(
-                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                              children: [
-                                                Row(
-                                                  children: [
-                                                    const Icon(Icons.calendar_today, color: Colors.white70, size: 16),
-                                                    const SizedBox(width: 4),
-                                                    Text(event['date'], style: const TextStyle(color: Colors.white70, fontSize: 14)),
-                                                  ],
-                                                ),
-                                                Text(event['price'], style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
+                                      textAlign: TextAlign.center,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -1380,6 +1294,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _bannerController.dispose();
     super.dispose();
   }
 }

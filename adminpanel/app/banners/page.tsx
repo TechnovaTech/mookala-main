@@ -38,11 +38,17 @@ export default function BannersPage() {
     try {
       const response = await fetch('/api/banners')
       const data = await response.json()
-      if (data.success) {
+      console.log('Banner fetch response:', data)
+      if (data.success && data.banners) {
         setBanners(data.banners)
+      } else if (Array.isArray(data)) {
+        setBanners(data)
+      } else {
+        setBanners([])
       }
     } catch (error) {
       console.error('Error fetching banners:', error)
+      setBanners([])
     } finally {
       setLoading(false)
     }
