@@ -220,7 +220,7 @@ class ApiService {
   static Future<Map<String, dynamic>> createEvent({
     required String name,
     required String category,
-    required String language,
+    required List<String> languages,
     required String venue,
     required String date,
     required String time,
@@ -241,7 +241,7 @@ class ApiService {
         body: jsonEncode({
           'name': name,
           'category': category,
-          'language': language,
+          'languages': languages,
           'venue': venue,
           'date': date,
           'time': time,

@@ -41,7 +41,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   List<Map<String, dynamic>> _categories = [];
   List<String> _languages = [];
   String? _selectedCategory;
-  String? _selectedLanguage;
+  List<String> _selectedLanguages = [];
 
   @override
   void initState() {
@@ -83,6 +83,66 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     } catch (e) {
       print('Error loading artists: $e');
     }
+  }
+
+  void _showLanguageSelectionDialog() {
+    List<String> tempSelectedLanguages = List.from(_selectedLanguages);
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Select Languages'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: _languages.isEmpty
+                ? const Center(child: Text('No languages available'))
+                : ListView.builder(
+                    itemCount: _languages.length,
+                    itemBuilder: (context, index) {
+                      final language = _languages[index];
+                      final isSelected = tempSelectedLanguages.contains(language);
+                      
+                      return CheckboxListTile(
+                        title: Text(language),
+                        value: isSelected,
+                        activeColor: const Color(0xFF001F3F),
+                        onChanged: (bool? value) {
+                          setDialogState(() {
+                            if (value == true) {
+                              tempSelectedLanguages.add(language);
+                            } else {
+                              tempSelectedLanguages.remove(language);
+                            }
+                          });
+                        },
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _selectedLanguages = tempSelectedLanguages;
+                });
+                Navigator.pop(context);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF001F3F),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showAddArtistDialog() {
@@ -246,9 +306,9 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
             ),
             const SizedBox(height: 16),
             
-            // Language Dropdown
+            // Language Selection
             const Text(
-              'Language *',
+              'Languages *',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -256,26 +316,47 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedLanguage,
-                  isExpanded: true,
-                  hint: const Text('Select event language'),
-                  menuMaxHeight: 300,
-                  items: _languages.map((language) {
-                    return DropdownMenuItem<String>(
-                      value: language,
-                      child: Text(language),
-                    );
-                  }).toList(),
-                  onChanged: (value) => setState(() => _selectedLanguage = value),
+            GestureDetector(
+              onTap: _showLanguageSelectionDialog,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _selectedLanguages.isEmpty
+                          ? const Text(
+                              'Select event languages',
+                              style: TextStyle(color: Colors.grey),
+                            )
+                          : Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: _selectedLanguages.map((language) {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF001F3F).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    language,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF001F3F),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                    ),
+                    const Icon(Icons.arrow_drop_down, color: Colors.grey),
+                  ],
                 ),
               ),
             ),
@@ -1406,9 +1487,9 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
       return;
     }
     
-    if (_selectedLanguage == null) {
+    if (_selectedLanguages.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a language')),
+        const SnackBar(content: Text('Please select at least one language')),
       );
       return;
     }
@@ -1438,7 +1519,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     final eventData = {
       'name': _eventNameController.text,
       'category': _selectedCategory,
-      'language': _selectedLanguage,
+      'languages': _selectedLanguages,
       'locationType': _selectedLocationType,
       'artists': _addedArtists,
       'startDate': _dateController.text,

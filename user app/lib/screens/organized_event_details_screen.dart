@@ -61,7 +61,7 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
             onPressed: () => Navigator.pop(context),
           ),
           title: Text(
-            event['title'] ?? 'Event Details',
+            (event['title'] ?? 'Event Details').toString(),
             style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold),
           ),
           actions: [
@@ -165,7 +165,7 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Text(
-                            event['category'] ?? 'Event',
+                            (event['category'] ?? 'Event').toString(),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 12,
@@ -181,7 +181,7 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
                               borderRadius: BorderRadius.circular(16),
                             ),
                             child: Text(
-                              event['subcategory'],
+                              event['subcategory'].toString(),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,
@@ -200,11 +200,11 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
                       children: [
-                        _buildDetailRow(Icons.calendar_today, event['date'] ?? event['eventDate'] ?? 'Date not available'),
-                        _buildDetailRow(Icons.access_time, event['duration'] ?? event['eventDuration'] ?? 'Duration not available'),
-                        _buildDetailRow(Icons.language, event['language'] ?? event['eventLanguage'] ?? event['languages'] ?? 'Language not specified'),
-                        _buildDetailRow(Icons.category, event['category'] ?? event['eventCategory'] ?? 'Category not specified'),
-                        _buildDetailRow(Icons.location_on, event['venue'] ?? event['location'] ?? event['address'] ?? event['eventVenue'] ?? 'Venue not specified'),
+                        _buildDetailRow(Icons.calendar_today, _getEventDate(event)),
+                        _buildDetailRow(Icons.access_time, _getEventDuration(event)),
+                        _buildDetailRow(Icons.language, _getEventLanguage(event)),
+                        _buildDetailRow(Icons.category, _getEventCategory(event)),
+                        _buildDetailRow(Icons.location_on, _getEventVenue(event)),
                       ],
                     ),
                   ),
@@ -244,7 +244,7 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                event['additional_info'] ?? event['description'] ?? 'Additional event information will be displayed here.',
+                                (event['additional_info'] ?? event['description'] ?? 'Additional event information will be displayed here.').toString(),
                                 style: TextStyle(
                                   color: Colors.grey.shade700,
                                   fontSize: 14,
@@ -309,6 +309,64 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
         ],
       ),
     );
+  }
+
+  String _getEventDate(Map<String, dynamic> event) {
+    return (event['date'] ?? event['eventDate'] ?? 'Date not available').toString();
+  }
+
+  String _getEventDuration(Map<String, dynamic> event) {
+    return (event['duration'] ?? event['eventDuration'] ?? '2 Hours').toString();
+  }
+
+  String _getEventLanguage(Map<String, dynamic> event) {
+    if (event['languages'] != null && event['languages'] is List) {
+      final languages = event['languages'] as List;
+      if (languages.isNotEmpty) {
+        return languages.join(', ');
+      }
+    }
+    return (event['language'] ?? event['eventLanguage'] ?? 'Language not specified').toString();
+  }
+
+  String _getEventCategory(Map<String, dynamic> event) {
+    return (event['category'] ?? event['eventCategory'] ?? 'Category not specified').toString();
+  }
+
+  String _getEventVenue(Map<String, dynamic> event) {
+    // Handle venue object structure
+    if (event['venue'] != null) {
+      if (event['venue'] is String) {
+        return event['venue'].toString();
+      } else if (event['venue'] is Map) {
+        final venue = event['venue'] as Map;
+        final name = venue['name']?.toString() ?? '';
+        final city = venue['city']?.toString() ?? '';
+        if (name.isNotEmpty && city.isNotEmpty) {
+          return '$name, $city';
+        } else if (name.isNotEmpty) {
+          return name;
+        }
+      }
+    }
+    
+    // Handle location object structure
+    if (event['location'] != null) {
+      if (event['location'] is String) {
+        return event['location'].toString();
+      } else if (event['location'] is Map) {
+        final location = event['location'] as Map;
+        final name = location['name']?.toString() ?? '';
+        final city = location['city']?.toString() ?? '';
+        if (name.isNotEmpty && city.isNotEmpty) {
+          return '$name, $city';
+        } else if (name.isNotEmpty) {
+          return name;
+        }
+      }
+    }
+    
+    return (event['address'] ?? event['eventVenue'] ?? 'Venue not specified').toString();
   }
 
   Widget _buildDetailRow(IconData icon, String text) {
