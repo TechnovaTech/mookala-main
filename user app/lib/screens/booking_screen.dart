@@ -12,10 +12,10 @@ class BookingScreen extends StatefulWidget {
 }
 
 class _BookingScreenState extends State<BookingScreen> {
-  int selectedTickets = 1;
   String? selectedCategory;
   Map<String, dynamic>? venueData;
   bool isLoadingVenue = true;
+  Set<int> selectedSeats = {};
   
   @override
   void initState() {
@@ -124,6 +124,101 @@ class _BookingScreenState extends State<BookingScreen> {
       orElse: () => {'price': 500},
     );
     return found['price'] ?? 500;
+  }
+  
+  int _getCategoryQuantity(String category) {
+    final tickets = widget.event['tickets'] as List?;
+    if (tickets != null) {
+      final ticket = tickets.firstWhere(
+        (t) => t['name'] == category,
+        orElse: () => {'quantity': '0'},
+      );
+      return int.tryParse(ticket['quantity'].toString()) ?? 0;
+    }
+    return 0;
+  }
+  
+  Widget _buildSeatGrid() {
+    if (selectedCategory == null) return const SizedBox();
+    
+    final quantity = _getCategoryQuantity(selectedCategory!);
+    if (quantity == 0) return const Center(child: Text('No seats available'));
+    
+    final columns = (quantity / 10).ceil().clamp(1, 10);
+    final rows = (quantity / columns).ceil();
+    
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(16),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1,
+      ),
+      itemCount: quantity,
+      itemBuilder: (context, index) {
+        final seatNumber = index + 1;
+        final isSelected = selectedSeats.contains(seatNumber);
+        
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              if (isSelected) {
+                selectedSeats.remove(seatNumber);
+              } else {
+                selectedSeats.add(seatNumber);
+              }
+            });
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade400,
+                width: 2,
+              ),
+            ),
+            child: Center(
+              child: Text(
+                seatNumber.toString(),
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.black87,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+  
+  Widget _buildLegendItem(Color color, String label) {
+    return Row(
+      children: [
+        Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.grey.shade400),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.black87,
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -318,6 +413,7 @@ class _BookingScreenState extends State<BookingScreen> {
                             onChanged: (value) {
                               setState(() {
                                 selectedCategory = value;
+                                selectedSeats.clear(); // Clear selected seats when category changes
                               });
                             },
                           ),
@@ -326,74 +422,45 @@ class _BookingScreenState extends State<BookingScreen> {
                   
 
                   
-                  // Ticket Quantity Selector
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Number of Tickets',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF001F3F),
+                  // Seat Selection Grid
+                  if (selectedCategory != null) ...[
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Select Seats',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF001F3F),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              onPressed: selectedTickets > 1
-                                  ? () {
-                                      setState(() {
-                                        selectedTickets--;
-                                      });
-                                    }
-                                  : null,
-                              icon: const Icon(Icons.remove),
-                              color: const Color(0xFF001F3F),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                selectedTickets.toString(),
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF001F3F),
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: selectedTickets < 10
-                                  ? () {
-                                      setState(() {
-                                        selectedTickets++;
-                                      });
-                                    }
-                                  : null,
-                              icon: const Icon(Icons.add),
-                              color: const Color(0xFF001F3F),
-                            ),
-                          ],
+                    const SizedBox(height: 16),
+                    Container(
+                      height: 400,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: InteractiveViewer(
+                        boundaryMargin: const EdgeInsets.all(20),
+                        minScale: 0.5,
+                        maxScale: 3.0,
+                        child: Center(
+                          child: _buildSeatGrid(),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Text(
-                          'Max 10 tickets per booking',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildLegendItem(Colors.grey.shade300, 'Available'),
+                        const SizedBox(width: 16),
+                        _buildLegendItem(const Color(0xFF001F3F), 'Selected'),
+                        const SizedBox(width: 16),
+                        _buildLegendItem(Colors.red.shade300, 'Booked'),
+                      ],
+                    ),
+                  ],
 
                 ],
               ),
@@ -422,7 +489,7 @@ class _BookingScreenState extends State<BookingScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Tickets $selectedTickets',
+                  'Seats ${selectedSeats.length}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -430,8 +497,8 @@ class _BookingScreenState extends State<BookingScreen> {
                   ),
                 ),
                 Text(
-                  selectedCategory != null 
-                    ? '₹ ${(_getCategoryPrice(selectedCategory!) * selectedTickets).toString()}'
+                  selectedCategory != null && selectedSeats.isNotEmpty
+                    ? '₹ ${(_getCategoryPrice(selectedCategory!) * selectedSeats.length).toString()}'
                     : '₹ 0',
                   style: const TextStyle(
                     fontSize: 20,
@@ -494,11 +561,11 @@ class _BookingScreenState extends State<BookingScreen> {
               Text('Date: ${widget.event['date'] ?? 'Date TBD'}'),
               Text('Time: ${widget.event['time'] ?? 'Time TBD'}'),
               Text('Category: ${selectedCategory ?? 'None'}'),
-              Text('Tickets: $selectedTickets'),
+              Text('Seats: ${selectedSeats.join(", ")}'),
               const SizedBox(height: 8),
               Text(
-                selectedCategory != null 
-                  ? 'Total: ₹${(_getCategoryPrice(selectedCategory!) * selectedTickets).toString()}'
+                selectedCategory != null && selectedSeats.isNotEmpty
+                  ? 'Total: ₹${(_getCategoryPrice(selectedCategory!) * selectedSeats.length).toString()}'
                   : 'Total: ₹0',
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
