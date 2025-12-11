@@ -464,18 +464,25 @@ class _OrganizedEventDetailsScreenState extends State<OrganizedEventDetailsScree
   }
 
   String _getEventLanguage(Map<String, dynamic> event) {
-    if (event['languages'] != null && event['languages'] is List) {
-      final languages = event['languages'] as List;
-      if (languages.isNotEmpty) {
-        return languages.map((lang) => lang.toString()).join(', ');
+    // Check for languages array (multiple languages)
+    if (event['languages'] != null) {
+      if (event['languages'] is List) {
+        final languages = event['languages'] as List;
+        if (languages.isNotEmpty) {
+          return languages.map((lang) => lang.toString()).join(', ');
+        }
+      } else if (event['languages'] is String && event['languages'].toString().isNotEmpty) {
+        return event['languages'].toString();
       }
     }
     
-    if (event['language'] != null && event['language'].toString().isNotEmpty) {
+    // Check for single language field
+    if (event['language'] != null && event['language'].toString().trim().isNotEmpty && event['language'].toString() != 'null') {
       return event['language'].toString();
     }
     
-    if (event['eventLanguage'] != null && event['eventLanguage'].toString().isNotEmpty) {
+    // Check for eventLanguage field
+    if (event['eventLanguage'] != null && event['eventLanguage'].toString().trim().isNotEmpty && event['eventLanguage'].toString() != 'null') {
       return event['eventLanguage'].toString();
     }
     

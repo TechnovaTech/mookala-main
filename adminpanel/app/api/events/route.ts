@@ -92,7 +92,11 @@ export async function POST(request: NextRequest) {
     const newEvent = {
       ...eventData,
       category: eventData.category || null,
-      languages: eventData.languages || eventData.language ? [eventData.language] : [],
+      languages: eventData.languages && Array.isArray(eventData.languages) 
+        ? eventData.languages.filter(lang => lang && lang.trim() !== '') 
+        : eventData.language 
+        ? [eventData.language] 
+        : [],
       description: eventData.description || null,
       terms: eventData.terms || null,
       status: eventData.status || 'pending',

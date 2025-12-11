@@ -347,11 +347,21 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
         throw Exception('User not logged in');
       }
 
+      // Clean languages array - remove null values
+      List<String> cleanLanguages = [];
+      if (widget.eventData['languages'] != null && widget.eventData['languages'] is List) {
+        final languages = widget.eventData['languages'] as List;
+        cleanLanguages = languages
+            .where((lang) => lang != null && lang.toString().trim().isNotEmpty)
+            .map((lang) => lang.toString())
+            .toList();
+      }
+      
       // Clean and simplify event data
       final completeEventData = {
         'name': widget.eventData['name'] ?? 'Untitled Event',
         'category': widget.eventData['category'],
-        'language': widget.eventData['language'],
+        'languages': cleanLanguages,
         'description': widget.eventData['description'],
         'terms': widget.eventData['terms'],
         'locationType': widget.eventData['locationType'] ?? 'venue',

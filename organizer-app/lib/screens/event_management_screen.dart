@@ -63,7 +63,13 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   Future<void> _loadLanguages() async {
     final result = await ApiService.getLanguages();
     if (result['success'] == true && result['languages'] != null) {
-      setState(() => _languages = List<String>.from(result['languages']));
+      final languages = List<String>.from(result['languages']);
+      setState(() => _languages = languages.where((lang) => lang != null && lang.trim().isNotEmpty).toList());
+    } else {
+      // Fallback to default languages if API fails
+      setState(() => _languages = [
+        'Hindi', 'English', 'Gujarati', 'Marathi', 'Tamil', 'Telugu', 'Bengali', 'Kannada', 'Malayalam', 'Punjabi'
+      ]);
     }
   }
 
@@ -102,6 +108,9 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                     itemCount: _languages.length,
                     itemBuilder: (context, index) {
                       final language = _languages[index];
+                      if (language == null || language.trim().isEmpty) {
+                        return const SizedBox.shrink();
+                      }
                       final isSelected = tempSelectedLanguages.contains(language);
                       
                       return CheckboxListTile(
@@ -110,9 +119,9 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                         activeColor: const Color(0xFF001F3F),
                         onChanged: (bool? value) {
                           setDialogState(() {
-                            if (value == true) {
+                            if (value == true && !tempSelectedLanguages.contains(language)) {
                               tempSelectedLanguages.add(language);
-                            } else {
+                            } else if (value == false) {
                               tempSelectedLanguages.remove(language);
                             }
                           });
@@ -129,7 +138,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
             ElevatedButton(
               onPressed: () {
                 setState(() {
-                  _selectedLanguages = tempSelectedLanguages;
+                  _selectedLanguages = tempSelectedLanguages.where((lang) => lang != null && lang.trim().isNotEmpty).toList();
                 });
                 Navigator.pop(context);
               },
