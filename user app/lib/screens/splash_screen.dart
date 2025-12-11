@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'phone_login_screen.dart';
+import 'discovery_home_screen.dart';
+import '../services/api_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -12,12 +14,29 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 5), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const PhoneLoginScreen()),
-      );
-    });
+    _checkUserSession();
+  }
+  
+  Future<void> _checkUserSession() async {
+    await Future.delayed(const Duration(seconds: 3));
+    
+    final userPhone = await ApiService.getUserPhone();
+    
+    if (mounted) {
+      if (userPhone != null) {
+        // User is logged in, go to home
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const DiscoveryHomeScreen()),
+        );
+      } else {
+        // User not logged in, go to login
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const PhoneLoginScreen()),
+        );
+      }
+    }
   }
 
   @override

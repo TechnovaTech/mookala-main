@@ -27,9 +27,18 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     super.initState();
     filteredEvents = nearbyEvents;
     _searchController.addListener(_filterEvents);
+    _checkUserSession();
     _loadArtists();
     _loadOrganizedEvents();
     _loadFeaturedEvents();
+  }
+  
+  Future<void> _checkUserSession() async {
+    final userPhone = await ApiService.getUserPhone();
+    if (userPhone == null) {
+      // User not logged in, redirect to login
+      Navigator.pushReplacementNamed(context, '/login');
+    }
   }
   
   Future<void> _loadArtists() async {
@@ -238,18 +247,37 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
             imageUrl = event['image'];
           }
           
+          // Get price from tickets array
+          String price = '₹0';
+          if (event['tickets'] != null && event['tickets'] is List && (event['tickets'] as List).isNotEmpty) {
+            final tickets = event['tickets'] as List;
+            final firstTicket = tickets[0];
+            if (firstTicket is Map && firstTicket['price'] != null) {
+              String rawPrice = firstTicket['price'].toString();
+              rawPrice = rawPrice.replaceAll('₹', '').replaceAll('Rs.', '').replaceAll('Rs', '').trim();
+              if (rawPrice.contains('.')) {
+                rawPrice = rawPrice.split('.')[0];
+              }
+              price = '₹$rawPrice';
+            }
+          } else if (event['ticketPrice'] != null) {
+            price = '₹${event['ticketPrice']}';
+          } else if (event['price'] != null) {
+            price = '₹${event['price']}';
+          }
+          
           return {
             'title': event['name'] ?? event['title'] ?? 'Event',
             'date': dateDisplay,
             'time': startTime,
             'description': event['description'] ?? '',
-            'price': '₹${event['ticketPrice'] ?? event['price'] ?? '0'}',
+            'price': price,
             'image': imageUrl,
             'id': event['_id'],
-            'venue': event['venue'], // This should be the venue ObjectId
+            'venue': event['venue'],
             'category': event['category'] ?? 'Event',
             'type': event['type'] ?? 'event',
-            'tickets': event['tickets'] ?? [], // Include tickets data
+            'tickets': event['tickets'] ?? [],
           };
         }).toList();
         _isLoadingEvents = false;
