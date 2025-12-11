@@ -26,24 +26,20 @@ class _BookingScreenState extends State<BookingScreen> {
   Future<void> _loadVenueData() async {
     print('Event data: ${widget.event}');
     
-    // Check if event has venue ID (from organized events) or venue name (from static events)
-    String? venueId;
-    if (widget.event['venue'] != null) {
-      // Check if venue is an ObjectId (24 character hex string) or venue name
-      final venueValue = widget.event['venue'].toString();
-      if (venueValue.length == 24 && RegExp(r'^[0-9a-fA-F]{24}$').hasMatch(venueValue)) {
-        venueId = venueValue;
-      }
+    // Get venue name from event location
+    String? venueName;
+    if (widget.event['location'] != null && widget.event['location']['name'] != null) {
+      venueName = widget.event['location']['name'];
     }
     
-    if (venueId != null) {
-      print('Loading venue data for ID: $venueId');
-      final result = await ApiService.getVenueDetails(venueId);
+    if (venueName != null && venueName.isNotEmpty) {
+      print('Loading venue data for name: $venueName');
+      final result = await ApiService.getVenueByName(venueName);
       print('Venue API result: $result');
       
-      if (result['success'] == true && result['venue'] != null) {
+      if (result['success'] == true && result['venues'] != null && result['venues'].isNotEmpty) {
         setState(() {
-          venueData = result['venue'];
+          venueData = result['venues'][0];
           isLoadingVenue = false;
           // Set first seat category as default if available
           final seatCategories = _getSeatCategories();
@@ -55,13 +51,18 @@ class _BookingScreenState extends State<BookingScreen> {
         print('Failed to load venue data: ${result['error']}');
         setState(() {
           isLoadingVenue = false;
+          // Set first seat category as default
+          final seatCategories = _getSeatCategories();
+          if (seatCategories.isNotEmpty) {
+            selectedCategory = seatCategories.first['name'];
+          }
         });
       }
     } else {
-      print('No valid venue ID found, using static data');
+      print('No venue name found in event location');
       setState(() {
         isLoadingVenue = false;
-        // Set first seat category as default for static events
+        // Set first seat category as default
         final seatCategories = _getSeatCategories();
         if (seatCategories.isNotEmpty) {
           selectedCategory = seatCategories.first['name'];
