@@ -24,6 +24,16 @@ export async function GET(request: NextRequest) {
         }
       },
       {
+        $lookup: {
+          from: 'venues',
+          let: { venueId: { $toObjectId: '$venue' } },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$_id', '$$venueId'] } } }
+          ],
+          as: 'venueDetails'
+        }
+      },
+      {
         $unwind: {
           path: '$organizer',
           preserveNullAndEmptyArrays: true
@@ -32,6 +42,12 @@ export async function GET(request: NextRequest) {
       {
         $unwind: {
           path: '$artist',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $unwind: {
+          path: '$venueDetails',
           preserveNullAndEmptyArrays: true
         }
       },

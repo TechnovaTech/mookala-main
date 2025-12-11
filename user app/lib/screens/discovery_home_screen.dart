@@ -29,6 +29,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     _searchController.addListener(_filterEvents);
     _loadArtists();
     _loadOrganizedEvents();
+    _loadFeaturedEvents();
   }
   
   Future<void> _loadArtists() async {
@@ -75,6 +76,127 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     } else {
       setState(() {
         _isLoadingArtists = false;
+      });
+    }
+  }
+  
+  Future<void> _loadFeaturedEvents() async {
+    setState(() {
+      _isLoadingFeatured = true;
+    });
+    
+    final result = await ApiService.getFeaturedEvents();
+    print('Featured Events Result: $result');
+    
+    if (result['success'] == true && result['events'] != null) {
+      final events = result['events'] as List;
+      print('Number of featured events: ${events.length}');
+      
+      // Process events and fetch venue details
+      final List<Map<String, dynamic>> processedEvents = [];
+      
+      for (final event in events.take(3)) {
+        print('Processing event: ${event['_id']}');
+        print('All event fields: ${event.keys.toList()}');
+        print('Venue field: ${event['venue']}');
+        print('Location field: ${event['location']}');
+        print('Address field: ${event['address']}');
+        
+        final startDate = (event['startDate'] ?? event['date'] ?? '').toString();
+        final startTime = (event['startTime'] ?? event['time'] ?? '').toString();
+        final dateDisplay = startDate.isNotEmpty ? startDate : 'TBA';
+        
+        String imageUrl = 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=160&fit=crop';
+        if (event['media'] != null && event['media'] is Map) {
+          final media = event['media'] as Map;
+          if (media['bannerImage'] != null) {
+            final bannerImage = media['bannerImage'].toString();
+            if (bannerImage.startsWith('http')) {
+              imageUrl = bannerImage;
+            } else if (bannerImage.isNotEmpty) {
+              imageUrl = 'data:image/jpeg;base64,$bannerImage';
+            }
+          }
+        }
+        
+        // Get venue from location field
+        String venueName = 'Event Location';
+        
+        // Handle location object structure {name: KKVHALL, address: rajkot, city: rajkot}
+        if (event['location'] != null && event['location'] is Map) {
+          final location = event['location'] as Map;
+          final name = location['name']?.toString() ?? '';
+          final city = location['city']?.toString() ?? '';
+          
+          if (name.isNotEmpty && city.isNotEmpty) {
+            venueName = '$name, $city';
+          } else if (name.isNotEmpty) {
+            venueName = name;
+          } else if (city.isNotEmpty) {
+            venueName = city;
+          }
+        }
+        
+        print('Final venue name: $venueName');
+        
+        // Get ticket price
+        String price = '0';
+        if (event['tickets'] != null && event['tickets'] is List && (event['tickets'] as List).isNotEmpty) {
+          final tickets = event['tickets'] as List;
+          final firstTicket = tickets[0];
+          if (firstTicket is Map && firstTicket['price'] != null) {
+            String rawPrice = firstTicket['price'].toString();
+            price = rawPrice.replaceAll('₹', '').replaceAll('Rs.', '').replaceAll('Rs', '').trim();
+          }
+        } else if (event['ticketPrice'] != null) {
+          String rawPrice = event['ticketPrice'].toString();
+          price = rawPrice.replaceAll('₹', '').replaceAll('Rs.', '').replaceAll('Rs', '').trim();
+        }
+        
+        final formattedPrice = '₹$price';
+        
+
+        
+        processedEvents.add({
+          'title': (event['name'] ?? event['title'] ?? 'Event').toString(),
+          'artist': _getArtistName(event),
+          'venue': venueName,
+          'date': dateDisplay,
+          'price': formattedPrice,
+          'image': imageUrl,
+          'id': event['_id']?.toString() ?? '',
+        });
+      }
+      
+      setState(() {
+        _featuredEvents = processedEvents;
+        _isLoadingFeatured = false;
+      });
+    } else {
+      print('Failed to load featured events or no events available');
+      // Fallback to static events if API fails or returns no events
+      setState(() {
+        _featuredEvents = [
+          {
+            'title': 'AR Rahman Live Concert',
+            'artist': 'A.R. Rahman',
+            'venue': 'NSCI Dome, Mumbai',
+            'date': 'Dec 25, 2024',
+            'price': '₹2,500',
+            'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=160&fit=crop',
+            'id': 'static1',
+          },
+          {
+            'title': 'Bollywood Night',
+            'artist': 'Arijit Singh',
+            'venue': 'Phoenix Mills, Mumbai',
+            'date': 'Dec 28, 2024',
+            'price': '₹1,800',
+            'image': 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=400&h=160&fit=crop',
+            'id': 'static2',
+          },
+        ];
+        _isLoadingFeatured = false;
       });
     }
   }
@@ -140,6 +262,24 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     }
   }
 
+  String _getArtistName(Map<String, dynamic> event) {
+    if (event['organizer'] != null) {
+      if (event['organizer'] is String) {
+        return event['organizer'].toString();
+      } else if (event['organizer'] is Map && event['organizer']['name'] != null) {
+        return event['organizer']['name'].toString();
+      }
+    }
+    if (event['artist'] != null) {
+      if (event['artist'] is String) {
+        return event['artist'].toString();
+      } else if (event['artist'] is Map && event['artist']['name'] != null) {
+        return event['artist']['name'].toString();
+      }
+    }
+    return 'Artist';
+  }
+
   void _filterEvents() {
     String query = _searchController.text.toLowerCase();
     setState(() {
@@ -158,24 +298,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
   
 
   
-  final List<Map<String, dynamic>> featuredEvents = [
-    {
-      'title': 'AR Rahman Live Concert',
-      'artist': 'A.R. Rahman',
-      'venue': 'NSCI Dome, Mumbai',
-      'date': 'Dec 25, 2024',
-      'price': '₹2,500',
-      'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=160&fit=crop',
-    },
-    {
-      'title': 'Bollywood Night',
-      'artist': 'Arijit Singh',
-      'venue': 'Phoenix Mills, Mumbai',
-      'date': 'Dec 28, 2024',
-      'price': '₹1,800',
-      'image': 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=400&h=160&fit=crop',
-    },
-  ];
+
 
   final List<Map<String, dynamic>> nearbyEvents = [
     {
@@ -256,6 +379,8 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
 
   List<Map<String, dynamic>> _organizedEvents = [];
   bool _isLoadingEvents = false;
+  List<Map<String, dynamic>> _featuredEvents = [];
+  bool _isLoadingFeatured = false;
 
   Widget _buildCategoryCard(String title, String imagePath, Color backgroundColor) {
     return GestureDetector(
@@ -391,75 +516,109 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
               padding: const EdgeInsets.only(top: 20),
               child: SizedBox(
                 height: 160,
-                child: PageView.builder(
-                  itemCount: featuredEvents.length,
-                  itemBuilder: (context, index) {
-                    final event = featuredEvents[index];
-                    return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 20),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        image: DecorationImage(image: NetworkImage(event['image']), fit: BoxFit.cover),
-                        boxShadow: [BoxShadow(color: const Color(0xFF001F3F).withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))],
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.transparent, const Color(0xFF001F3F).withOpacity(0.8)],
-                          ),
-                        ),
-                        child: Stack(
-                          children: [
-                            Positioned(
-                              top: 16, right: 16,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(12)),
-                                child: const Text('FEATURED', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                              ),
+                child: _isLoadingFeatured
+                  ? const Center(child: CircularProgressIndicator())
+                  : _featuredEvents.isEmpty
+                    ? const Center(child: Text('No featured events available'))
+                    : PageView.builder(
+                        itemCount: _featuredEvents.length,
+                        itemBuilder: (context, index) {
+                          final event = _featuredEvents[index];
+                          return Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 20),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [BoxShadow(color: const Color(0xFF001F3F).withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))],
                             ),
-                            Positioned(
-                              left: 20, bottom: 20, right: 20,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(event['title'], style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 4),
-                                  Text(event['artist'], style: const TextStyle(color: Colors.white70, fontSize: 16)),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.location_on, color: Colors.white70, size: 16),
-                                      const SizedBox(width: 4),
-                                      Expanded(child: Text(event['venue'], style: const TextStyle(color: Colors.white70, fontSize: 14))),
-                                    ],
+                            child: Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: event['image'].toString().startsWith('http')
+                                    ? Image.network(
+                                        event['image'],
+                                        width: double.infinity,
+                                        height: double.infinity,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return Container(
+                                            color: Colors.grey.shade300,
+                                            child: const Icon(Icons.image, color: Colors.grey),
+                                          );
+                                        },
+                                      )
+                                    : event['image'].toString().startsWith('data:image')
+                                      ? Image.memory(
+                                          base64Decode(event['image'].toString().split(',')[1]),
+                                          width: double.infinity,
+                                          height: double.infinity,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Container(
+                                          color: Colors.grey.shade300,
+                                          child: const Icon(Icons.image, color: Colors.grey),
+                                        ),
+                                ),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [Colors.transparent, const Color(0xFF001F3F).withOpacity(0.8)],
+                                    ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  child: Stack(
                                     children: [
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.calendar_today, color: Colors.white70, size: 16),
-                                          const SizedBox(width: 4),
-                                          Text(event['date'], style: const TextStyle(color: Colors.white70, fontSize: 14)),
-                                        ],
+                                      Positioned(
+                                        top: 16, right: 16,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(12)),
+                                          child: const Text('FEATURED', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                        ),
                                       ),
-                                      Text(event['price'], style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                      Positioned(
+                                        left: 20, bottom: 20, right: 20,
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(event['title'], style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                                            const SizedBox(height: 4),
+                                            Text(event['artist'], style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              children: [
+                                                const Icon(Icons.location_on, color: Colors.white70, size: 16),
+                                                const SizedBox(width: 4),
+                                                Expanded(child: Text(event['venue'], style: const TextStyle(color: Colors.white70, fontSize: 14))),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    const Icon(Icons.calendar_today, color: Colors.white70, size: 16),
+                                                    const SizedBox(width: 4),
+                                                    Text(event['date'], style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                                                  ],
+                                                ),
+                                                Text(event['price'], style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ],
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ),
             

@@ -174,4 +174,39 @@ class ApiService {
       return {'success': false, 'error': 'Network error'};
     }
   }
+  
+  static Future<Map<String, dynamic>> getFeaturedEvents() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/events'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'events': data['events'] ?? []};
+      } else {
+        return {'success': false, 'error': 'Failed to fetch events'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+  
+  static Future<Map<String, dynamic>> getVenueById(String venueId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/venues/$venueId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {'success': false, 'error': 'Venue not found'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
 }
