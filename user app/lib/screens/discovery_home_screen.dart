@@ -32,7 +32,6 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     _loadOrganizedEvents();
     _loadBanners();
     _loadCategories();
-    _startBannerAutoScroll();
   }
   
   Future<void> _checkUserSession() async {
@@ -116,6 +115,9 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
         }).toList();
         _isLoadingBanners = false;
       });
+      if (_banners.isNotEmpty) {
+        _startBannerAutoScroll();
+      }
     } catch (e) {
       print('Error loading banners: $e');
       setState(() {
@@ -153,19 +155,21 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
   }
   
   void _startBannerAutoScroll() {
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted && _banners.isNotEmpty) {
-        setState(() {
-          _currentBannerIndex = (_currentBannerIndex + 1) % _banners.length;
-        });
-        _bannerController.animateToPage(
-          _currentBannerIndex,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
-        _startBannerAutoScroll();
-      }
-    });
+    if (_banners.isNotEmpty) {
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted && _banners.isNotEmpty) {
+          setState(() {
+            _currentBannerIndex = (_currentBannerIndex + 1) % _banners.length;
+          });
+          _bannerController.animateToPage(
+            _currentBannerIndex,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+          _startBannerAutoScroll();
+        }
+      });
+    }
   }
   
   Future<void> _loadOrganizedEvents() async {
@@ -373,7 +377,6 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
   List<Map<String, dynamic>> _categories = [];
   bool _isLoadingCategories = false;
   PageController _categoryController = PageController();
-  int _currentCategoryPage = 0;
 
   Widget _buildCategoryCard(Map<String, dynamic> category) {
     return GestureDetector(
@@ -628,22 +631,10 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                       ),
                       const Spacer(),
                       if (_categories.length > 4)
-                        Row(
-                          children: [
-                            Text(
-                              '${_currentCategoryPage + 1}/${((_categories.length - 1) ~/ 4) + 1}',
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Icon(
-                              Icons.arrow_forward_ios,
-                              color: Colors.blue,
-                              size: 20,
-                            ),
-                          ],
+                        const Icon(
+                          Icons.arrow_forward_ios,
+                          color: Colors.blue,
+                          size: 20,
                         ),
                     ],
                   ),
@@ -652,37 +643,43 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                     ? const Center(child: CircularProgressIndicator())
                     : _categories.isEmpty
                       ? const Center(child: Text('No categories available'))
-                      : SizedBox(
-                          height: 200,
-                          child: PageView.builder(
-                            controller: _categoryController,
-                            onPageChanged: (index) {
-                              setState(() {
-                                _currentCategoryPage = index;
-                              });
-                            },
-                            itemCount: ((_categories.length - 1) ~/ 4) + 1,
-                            itemBuilder: (context, pageIndex) {
-                              final startIndex = pageIndex * 4;
-                              final endIndex = (startIndex + 4).clamp(0, _categories.length);
-                              final pageCategories = _categories.sublist(startIndex, endIndex);
-                              
-                              return GridView.builder(
+                      : Container(
+                          height: 220,
+                          child: _categories.length <= 4
+                            ? GridView.count(
                                 shrinkWrap: true,
                                 physics: const NeverScrollableScrollPhysics(),
-                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  crossAxisSpacing: 16,
-                                  mainAxisSpacing: 16,
-                                  childAspectRatio: 1.8,
-                                ),
-                                itemCount: pageCategories.length,
-                                itemBuilder: (context, index) {
-                                  return _buildCategoryCard(pageCategories[index]);
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                                childAspectRatio: 1.8,
+                                children: _categories.map((category) => _buildCategoryCard(category)).toList(),
+                              )
+                            : PageView.builder(
+                                controller: _categoryController,
+                                itemCount: _categories.length,
+                                itemBuilder: (context, pageIndex) {
+                                  List<Map<String, dynamic>> displayCategories = [];
+                                  
+                                  for (int i = 0; i < 4; i++) {
+                                    int index = (pageIndex + i) % _categories.length;
+                                    displayCategories.add(_categories[index]);
+                                  }
+                                  
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                                    child: GridView.count(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      crossAxisCount: 2,
+                                      crossAxisSpacing: 16,
+                                      mainAxisSpacing: 16,
+                                      childAspectRatio: 1.8,
+                                      children: displayCategories.map((category) => _buildCategoryCard(category)).toList(),
+                                    ),
+                                  );
                                 },
-                              );
-                            },
-                          ),
+                              ),
                         ),
                 ],
               ),
