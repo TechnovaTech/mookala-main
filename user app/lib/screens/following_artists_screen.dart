@@ -13,6 +13,7 @@ class _FollowingArtistsScreenState extends State<FollowingArtistsScreen> {
   bool notificationsEnabled = true;
   List<Map<String, dynamic>> followingArtists = [];
   bool _isLoading = false;
+  Set<String> _togglingArtists = {};
   
   @override
   void initState() {
@@ -322,56 +323,80 @@ class _FollowingArtistsScreenState extends State<FollowingArtistsScreen> {
               Column(
                 children: [
                   ElevatedButton(
-                    onPressed: () async {
+                    onPressed: _togglingArtists.contains(artist['id']) ? null : () async {
                       final artistId = artist['id'];
                       final userPhone = await ApiService.getUserPhone();
                       
                       if (artistId == null || userPhone == null) return;
                       
-                      final wasFollowing = artist['isFollowing'];
+                      // Prevent multiple simultaneous requests
+                      if (_togglingArtists.contains(artistId)) return;
                       
                       setState(() {
-                        artist['isFollowing'] = !artist['isFollowing'];
+                        _togglingArtists.add(artistId);
                       });
                       
-                      await _saveFollowStatus(artistId, artist['isFollowing']);
-                      
-                      // Save to backend
-                      final result = await ApiService.toggleFollowArtist(
-                        artistId: artistId,
-                        userPhone: userPhone,
-                        action: artist['isFollowing'] ? 'follow' : 'unfollow',
-                      );
-                      
-                      if (result['success'] == true) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              artist['isFollowing'] 
-                                ? 'Now following ${artist['name']}'
-                                : 'Unfollowed ${artist['name']}',
-                            ),
-                          ),
-                        );
+                      try {
+                        final wasFollowing = artist['isFollowing'];
+                        final action = wasFollowing ? 'unfollow' : 'follow';
                         
-                        // Remove from list if unfollowed
-                        if (!artist['isFollowing']) {
-                          setState(() {
-                            followingArtists.removeWhere((a) => a['id'] == artist['id']);
-                          });
-                        }
-                      } else {
-                        // Revert on failure
+                        // Update UI optimistically
                         setState(() {
-                          artist['isFollowing'] = wasFollowing;
+                          artist['isFollowing'] = !artist['isFollowing'];
                         });
-                        await _saveFollowStatus(artistId, wasFollowing);
                         
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Failed to update follow status'),
-                          ),
+                        // Save to backend
+                        final result = await ApiService.toggleFollowArtist(
+                          artistId: artistId,
+                          userPhone: userPhone,
+                          action: action,
                         );
+                        
+                        if (result['success'] == true) {
+                          // Update with server response
+                          setState(() {
+                            artist['isFollowing'] = result['isFollowing'] ?? artist['isFollowing'];
+                          });
+                          
+                          await _saveFollowStatus(artistId, artist['isFollowing']);
+                          
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                artist['isFollowing'] 
+                                  ? 'Now following ${artist['name']}'
+                                  : 'Unfollowed ${artist['name']}',
+                              ),
+                            ),
+                          );
+                          
+                          // Remove from list if unfollowed
+                          if (!artist['isFollowing']) {
+                            setState(() {
+                              followingArtists.removeWhere((a) => a['id'] == artist['id']);
+                            });
+                          }
+                        } else {
+                          // Revert on failure
+                          setState(() {
+                            artist['isFollowing'] = wasFollowing;
+                          });
+                          await _saveFollowStatus(artistId, wasFollowing);
+                          
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to update follow status'),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        print('Error toggling follow: $e');
+                        // Reload artist data on error
+                        await _loadArtists();
+                      } finally {
+                        setState(() {
+                          _togglingArtists.remove(artistId);
+                        });
                       }
                     },
                     style: ElevatedButton.styleFrom(

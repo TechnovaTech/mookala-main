@@ -19,47 +19,93 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('Follow request body:', body);
     
-    const artistId = body.artistId || body.artist_id;
-    const userId = body.userId || body.user_id || '507f1f77bcf86cd799439011';
+    const artistId = body.artistId;
+    const userPhone = body.userPhone;
     const action = body.action || 'follow';
 
-    if (!artistId) {
+    if (!artistId || !userPhone) {
       return NextResponse.json({ 
         success: false, 
-        error: 'Artist ID is required' 
+        error: 'Artist ID and user phone are required' 
       }, { status: 400 });
     }
 
-    const artistObjectId = new ObjectId(artistId);
-    const userObjectId = new ObjectId(userId);
+    // Find the artist
+    const artist = await db.collection('artists').findOne({ 
+      $or: [
+        { _id: new ObjectId(artistId) },
+        { phone: artistId }
+      ]
+    });
 
+    if (!artist) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Artist not found' 
+      }, { status: 404 });
+    }
+
+    const artistObjectId = artist._id;
+
+    // Check current follow status to prevent duplicates
+    const existingUser = await db.collection('users').findOne({
+      phone: userPhone,
+      followedArtists: artistObjectId
+    });
+
+    const isCurrentlyFollowing = !!existingUser;
+
+    // Prevent duplicate operations
+    if (action === 'follow' && isCurrentlyFollowing) {
+      const followerCount = await db.collection('users')
+        .countDocuments({ 'followedArtists': artistObjectId });
+      return NextResponse.json({ 
+        success: true, 
+        followerCount: followerCount,
+        message: 'Already following this artist'
+      });
+    }
+
+    if (action === 'unfollow' && !isCurrentlyFollowing) {
+      const followerCount = await db.collection('users')
+        .countDocuments({ 'followedArtists': artistObjectId });
+      return NextResponse.json({ 
+        success: true, 
+        followerCount: followerCount,
+        message: 'Not following this artist'
+      });
+    }
+
+    // Update user's followedArtists array
     if (action === 'follow') {
-      await db.collection('artists').updateOne(
-        { _id: artistObjectId },
-        { $addToSet: { followers: userObjectId } }
+      await db.collection('users').updateOne(
+        { phone: userPhone },
+        { $addToSet: { followedArtists: artistObjectId } },
+        { upsert: true }
       );
     } else if (action === 'unfollow') {
-      await db.collection('artists').updateOne(
-        { _id: artistObjectId },
-        { $pull: { followers: userObjectId } }
+      await db.collection('users').updateOne(
+        { phone: userPhone },
+        { $pull: { followedArtists: artistObjectId } }
       );
     }
 
-    // Get updated artist and sync follower count
-    const updatedArtist = await db.collection('artists').findOne({ _id: artistObjectId });
-    const actualCount = updatedArtist?.followers?.length || 0;
+    // Count real followers from users collection
+    const followerCount = await db.collection('users')
+      .countDocuments({ 
+        'followedArtists': artistObjectId
+      });
     
-    // Fix follower count if it doesn't match actual followers array
-    if (updatedArtist && updatedArtist.followersCount !== actualCount) {
-      await db.collection('artists').updateOne(
-        { _id: artistObjectId },
-        { $set: { followersCount: actualCount } }
-      );
-    }
+    // Update artist's follower count
+    await db.collection('artists').updateOne(
+      { _id: artistObjectId },
+      { $set: { followersCount: followerCount } }
+    );
     
     return NextResponse.json({ 
       success: true, 
-      followersCount: actualCount,
+      followerCount: followerCount,
+      isFollowing: action === 'follow',
       message: `Successfully ${action}ed artist`
     });
 

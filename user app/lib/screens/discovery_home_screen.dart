@@ -23,6 +23,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
 
   int _currentBottomIndex = 0;
   List<Map<String, dynamic>> filteredEvents = [];
+  Set<String> _togglingArtists = {};
 
   @override
   void initState() {
@@ -1077,34 +1078,57 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                                   width: double.infinity,
                                   height: 32,
                                   child: ElevatedButton(
-                                    onPressed: () async {
+                                    onPressed: _togglingArtists.contains(artists[index]['id']) ? null : () async {
                                       final artistId = artists[index]['id'];
                                       final userPhone = await ApiService.getUserPhone();
                                       
                                       if (artistId == null || userPhone == null) return;
                                       
-                                      final wasFollowing = artists[index]['isFollowing'];
+                                      // Prevent multiple simultaneous requests
+                                      if (_togglingArtists.contains(artistId)) return;
                                       
-                                      // Update UI immediately
                                       setState(() {
-                                        artists[index]['isFollowing'] = !artists[index]['isFollowing'];
+                                        _togglingArtists.add(artistId);
                                       });
                                       
-                                      await _saveFollowStatus(artistId, artists[index]['isFollowing']);
-                                      
-                                      // Save to backend
-                                      final result = await ApiService.toggleFollowArtist(
-                                        artistId: artistId,
-                                        userPhone: userPhone,
-                                        action: artists[index]['isFollowing'] ? 'follow' : 'unfollow',
-                                      );
-                                      
-                                      if (result['success'] != true) {
-                                        // Revert on failure
+                                      try {
+                                        final wasFollowing = artists[index]['isFollowing'];
+                                        final action = wasFollowing ? 'unfollow' : 'follow';
+                                        
+                                        // Update UI optimistically
                                         setState(() {
-                                          artists[index]['isFollowing'] = wasFollowing;
+                                          artists[index]['isFollowing'] = !artists[index]['isFollowing'];
                                         });
-                                        await _saveFollowStatus(artistId, wasFollowing);
+                                        
+                                        // Save to backend
+                                        final result = await ApiService.toggleFollowArtist(
+                                          artistId: artistId,
+                                          userPhone: userPhone,
+                                          action: action,
+                                        );
+                                        
+                                        if (result['success'] == true) {
+                                          // Update with server response
+                                          setState(() {
+                                            artists[index]['isFollowing'] = result['isFollowing'] ?? artists[index]['isFollowing'];
+                                          });
+                                          
+                                          await _saveFollowStatus(artistId, artists[index]['isFollowing']);
+                                        } else {
+                                          // Revert on failure
+                                          setState(() {
+                                            artists[index]['isFollowing'] = wasFollowing;
+                                          });
+                                          await _saveFollowStatus(artistId, wasFollowing);
+                                        }
+                                      } catch (e) {
+                                        print('Error toggling follow: $e');
+                                        // Reload artist data on error
+                                        await _loadArtists();
+                                      } finally {
+                                        setState(() {
+                                          _togglingArtists.remove(artistId);
+                                        });
                                       }
                                     },
                                     style: ElevatedButton.styleFrom(

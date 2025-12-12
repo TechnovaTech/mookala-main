@@ -36,8 +36,11 @@ export async function GET(request: NextRequest) {
       }, { status: 404 });
     }
 
-    // Get real-time follower count
-    const realFollowersCount = artist.followers ? artist.followers.length : 0;
+    // Count real followers from users collection
+    const realFollowersCount = await db.collection('users')
+      .countDocuments({ 
+        'followedArtists': artist._id
+      });
     
     // Update followersCount if it doesn't match
     if (artist.followersCount !== realFollowersCount) {
@@ -47,16 +50,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Get booking requests count
+    const bookingRequestsCount = await db.collection('events')
+      .countDocuments({ 
+        'requestedArtists': artist._id,
+        'status': { $in: ['pending', 'requested'] }
+      });
+
+    // Get upcoming events count
+    const upcomingEventsCount = await db.collection('events')
+      .countDocuments({ 
+        'acceptedArtists': artist._id,
+        'date': { $gte: new Date() }
+      });
+
     // Get basic stats
     const stats = {
-      totalEvents: 0,
-      completedEvents: 0,
-      upcomingEvents: 0,
-      totalEarnings: 0,
-      followersCount: realFollowersCount,
-      profileViews: artist.profileViews || 0,
-      rating: artist.rating || 0,
-      totalReviews: artist.totalReviews || 0
+      followers: realFollowersCount,
+      bookingRequests: bookingRequestsCount,
+      upcomingEvents: upcomingEventsCount,
+      totalEarnings: artist.totalEarnings || 0
     };
 
     return NextResponse.json({ 

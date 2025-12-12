@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -22,17 +23,58 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
   void initState() {
     super.initState();
     artist = Map.from(widget.artist);
-    followerCount = int.tryParse(artist['followers']?.toString() ?? '0') ?? 0;
+    followerCount = int.tryParse(artist['followersCount']?.toString() ?? '0') ?? 0;
     _loadFollowStatus();
+    _loadRealFollowerCount();
+    _startPeriodicRefresh();
+  }
+  
+  void _startPeriodicRefresh() {
+    // Refresh follower count every 30 seconds
+    Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (mounted) {
+        _loadRealFollowerCount();
+      } else {
+        timer.cancel();
+      }
+    });
   }
   
   Future<void> _loadFollowStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    final artistId = artist['id'] ?? artist['_id'] ?? artist['phone'];
-    if (artistId != null) {
-      setState(() {
-        isFollowing = prefs.getBool('following_$artistId') ?? false;
-      });
+    try {
+      final userPhone = await ApiService.getUserPhone();
+      final artistId = artist['id'] ?? artist['_id'] ?? artist['phone'];
+      
+      if (userPhone != null && artistId != null) {
+        final result = await ApiService.checkFollowStatus(
+          artistId: artistId,
+          userPhone: userPhone,
+        );
+        
+        if (result['success'] == true) {
+          setState(() {
+            isFollowing = result['isFollowing'] ?? false;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading follow status: $e');
+    }
+  }
+  
+  Future<void> _loadRealFollowerCount() async {
+    try {
+      final artistId = artist['id'] ?? artist['_id'] ?? artist['phone'];
+      if (artistId != null) {
+        final result = await ApiService.getArtistFollowerCount(artistId);
+        if (result['success'] == true) {
+          setState(() {
+            followerCount = result['followerCount'] ?? 0;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading follower count: $e');
     }
   }
   
@@ -44,8 +86,14 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
     }
   }
 
+  bool _isToggling = false;
+
   Future<void> _toggleFollow() async {
+    // Prevent multiple simultaneous requests
+    if (_isToggling) return;
+    
     try {
+      _isToggling = true;
       final artistId = artist['id'] ?? artist['_id'] ?? artist['phone'];
       final userPhone = await ApiService.getUserPhone();
       
@@ -54,53 +102,52 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
         return;
       }
       
-      // Update UI immediately
-      setState(() {
-        if (isFollowing) {
-          followerCount = followerCount > 0 ? followerCount - 1 : 0;
-        } else {
-          followerCount++;
-        }
-        isFollowing = !isFollowing;
-      });
+      // Store original state for potential rollback
+      final originalFollowState = isFollowing;
+      final originalFollowerCount = followerCount;
+      final action = isFollowing ? 'unfollow' : 'follow';
       
-      // Save to local storage
-      await _saveFollowStatus();
+      // Update UI optimistically
+      setState(() {
+        isFollowing = !isFollowing;
+        if (isFollowing) {
+          followerCount++;
+        } else {
+          followerCount = followerCount > 0 ? followerCount - 1 : 0;
+        }
+      });
       
       // Save to backend
       final result = await ApiService.toggleFollowArtist(
         artistId: artistId,
         userPhone: userPhone,
-        action: isFollowing ? 'follow' : 'unfollow',
+        action: action,
       );
+      
       if (result['success'] == true) {
-        // Update follower count from server response
+        // Update with server response
         setState(() {
           followerCount = result['followerCount'] ?? followerCount;
+          isFollowing = result['isFollowing'] ?? isFollowing;
         });
+        
+        // Save to local storage after successful API call
+        await _saveFollowStatus();
       } else {
         // Revert UI changes if API call failed
         setState(() {
-          if (isFollowing) {
-            followerCount = followerCount > 0 ? followerCount - 1 : 0;
-          } else {
-            followerCount++;
-          }
-          isFollowing = !isFollowing;
+          isFollowing = originalFollowState;
+          followerCount = originalFollowerCount;
         });
         print('Failed to update follow status: ${result['error']}');
       }
     } catch (e) {
       print('Error toggling follow: $e');
-      // Revert UI changes on error
-      setState(() {
-        if (isFollowing) {
-          followerCount = followerCount > 0 ? followerCount - 1 : 0;
-        } else {
-          followerCount++;
-        }
-        isFollowing = !isFollowing;
-      });
+      // Reload current state from server on error
+      await _loadFollowStatus();
+      await _loadRealFollowerCount();
+    } finally {
+      _isToggling = false;
     }
   }
 
@@ -246,7 +293,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                         ),
                       ),
                       ElevatedButton.icon(
-                        onPressed: _toggleFollow,
+                        onPressed: _isToggling ? null : _toggleFollow,
                         icon: Icon(
                           isFollowing ? Icons.person_remove : Icons.person_add,
                           size: 16,

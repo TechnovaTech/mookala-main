@@ -291,4 +291,33 @@ class ApiService {
       return {'success': false, 'error': 'Network error: $e'};
     }
   }
+  
+  static Future<Map<String, dynamic>> checkFollowStatus({
+    required String artistId,
+    required String userPhone,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/user/follow-status?artistId=$artistId&userPhone=$userPhone'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+  
+  static Future<Map<String, dynamic>> getArtistFollowerCount(String artistId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/artists/follower-count?artistId=$artistId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
 }
