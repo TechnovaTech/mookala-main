@@ -28,7 +28,7 @@ export async function PUT(
 ) {
   try {
     const params = await context.params;
-    const { title, image, mediaType, link, sponsor, startDate, endDate } = await request.json();
+    const { title, image, mediaType, link, sponsor, startDate, endDate, duration, order } = await request.json();
     
     if (!title || !image || !sponsor || !startDate || !endDate) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
@@ -47,6 +47,8 @@ export async function PUT(
           sponsor,
           startDate: new Date(startDate),
           endDate: new Date(endDate),
+          duration: duration || 0,
+          order: order || 1,
           updatedAt: new Date()
         }
       }

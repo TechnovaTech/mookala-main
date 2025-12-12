@@ -8,6 +8,7 @@ import 'artist_detail_screen.dart';
 import '../services/api_service.dart';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/services.dart';
 
 class DiscoveryHomeScreen extends StatefulWidget {
   const DiscoveryHomeScreen({super.key});
@@ -32,6 +33,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     _loadOrganizedEvents();
     _loadBanners();
     _loadCategories();
+    _loadAds();
   }
   
   Future<void> _checkUserSession() async {
@@ -104,12 +106,14 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
         _banners = bannersList.map((banner) {
           String title = banner['title']?.toString() ?? 'Banner';
           String imageUrl = banner['image']?.toString() ?? '';
+          String link = banner['link']?.toString() ?? '';
           
-          print('Banner: $title - Image: ${imageUrl.isNotEmpty ? 'Available' : 'Missing'}');
+          print('Banner: $title - Image: ${imageUrl.isNotEmpty ? 'Available' : 'Missing'} - Link: $link');
           
           return {
             'title': title,
             'image': imageUrl,
+            'link': link,
             'id': banner['_id']?.toString() ?? '',
           };
         }).toList();
@@ -154,16 +158,118 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     }
   }
   
+  Future<void> _loadAds() async {
+    setState(() {
+      _isLoadingAds = true;
+    });
+    
+    try {
+      final adsList = await ApiService.getAds();
+      setState(() {
+        final now = DateTime.now();
+        _ads = adsList.where((ad) {
+          if (ad['status'] != 'active') return false;
+          
+          // Check if ad is within date range
+          try {
+            final startDate = DateTime.parse(ad['startDate']);
+            final endDate = DateTime.parse(ad['endDate']);
+            return now.isAfter(startDate) && now.isBefore(endDate.add(Duration(days: 1)));
+          } catch (e) {
+            return true; // If date parsing fails, include the ad
+          }
+        }).map((ad) {
+          return {
+            'title': ad['title'] ?? 'Ad',
+            'image': ad['image'] ?? '',
+            'link': ad['link'] ?? '',
+            'sponsor': ad['sponsor'] ?? '',
+            'duration': ad['duration'] ?? 5, // Default 5 seconds if missing
+            'order': ad['order'] ?? 1,
+            'mediaType': ad['mediaType'] ?? 'image',
+            'id': ad['_id'] ?? '',
+          };
+        }).toList();
+        
+        // Sort ads by order
+        _ads.sort((a, b) {
+          final orderA = (a['order'] as int?) ?? 1;
+          final orderB = (b['order'] as int?) ?? 1;
+          return orderA.compareTo(orderB);
+        });
+        
+        print('Loaded ${_ads.length} ads:');
+        for (int i = 0; i < _ads.length; i++) {
+          final ad = _ads[i];
+          print('Ad $i: ${ad['title']} - Duration: ${ad['duration']}s - Order: ${ad['order']} - Link: ${ad['link']}');
+        }
+        
+        if (_ads.length == 1) {
+          print('WARNING: Only 1 ad found. Auto-rotation will still work but will show the same ad.');
+        }
+        _isLoadingAds = false;
+      });
+      if (_ads.isNotEmpty) {
+        print('Starting ad auto-scroll with ${_ads.length} ads');
+        _startAdAutoScroll();
+      } else {
+        print('No ads to display');
+      }
+    } catch (e) {
+      setState(() {
+        _ads = [];
+        _isLoadingAds = false;
+      });
+    }
+  }
+  
+  void _startAdAutoScroll() {
+    if (_ads.isNotEmpty) {
+      final currentAd = _ads[_currentAdIndex];
+      final duration = (currentAd['duration'] as int?) ?? 5;
+      
+      // Use set duration, minimum 3 seconds
+      final waitTime = duration > 0 ? duration : 5;
+      
+      print('Ad auto-scroll: Current ad $_currentAdIndex duration = $duration seconds, waiting $waitTime seconds');
+      print('Total ads: ${_ads.length}');
+      
+      Future.delayed(Duration(seconds: waitTime), () {
+        if (mounted && _ads.isNotEmpty) {
+          final nextIndex = (_currentAdIndex + 1) % _ads.length;
+          print('Switching from ad $_currentAdIndex to ad $nextIndex');
+          
+          setState(() {
+            _currentAdIndex = nextIndex;
+          });
+          
+          if (_adsController.hasClients) {
+            _adsController.animateToPage(
+              _currentAdIndex,
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOut,
+            );
+          }
+          
+          _startAdAutoScroll();
+        }
+      });
+    }
+  }
+  
   void _startBannerAutoScroll() {
     if (_banners.isNotEmpty) {
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted && _banners.isNotEmpty) {
-          _currentBannerIndex = (_currentBannerIndex + 1) % _banners.length;
-          _bannerController.animateToPage(
-            _currentBannerIndex,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-          );
+          final nextIndex = (_currentBannerIndex + 1) % _banners.length;
+          _currentBannerIndex = nextIndex;
+          if (_bannerController.hasClients) {
+            _bannerController.animateToPage(
+              _currentBannerIndex,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+            );
+          }
           _startBannerAutoScroll();
         }
       });
@@ -375,6 +481,11 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
   List<Map<String, dynamic>> _categories = [];
   bool _isLoadingCategories = false;
   PageController _categoryController = PageController();
+  
+  List<Map<String, dynamic>> _ads = [];
+  bool _isLoadingAds = false;
+  PageController _adsController = PageController();
+  int _currentAdIndex = 0;
 
   Widget _buildCategoryCard(Map<String, dynamic> category) {
     return GestureDetector(
@@ -535,76 +646,98 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                         controller: _bannerController,
                         itemCount: _banners.length,
                         onPageChanged: (index) {
-                          setState(() {
-                            _currentBannerIndex = index;
-                          });
+                          _currentBannerIndex = index;
                         },
                         itemBuilder: (context, index) {
                           final banner = _banners[index];
-                          return Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 20),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [BoxShadow(color: const Color(0xFF001F3F).withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))],
-                            ),
-                            child: Stack(
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: banner['image'].toString().startsWith('http')
-                                    ? Image.network(
-                                        banner['image'],
-                                        width: double.infinity,
-                                        height: double.infinity,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (context, error, stackTrace) {
-                                          return Container(
-                                            color: Colors.grey.shade300,
-                                            child: const Icon(Icons.image, color: Colors.grey),
-                                          );
-                                        },
-                                      )
-                                    : banner['image'].toString().startsWith('data:image')
-                                      ? Image.memory(
-                                          base64Decode(banner['image'].toString().split(',')[1]),
+                          return GestureDetector(
+                            onTap: () {
+                              final link = banner['link']?.toString() ?? '';
+                              if (link.isNotEmpty) {
+                                // Copy link to clipboard and show message
+                                Clipboard.setData(ClipboardData(text: link));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Link copied to clipboard: $link'),
+                                    duration: const Duration(seconds: 3),
+                                    action: SnackBarAction(
+                                      label: 'OK',
+                                      onPressed: () {},
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 20),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [BoxShadow(color: const Color(0xFF001F3F).withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))],
+                              ),
+                              child: Stack(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: banner['image'].toString().startsWith('http')
+                                      ? Image.network(
+                                          banner['image'],
                                           width: double.infinity,
                                           height: double.infinity,
                                           fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) {
+                                            return Container(
+                                              color: Colors.grey.shade300,
+                                              child: const Icon(Icons.image, color: Colors.grey),
+                                            );
+                                          },
                                         )
-                                      : Container(
-                                          color: Colors.grey.shade300,
-                                          child: const Icon(Icons.image, color: Colors.grey),
-                                        ),
-                                ),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(16),
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [Colors.transparent, const Color(0xFF001F3F).withOpacity(0.6)],
-                                    ),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      banner['title'],
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.bold,
-                                        shadows: [
-                                          Shadow(
-                                            offset: Offset(1, 1),
-                                            blurRadius: 3,
-                                            color: Colors.black54,
+                                      : banner['image'].toString().startsWith('data:image')
+                                        ? Image.memory(
+                                            base64Decode(banner['image'].toString().split(',')[1]),
+                                            width: double.infinity,
+                                            height: double.infinity,
+                                            fit: BoxFit.cover,
+                                          )
+                                        : Container(
+                                            color: Colors.grey.shade300,
+                                            child: const Icon(Icons.image, color: Colors.grey),
                                           ),
-                                        ],
+                                  ),
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(16),
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [Colors.transparent, const Color(0xFF001F3F).withOpacity(0.6)],
                                       ),
-                                      textAlign: TextAlign.center,
+                                    ),
+                                    child: Stack(
+                                      children: [
+                                        Center(
+                                          child: Text(
+                                            banner['title'],
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 24,
+                                              fontWeight: FontWeight.bold,
+                                              shadows: [
+                                                Shadow(
+                                                  offset: Offset(1, 1),
+                                                  blurRadius: 3,
+                                                  color: Colors.black54,
+                                                ),
+                                              ],
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+
+                                      ],
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           );
                         },
@@ -684,7 +817,138 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
               ),
             ),
             
+            // Ads Section
+            if (_ads.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Ads',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _isLoadingAds
+                      ? const Center(child: CircularProgressIndicator())
+                      : SizedBox(
+                          height: 120,
+                          child: PageView.builder(
+                            controller: _adsController,
+                            itemCount: _ads.length,
+                            onPageChanged: (index) {
+                              print('PageView onPageChanged: $index');
+                              _currentAdIndex = index;
+                            },
+                            itemBuilder: (context, index) {
+                              final ad = _ads[index];
+                              return GestureDetector(
+                                onTap: () {
+                                  final link = ad['link']?.toString() ?? '';
+                                  if (link.isNotEmpty) {
+                                    // Copy link to clipboard and show message
+                                    Clipboard.setData(ClipboardData(text: link));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Link copied to clipboard: $link'),
+                                        duration: const Duration(seconds: 3),
+                                        action: SnackBarAction(
+                                          label: 'OK',
+                                          onPressed: () {},
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.grey.withOpacity(0.2),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Stack(
+                                      children: [
+                                        ad['mediaType'] == 'video'
+                                          ? Container(
+                                              width: double.infinity,
+                                              height: double.infinity,
+                                              color: Colors.black,
+                                              child: const Center(
+                                                child: Icon(
+                                                  Icons.play_circle_fill,
+                                                  color: Colors.white,
+                                                  size: 40,
+                                                ),
+                                              ),
+                                            )
+                                          : ad['image'].toString().startsWith('http')
+                                            ? Image.network(
+                                                ad['image'],
+                                                width: double.infinity,
+                                                height: double.infinity,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (context, error, stackTrace) {
+                                                  return Container(
+                                                    color: Colors.grey.shade300,
+                                                    child: const Icon(Icons.image, color: Colors.grey),
+                                                  );
+                                                },
+                                              )
+                                            : ad['image'].toString().startsWith('data:image')
+                                              ? Image.memory(
+                                                  base64Decode(ad['image'].toString().split(',')[1]),
+                                                  width: double.infinity,
+                                                  height: double.infinity,
+                                                  fit: BoxFit.cover,
+                                                )
+                                              : Container(
+                                                  color: Colors.grey.shade300,
+                                                  child: const Icon(Icons.image, color: Colors.grey),
+                                                ),
+                                        Positioned(
+                                          bottom: 8,
+                                          left: 8,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withOpacity(0.7),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              'Sponsored by ${ad['sponsor']}',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
 
+
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                  ],
+                ),
+              ),
             
             // Artists
             Padding(
@@ -1372,6 +1636,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     _searchController.dispose();
     _bannerController.dispose();
     _categoryController.dispose();
+    _adsController.dispose();
     super.dispose();
   }
 }

@@ -12,6 +12,8 @@ interface Ad {
   sponsor: string
   startDate: string
   endDate: string
+  duration: number
+  order: number
   status: string
   createdAt: string
 }
@@ -28,7 +30,10 @@ export default function AdsPage() {
     link: '',
     sponsor: '',
     startDate: '',
-    endDate: ''
+    endDate: '',
+    minutes: '0',
+    seconds: '30',
+    order: '1'
   })
   const [submitting, setSubmitting] = useState(false)
   const [editingAd, setEditingAd] = useState<Ad | null>(null)
@@ -77,16 +82,32 @@ export default function AdsPage() {
       const url = editingAd ? `/api/ads/${editingAd._id}` : '/api/ads'
       const method = editingAd ? 'PUT' : 'POST'
       
+      const minutes = parseInt(formData.minutes) || 0
+      const seconds = parseInt(formData.seconds) || 0
+      const duration = minutes * 60 + seconds
+      
+      const submitData = {
+        title: formData.title,
+        image: formData.image,
+        mediaType: formData.mediaType,
+        link: formData.link,
+        sponsor: formData.sponsor,
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        duration: duration,
+        order: parseInt(formData.order) || 1
+      }
+      
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(submitData)
       })
       const data = await response.json()
       if (data.success) {
         alert(editingAd ? 'Ad updated successfully!' : 'Ad added successfully!')
         setShowModal(false)
-        setFormData({ title: '', image: '', mediaType: 'image', link: '', sponsor: '', startDate: '', endDate: '' })
+        setFormData({ title: '', image: '', mediaType: 'image', link: '', sponsor: '', startDate: '', endDate: '', minutes: '0', seconds: '30', order: '1' })
         setEditingAd(null)
         fetchAds()
       } else {
@@ -102,6 +123,10 @@ export default function AdsPage() {
 
   const handleEdit = (ad: Ad) => {
     setEditingAd(ad)
+    const totalSeconds = ad.duration || 0
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    
     setFormData({
       title: ad.title,
       image: ad.image,
@@ -109,7 +134,10 @@ export default function AdsPage() {
       link: ad.link || '',
       sponsor: ad.sponsor,
       startDate: new Date(ad.startDate).toISOString().split('T')[0],
-      endDate: new Date(ad.endDate).toISOString().split('T')[0]
+      endDate: new Date(ad.endDate).toISOString().split('T')[0],
+      minutes: minutes.toString(),
+      seconds: seconds.toString(),
+      order: (ad.order || 1).toString()
     })
     setShowModal(true)
   }
@@ -239,8 +267,14 @@ export default function AdsPage() {
                       </div>
                       <p className="text-sm text-slate-gray mb-2">Sponsor: {ad.sponsor}</p>
                       {ad.link && <p className="text-sm text-slate-gray mb-2">Link: {ad.link}</p>}
-                      <p className="text-sm text-slate-gray mb-3">
+                      <p className="text-sm text-slate-gray mb-2">
                         {new Date(ad.startDate).toLocaleDateString()} - {new Date(ad.endDate).toLocaleDateString()}
+                      </p>
+                      <p className="text-sm text-slate-gray mb-2">
+                        Duration: {Math.floor((ad.duration || 30) / 60)}m {(ad.duration || 30) % 60}s
+                      </p>
+                      <p className="text-sm text-slate-gray mb-3">
+                        Order: {ad.order || 1}
                       </p>
                       <div className="flex space-x-3">
                         <button
@@ -280,7 +314,7 @@ export default function AdsPage() {
           <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-bold text-gray-900">{editingAd ? 'Edit Ad' : 'Add New Ad'}</h3>
-              <button onClick={() => { setShowModal(false); setEditingAd(null); setFormData({ title: '', image: '', mediaType: 'image', link: '', sponsor: '', startDate: '', endDate: '' }) }} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={() => { setShowModal(false); setEditingAd(null); setFormData({ title: '', image: '', mediaType: 'image', link: '', sponsor: '', startDate: '', endDate: '', minutes: '0', seconds: '30', order: '1' }) }} className="p-2 hover:bg-gray-100 rounded-lg">
                 <X size={20} />
               </button>
             </div>
@@ -323,6 +357,25 @@ export default function AdsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
                   <input type="date" required value={formData.endDate} onChange={(e) => setFormData({ ...formData, endDate: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Display Duration (Optional)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Minutes</label>
+                      <input type="number" min="0" max="59" value={formData.minutes} onChange={(e) => setFormData({ ...formData, minutes: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Seconds</label>
+                      <input type="number" min="0" max="59" value={formData.seconds} onChange={(e) => setFormData({ ...formData, seconds: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Display Order</label>
+                  <input type="number" min="1" value={formData.order} onChange={(e) => setFormData({ ...formData, order: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" placeholder="1" />
                 </div>
               </div>
               <button type="submit" disabled={submitting} className="w-full py-2 bg-emerald text-white rounded-lg hover:bg-emerald/90 disabled:opacity-50">

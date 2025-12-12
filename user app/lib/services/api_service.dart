@@ -249,4 +249,24 @@ class ApiService {
       return [];
     }
   }
+  
+  static Future<List<Map<String, dynamic>>> getAds() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/ads'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['ads'] != null) {
+          return List<Map<String, dynamic>>.from(data['ads']);
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching ads: $e');
+      return [];
+    }
+  }
 }

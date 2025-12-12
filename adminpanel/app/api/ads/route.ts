@@ -17,6 +17,8 @@ export async function GET() {
         sponsor: a.sponsor,
         startDate: a.startDate,
         endDate: a.endDate,
+        duration: a.duration || 0,
+        order: a.order || 1,
         status: a.status || 'active',
         createdAt: a.createdAt
       }))
@@ -29,7 +31,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { title, image, mediaType, link, sponsor, startDate, endDate } = await request.json();
+    const { title, image, mediaType, link, sponsor, startDate, endDate, duration, order } = await request.json();
     
     if (!title || !image || !sponsor || !startDate || !endDate) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
@@ -45,6 +47,8 @@ export async function POST(request: NextRequest) {
       sponsor,
       startDate: new Date(startDate),
       endDate: new Date(endDate),
+      duration: duration || 0,
+      order: order || 1,
       status: 'active',
       createdAt: new Date()
     });
