@@ -158,9 +158,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     if (_banners.isNotEmpty) {
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted && _banners.isNotEmpty) {
-          setState(() {
-            _currentBannerIndex = (_currentBannerIndex + 1) % _banners.length;
-          });
+          _currentBannerIndex = (_currentBannerIndex + 1) % _banners.length;
           _bannerController.animateToPage(
             _currentBannerIndex,
             duration: const Duration(milliseconds: 300),
