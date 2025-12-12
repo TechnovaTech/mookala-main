@@ -252,16 +252,6 @@ export default function ArtistDetailPage() {
                     <p className="text-gray-900 font-medium">{formatDate(artist.createdAt)}</p>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <User size={24} className="text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-blue-600 font-medium">Total Followers</p>
-                    <p className="text-2xl font-bold text-blue-700">{artist.followersCount || 0}</p>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
