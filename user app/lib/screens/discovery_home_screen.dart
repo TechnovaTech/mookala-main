@@ -31,6 +31,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     _loadArtists();
     _loadOrganizedEvents();
     _loadBanners();
+    _loadCategories();
     _startBannerAutoScroll();
   }
   
@@ -120,6 +121,33 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
       setState(() {
         _banners = [];
         _isLoadingBanners = false;
+      });
+    }
+  }
+  
+  Future<void> _loadCategories() async {
+    setState(() {
+      _isLoadingCategories = true;
+    });
+    
+    try {
+      final categoriesList = await ApiService.getCategories();
+      setState(() {
+        _categories = categoriesList.map((category) {
+          return {
+            'name': category['name'] ?? 'Category',
+            'type': category['type'] ?? 'Event',
+            'image': category['image'] ?? 'assets/images/concert.jpg',
+            'subCategories': category['subCategories'] ?? [],
+            'id': category['_id'] ?? '',
+          };
+        }).toList();
+        _isLoadingCategories = false;
+      });
+    } catch (e) {
+      setState(() {
+        _categories = [];
+        _isLoadingCategories = false;
       });
     }
   }
@@ -341,17 +369,22 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
   bool _isLoadingBanners = false;
   PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
+  
+  List<Map<String, dynamic>> _categories = [];
+  bool _isLoadingCategories = false;
+  PageController _categoryController = PageController();
+  int _currentCategoryPage = 0;
 
-  Widget _buildCategoryCard(String title, String imagePath, Color backgroundColor) {
+  Widget _buildCategoryCard(Map<String, dynamic> category) {
     return GestureDetector(
       onTap: () {
         final categoryEvents = nearbyEvents.where((event) => 
-          event['category'].toLowerCase().contains(title.toLowerCase())).toList();
+          event['category'].toLowerCase().contains(category['name'].toLowerCase())).toList();
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => CategoryEventsScreen(
-              categoryName: title,
+              categoryName: category['name'],
               events: categoryEvents,
             ),
           ),
@@ -363,33 +396,50 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
         ),
         child: Stack(
           children: [
-            // Full background image
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: Image.asset(
-                imagePath,
-                width: double.infinity,
-                height: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    color: Colors.grey.shade300,
-                    child: const Icon(Icons.image, color: Colors.grey),
-                  );
-                },
-              ),
+              child: category['image'].toString().startsWith('http')
+                ? Image.network(
+                    category['image'],
+                    width: double.infinity,
+                    height: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: Colors.grey.shade300,
+                        child: const Icon(Icons.image, color: Colors.grey),
+                      );
+                    },
+                  )
+                : category['image'].toString().startsWith('data:image')
+                  ? Image.memory(
+                      base64Decode(category['image'].toString().split(',')[1]),
+                      width: double.infinity,
+                      height: double.infinity,
+                      fit: BoxFit.cover,
+                    )
+                  : Image.asset(
+                      category['image'],
+                      width: double.infinity,
+                      height: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          color: Colors.grey.shade300,
+                          child: const Icon(Icons.image, color: Colors.grey),
+                        );
+                      },
+                    ),
             ),
-            // Dark overlay
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 color: Colors.black.withOpacity(0.4),
               ),
             ),
-            // Centered white text
             Center(
               child: Text(
-                title,
+                category['name'],
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -577,29 +627,63 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                         ),
                       ),
                       const Spacer(),
-                      const Icon(
-                        Icons.arrow_forward_ios,
-                        color: Colors.blue,
-                        size: 20,
-                      ),
+                      if (_categories.length > 4)
+                        Row(
+                          children: [
+                            Text(
+                              '${_currentCategoryPage + 1}/${((_categories.length - 1) ~/ 4) + 1}',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.arrow_forward_ios,
+                              color: Colors.blue,
+                              size: 20,
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                   const SizedBox(height: 20),
-                  // 2x2 Grid
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 1.8,
-                    children: [
-                      _buildCategoryCard('Music', 'assets/images/concert.jpg', Colors.blue.shade50),
-                      _buildCategoryCard('Theatre', 'assets/images/theatre.jpg', Colors.blue.shade50),
-                      _buildCategoryCard('Concert', 'assets/images/concert.jpg', Colors.blue.shade50),
-                      _buildCategoryCard('Jatra', 'assets/images/folk.jpg', Colors.orange.shade50),
-                    ],
-                  ),
+                  _isLoadingCategories
+                    ? const Center(child: CircularProgressIndicator())
+                    : _categories.isEmpty
+                      ? const Center(child: Text('No categories available'))
+                      : SizedBox(
+                          height: 200,
+                          child: PageView.builder(
+                            controller: _categoryController,
+                            onPageChanged: (index) {
+                              setState(() {
+                                _currentCategoryPage = index;
+                              });
+                            },
+                            itemCount: ((_categories.length - 1) ~/ 4) + 1,
+                            itemBuilder: (context, pageIndex) {
+                              final startIndex = pageIndex * 4;
+                              final endIndex = (startIndex + 4).clamp(0, _categories.length);
+                              final pageCategories = _categories.sublist(startIndex, endIndex);
+                              
+                              return GridView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 16,
+                                  childAspectRatio: 1.8,
+                                ),
+                                itemCount: pageCategories.length,
+                                itemBuilder: (context, index) {
+                                  return _buildCategoryCard(pageCategories[index]);
+                                },
+                              );
+                            },
+                          ),
+                        ),
                 ],
               ),
             ),
@@ -1291,6 +1375,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
   void dispose() {
     _searchController.dispose();
     _bannerController.dispose();
+    _categoryController.dispose();
     super.dispose();
   }
 }

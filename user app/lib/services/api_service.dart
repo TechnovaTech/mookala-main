@@ -229,4 +229,24 @@ class ApiService {
       return [];
     }
   }
+  
+  static Future<List<Map<String, dynamic>>> getCategories() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/categories'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is List) {
+          return List<Map<String, dynamic>>.from(data);
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching categories: $e');
+      return [];
+    }
+  }
 }
