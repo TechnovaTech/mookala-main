@@ -8,6 +8,11 @@ import Sidebar from '@/components/Sidebar';
 interface Event {
   _id: string;
   name: string;
+  category?: string;
+  subCategories?: string[];
+  languages?: string[];
+  description?: string;
+  terms?: string;
   locationType: string;
   status: string;
   startDate: string;
@@ -213,6 +218,59 @@ export default function EventDetailsPage() {
         </div>
 
         <div className="grid gap-6">
+          {/* Category & Details */}
+          {(event.category || event.description || event.terms) && (
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-bold mb-4">Event Details</h2>
+              <div className="space-y-4">
+                {event.category && (
+                  <div>
+                    <h3 className="font-semibold mb-2">Category</h3>
+                    <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                      {event.category}
+                    </span>
+                  </div>
+                )}
+                {event.subCategories && event.subCategories.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold mb-2">Sub Categories</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {event.subCategories.map((sub, index) => (
+                        <span key={index} className="inline-block px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm">
+                          {sub}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {event.languages && event.languages.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold mb-2">Languages</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {event.languages.map((lang, index) => (
+                        <span key={index} className="inline-block px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
+                          {lang}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {event.description && (
+                  <div>
+                    <h3 className="font-semibold mb-2">Description</h3>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg">{event.description}</p>
+                  </div>
+                )}
+                {event.terms && (
+                  <div>
+                    <h3 className="font-semibold mb-2">Terms & Conditions</h3>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg">{event.terms}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Event Details Card */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-bold mb-4">Event Information</h2>

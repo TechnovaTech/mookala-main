@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
-import { Tag, Plus, Edit2, Trash2, Bell, Search, ChevronDown, LogOut, User, Settings as SettingsIcon, X } from 'lucide-react'
+import { Tag, Plus, Edit2, Trash2, Bell, Search, ChevronDown, LogOut, User, Settings as SettingsIcon, X, Upload } from 'lucide-react'
 
 interface SubCategory {
   name: string
@@ -11,6 +11,7 @@ interface Category {
   _id?: string
   name: string
   type: string
+  image?: string
   subCategories: SubCategory[]
 }
 
@@ -20,6 +21,7 @@ export default function CategoryManager() {
   const [showModal, setShowModal] = useState(false)
   const [categoryName, setCategoryName] = useState('')
   const [categoryType, setCategoryType] = useState('')
+  const [categoryImage, setCategoryImage] = useState<string | null>(null)
   const [subCategories, setSubCategories] = useState<SubCategory[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
 
@@ -52,6 +54,17 @@ export default function CategoryManager() {
     setSubCategories(subCategories.filter((_, i) => i !== index))
   }
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setCategoryImage(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
   const handleSaveCategory = async () => {
     if (!categoryName || !categoryType) {
       alert('Please fill all required fields')
@@ -68,6 +81,7 @@ export default function CategoryManager() {
         body: JSON.stringify({
           name: categoryName,
           type: categoryType,
+          image: categoryImage,
           subCategories: subCategories.filter(sc => sc.name.trim() !== '')
         })
       })
@@ -77,6 +91,7 @@ export default function CategoryManager() {
         setShowModal(false)
         setCategoryName('')
         setCategoryType('')
+        setCategoryImage(null)
         setSubCategories([])
         setEditingId(null)
       }
@@ -89,6 +104,7 @@ export default function CategoryManager() {
     setEditingId(category._id!)
     setCategoryName(category.name)
     setCategoryType(category.type)
+    setCategoryImage(category.image || null)
     setSubCategories(category.subCategories || [])
     setShowModal(true)
   }
@@ -189,12 +205,30 @@ export default function CategoryManager() {
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between p-6 border-b">
                   <h2 className="text-2xl font-bold text-gray-900">{editingId ? 'Edit Category' : 'Add New Category'}</h2>
-                  <button onClick={() => { setShowModal(false); setEditingId(null); setCategoryName(''); setCategoryType(''); setSubCategories([]); }} className="text-gray-500 hover:text-gray-700">
+                  <button onClick={() => { setShowModal(false); setEditingId(null); setCategoryName(''); setCategoryType(''); setCategoryImage(null); setSubCategories([]); }} className="text-gray-500 hover:text-gray-700">
                     <X size={24} />
                   </button>
                 </div>
 
                 <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Category Image</label>
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                      {categoryImage ? (
+                        <img src={categoryImage} alt="Preview" className="w-full h-32 object-cover rounded-lg mb-2" />
+                      ) : (
+                        <div className="py-8">
+                          <Upload className="mx-auto text-gray-400 mb-2" size={32} />
+                          <p className="text-sm text-gray-500">Upload category image</p>
+                        </div>
+                      )}
+                      <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" id="category-upload" />
+                      <label htmlFor="category-upload" className="cursor-pointer text-sm text-teal hover:text-teal/80">
+                        {categoryImage ? 'Change Image' : 'Upload Image'}
+                      </label>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Category Name *</label>
                     <input
@@ -253,7 +287,7 @@ export default function CategoryManager() {
 
                 <div className="flex items-center justify-end gap-3 p-6 border-t">
                   <button
-                    onClick={() => { setShowModal(false); setEditingId(null); setCategoryName(''); setCategoryType(''); setSubCategories([]); }}
+                    onClick={() => { setShowModal(false); setEditingId(null); setCategoryName(''); setCategoryType(''); setCategoryImage(null); setSubCategories([]); }}
                     className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
                   >
                     Cancel
@@ -271,40 +305,35 @@ export default function CategoryManager() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {categories && categories.length > 0 ? categories.map((category) => (
-              <div key={category._id} className="bg-white rounded-xl shadow-lg border border-gray-100 hover:shadow-xl transition-all">
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-gradient-to-r from-emerald to-teal rounded-lg flex items-center justify-center">
-                        <Tag size={24} className="text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-gray-900">{category.name}</h3>
-                        <p className="text-sm text-gray-500">{category.type}</p>
-                      </div>
-                    </div>
+              <div key={category._id} className="bg-gradient-to-br from-gray-50 to-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-lg transition-all">
+                {category.image ? (
+                  <img src={category.image} alt={category.name} className="w-full h-48 object-cover" />
+                ) : (
+                  <div className="w-full h-48 bg-gradient-to-r from-emerald to-teal flex items-center justify-center">
+                    <Tag size={48} className="text-white" />
                   </div>
-
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-700">Sub Categories</span>
-                      <span className="text-sm font-bold text-teal">{category.subCategories?.length || 0}</span>
-                    </div>
+                )}
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-lg font-bold text-deep-blue">{category.name}</h3>
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-emerald/10 text-emerald border border-emerald/20">
+                      {category.type}
+                    </span>
                   </div>
-
-                  <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
-                    <button 
+                  <p className="text-sm text-slate-gray mb-3">Sub Categories: {category.subCategories?.length || 0}</p>
+                  <div className="flex space-x-3">
+                    <button
                       onClick={() => handleEditCategory(category)}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all"
+                      className="flex items-center text-blue-600 hover:text-blue-800 text-sm"
                     >
-                      <Edit2 size={16} />
+                      <Edit2 size={14} className="mr-1" />
                       Edit
                     </button>
-                    <button 
+                    <button
                       onClick={() => handleDeleteCategory(category._id!)}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-all"
+                      className="flex items-center text-red-600 hover:text-red-800 text-sm"
                     >
-                      <Trash2 size={16} />
+                      <Trash2 size={14} className="mr-1" />
                       Delete
                     </button>
                   </div>
