@@ -41,7 +41,9 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   List<Map<String, dynamic>> _categories = [];
   List<String> _languages = [];
   String? _selectedCategory;
+  List<String> _selectedSubCategories = [];
   List<String> _selectedLanguages = [];
+  List<String> _subCategories = [];
 
   @override
   void initState() {
@@ -99,6 +101,95 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     } catch (e) {
       print('Error loading artists: $e');
     }
+  }
+
+  void _showSubCategorySelectionDialog() {
+    final TextEditingController searchController = TextEditingController();
+    List<String> filteredSubCategories = List.from(_subCategories);
+    List<String> tempSelectedSubCategories = List.from(_selectedSubCategories);
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Select Sub Categories'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: Column(
+              children: [
+                TextField(
+                  controller: searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search sub categories...',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      filteredSubCategories = _subCategories.where((subCategory) {
+                        final name = subCategory.toLowerCase();
+                        final search = value.toLowerCase();
+                        return name.contains(search);
+                      }).toList();
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: filteredSubCategories.isEmpty
+                      ? const Center(child: Text('No sub categories found'))
+                      : ListView.builder(
+                          itemCount: filteredSubCategories.length,
+                          itemBuilder: (context, index) {
+                            final subCategory = filteredSubCategories[index];
+                            final isSelected = tempSelectedSubCategories.contains(subCategory);
+                            
+                            return CheckboxListTile(
+                              title: Text(subCategory),
+                              value: isSelected,
+                              activeColor: const Color(0xFF001F3F),
+                              onChanged: (bool? value) {
+                                setDialogState(() {
+                                  if (value == true) {
+                                    tempSelectedSubCategories.add(subCategory);
+                                  } else {
+                                    tempSelectedSubCategories.remove(subCategory);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _selectedSubCategories = tempSelectedSubCategories;
+                });
+                Navigator.pop(context);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF001F3F),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showLanguageSelectionDialog() {
@@ -370,11 +461,83 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                       child: Text(category['name']),
                     );
                   }).toList(),
-                  onChanged: (value) => setState(() => _selectedCategory = value),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedCategory = value;
+                      _selectedSubCategories = [];
+                      _subCategories = [];
+                      if (value != null) {
+                        final category = _categories.firstWhere((cat) => cat['name'] == value);
+                        if (category['subCategories'] != null) {
+                          _subCategories = (category['subCategories'] as List)
+                              .map((sub) => sub['name'].toString())
+                              .toList();
+                        }
+                      }
+                    });
+                  },
                 ),
               ),
             ),
             const SizedBox(height: 16),
+            
+            // Subcategory Selection with checkboxes
+            if (_selectedCategory != null && _subCategories.isNotEmpty) ...[
+              const Text(
+                'Sub Categories *',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: _showSubCategorySelectionDialog,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _selectedSubCategories.isEmpty
+                            ? const Text(
+                                'Select sub categories',
+                                style: TextStyle(color: Colors.grey),
+                              )
+                            : Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: _selectedSubCategories.map((subCategory) {
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF001F3F).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      subCategory,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF001F3F),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                      ),
+                      const Icon(Icons.arrow_drop_down, color: Colors.grey),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             
             // Language Selection
             const Text(
@@ -1601,6 +1764,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     final eventData = {
       'name': _eventNameController.text,
       'category': _selectedCategory,
+      'subCategories': _selectedSubCategories,
       'languages': _selectedLanguages,
       'locationType': _selectedLocationType,
       'artists': _addedArtists,

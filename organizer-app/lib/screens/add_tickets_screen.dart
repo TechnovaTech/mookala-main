@@ -361,6 +361,7 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
       final completeEventData = {
         'name': widget.eventData['name'] ?? 'Untitled Event',
         'category': widget.eventData['category'],
+        'subCategories': widget.eventData['subCategories'] ?? [],
         'languages': cleanLanguages,
         'description': widget.eventData['description'],
         'terms': widget.eventData['terms'],

@@ -92,6 +92,9 @@ export async function POST(request: NextRequest) {
     const newEvent = {
       ...eventData,
       category: eventData.category || null,
+      subCategories: eventData.subCategories && Array.isArray(eventData.subCategories)
+        ? eventData.subCategories.filter(sub => sub && sub.trim() !== '')
+        : [],
       languages: eventData.languages && Array.isArray(eventData.languages) 
         ? eventData.languages.filter(lang => lang && lang.trim() !== '') 
         : eventData.language 
