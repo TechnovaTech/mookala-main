@@ -13,7 +13,15 @@ export async function GET() {
       {
         $match: {
           status: 'approved',
-          artistResponse: 'accepted'
+          $or: [
+            { artistResponse: 'accepted' },
+            { 
+              $and: [
+                { $or: [{ artists: { $exists: false } }, { artists: { $size: 0 } }] },
+                { artistResponse: { $exists: false } }
+              ]
+            }
+          ]
         }
       },
       {

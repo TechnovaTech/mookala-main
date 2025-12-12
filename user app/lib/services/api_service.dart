@@ -125,14 +125,26 @@ class ApiService {
   
   static Future<Map<String, dynamic>> getApprovedEvents() async {
     try {
+      print('Calling API: $baseUrl/events/approved');
       final response = await http.get(
         Uri.parse('$baseUrl/events/approved'),
         headers: {'Content-Type': 'application/json'},
       );
       
-      return jsonDecode(response.body);
+      print('API Response Status: ${response.statusCode}');
+      print('API Response Body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print('Parsed API Data: $data');
+        return data;
+      } else {
+        print('API Error: Status ${response.statusCode}');
+        return {'success': false, 'error': 'API returned status ${response.statusCode}'};
+      }
     } catch (e) {
-      return {'success': false, 'error': 'Network error'};
+      print('Network Error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
   

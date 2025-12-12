@@ -304,14 +304,20 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     
     final result = await ApiService.getApprovedEvents();
     print('Approved Events Result: $result');
+    print('API Response Success: ${result['success']}');
+    print('API Response Events: ${result['events']}');
     
     if (result['success'] == true && result['events'] != null) {
       final events = result['events'] as List;
-      print('Number of events: ${events.length}');
+      print('Number of events received: ${events.length}');
+      
+      if (events.isEmpty) {
+        print('No approved events found in database');
+      }
       
       setState(() {
         _organizedEvents = events.map((event) {
-          print('Event data: $event');
+          print('Processing event: ${event['name'] ?? event['title']} - Status: ${event['status']} - ArtistResponse: ${event['artistResponse']}');
           final startDate = event['startDate'] ?? '';
           final startTime = event['startTime'] ?? '';
           final dateDisplay = startDate.isNotEmpty && startTime.isNotEmpty 
@@ -1518,7 +1524,26 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                   _isLoadingEvents
                     ? const Center(child: CircularProgressIndicator())
                     : _organizedEvents.isEmpty
-                      ? const Center(child: Text('No events available'))
+                      ? Container(
+                          height: 100,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.event_busy, size: 40, color: Colors.grey.shade400),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'No organized events available',
+                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                                ),
+                                Text(
+                                  'Events need admin approval and artist acceptance',
+                                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
                       : SizedBox(
                     height: 260,
                     child: ListView.builder(
