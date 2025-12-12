@@ -210,20 +210,23 @@ class ApiService {
     }
   }
   
-  static Future<dynamic> getBanners() async {
+  static Future<List<Map<String, dynamic>>> getBanners() async {
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:3000/banners'),
+        Uri.parse('$baseUrl/banners'),
         headers: {'Content-Type': 'application/json'},
       );
       
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        return {'success': false, 'error': 'Failed to fetch banners'};
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['banners'] != null) {
+          return List<Map<String, dynamic>>.from(data['banners']);
+        }
       }
+      return [];
     } catch (e) {
-      return {'success': false, 'error': 'Network error: $e'};
+      print('Error fetching banners: $e');
+      return [];
     }
   }
 }

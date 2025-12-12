@@ -101,22 +101,18 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
       print('Received ${bannersList.length} banners');
       
       setState(() {
-        if (bannersList.isNotEmpty) {
-          _banners = bannersList.map((banner) {
-            String title = banner['title']?.toString() ?? 'Banner';
-            String imageUrl = banner['image']?.toString() ?? '';
-            
-            print('Banner: $title - Image: ${imageUrl.isNotEmpty ? 'Available' : 'Missing'}');
-            
-            return {
-              'title': title,
-              'image': imageUrl,
-              'id': banner['_id']?.toString() ?? '',
-            };
-          }).toList();
-        } else {
-          _banners = [];
-        }
+        _banners = bannersList.map((banner) {
+          String title = banner['title']?.toString() ?? 'Banner';
+          String imageUrl = banner['image']?.toString() ?? '';
+          
+          print('Banner: $title - Image: ${imageUrl.isNotEmpty ? 'Available' : 'Missing'}');
+          
+          return {
+            'title': title,
+            'image': imageUrl,
+            'id': banner['_id']?.toString() ?? '',
+          };
+        }).toList();
         _isLoadingBanners = false;
       });
     } catch (e) {
