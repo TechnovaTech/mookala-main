@@ -47,6 +47,16 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   void initState() {
     super.initState();
     _loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _setCurrentDateTime());
+  }
+  
+  void _setCurrentDateTime() {
+    final now = DateTime.now();
+    final currentTime = TimeOfDay.now();
+    setState(() {
+      _dateController.text = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      _timeController.text = currentTime.format(context);
+    });
   }
   
   Future<void> _loadData() async {
@@ -155,48 +165,99 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   }
 
   void _showAddArtistDialog() {
+    final TextEditingController searchController = TextEditingController();
+    List<Map<String, dynamic>> filteredArtists = List.from(_availableArtists);
+    List<Map<String, dynamic>> tempSelectedArtists = List.from(_addedArtists);
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Select Artist'),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 300,
-          child: _availableArtists.isEmpty
-              ? const Center(child: Text('No artists available'))
-              : ListView.builder(
-                  itemCount: _availableArtists.length,
-                  itemBuilder: (context, index) {
-                    final artist = _availableArtists[index];
-                    final isSelected = _addedArtists.any((a) => a['_id'] == artist['_id']);
-                    
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: const Color(0xFF001F3F).withOpacity(0.1),
-                        child: const Icon(Icons.person, color: Color(0xFF001F3F)),
-                      ),
-                      title: Text(artist['name'] ?? ''),
-                      subtitle: Text(artist['genre'] ?? ''),
-                      trailing: isSelected ? const Icon(Icons.check, color: Colors.green) : null,
-                      onTap: isSelected ? null : () {
-                        setState(() {
-                          _addedArtists.add(artist);
-                        });
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('${artist['name']} added successfully')),
-                        );
-                      },
-                    );
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Select Artists'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: Column(
+              children: [
+                TextField(
+                  controller: searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search artists...',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      filteredArtists = _availableArtists.where((artist) {
+                        final name = (artist['name'] ?? '').toLowerCase();
+                        final genre = (artist['genre'] ?? '').toLowerCase();
+                        final search = value.toLowerCase();
+                        return name.contains(search) || genre.contains(search);
+                      }).toList();
+                    });
                   },
                 ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: filteredArtists.isEmpty
+                      ? const Center(child: Text('No artists found'))
+                      : ListView.builder(
+                          itemCount: filteredArtists.length,
+                          itemBuilder: (context, index) {
+                            final artist = filteredArtists[index];
+                            final isSelected = tempSelectedArtists.any((a) => a['_id'] == artist['_id']);
+                            
+                            return CheckboxListTile(
+                              secondary: CircleAvatar(
+                                backgroundColor: const Color(0xFF001F3F).withOpacity(0.1),
+                                child: const Icon(Icons.person, color: Color(0xFF001F3F), size: 20),
+                              ),
+                              title: Text(artist['name'] ?? ''),
+                              subtitle: Text(artist['genre'] ?? ''),
+                              value: isSelected,
+                              activeColor: const Color(0xFF001F3F),
+                              onChanged: (bool? value) {
+                                setDialogState(() {
+                                  if (value == true) {
+                                    tempSelectedArtists.add(artist);
+                                  } else {
+                                    tempSelectedArtists.removeWhere((a) => a['_id'] == artist['_id']);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _addedArtists = tempSelectedArtists;
+                });
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('${tempSelectedArtists.length} artist(s) selected')),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF001F3F),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -737,7 +798,9 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                             lastDate: DateTime.now().add(const Duration(days: 365)),
                           );
                           if (date != null) {
-                            _dateController.text = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+                            setState(() {
+                              _dateController.text = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+                            });
                           }
                         },
                         decoration: InputDecoration(
@@ -780,7 +843,9 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                             initialTime: TimeOfDay.now(),
                           );
                           if (time != null) {
-                            _timeController.text = time.format(context);
+                            setState(() {
+                              _timeController.text = time.format(context);
+                            });
                           }
                         },
                         decoration: InputDecoration(
@@ -808,8 +873,12 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
             if (!_showEndTime)
               TextButton.icon(
                 onPressed: () {
+                  final now = DateTime.now();
+                  final currentTime = TimeOfDay.now();
                   setState(() {
                     _showEndTime = true;
+                    _endDateController.text = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+                    _endTimeController.text = currentTime.format(context);
                   });
                 },
                 icon: const Icon(Icons.add, color: Colors.grey),
@@ -848,7 +917,9 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                               lastDate: DateTime.now().add(const Duration(days: 365)),
                             );
                             if (date != null) {
-                              _endDateController.text = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+                              setState(() {
+                                _endDateController.text = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+                              });
                             }
                           },
                           decoration: InputDecoration(
@@ -891,7 +962,9 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                               initialTime: TimeOfDay.now(),
                             );
                             if (time != null) {
-                              _endTimeController.text = time.format(context);
+                              setState(() {
+                                _endTimeController.text = time.format(context);
+                              });
                             }
                           },
                           decoration: InputDecoration(
