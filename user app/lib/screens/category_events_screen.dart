@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'event_details_screen.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 
 class CategoryEventsScreen extends StatefulWidget {
   final String categoryName;
+  final String categoryImage;
   final List<Map<String, dynamic>> events;
 
   const CategoryEventsScreen({
     super.key,
     required this.categoryName,
+    required this.categoryImage,
     required this.events,
   });
 
@@ -133,7 +137,7 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
             height: 280,
             decoration: BoxDecoration(
               image: DecorationImage(
-                image: NetworkImage(_getCategoryImage()),
+                image: _getCategoryImageProvider(),
                 fit: BoxFit.cover,
               ),
             ),
@@ -192,14 +196,7 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
                         color: Colors.white,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Events near you',
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.white70,
-                      ),
-                    ),
+
                   ],
                 ),
               ),
@@ -424,18 +421,13 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
     );
   }
 
-  String _getCategoryImage() {
-    switch (widget.categoryName.toLowerCase()) {
-      case 'music':
-        return 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=280&fit=crop';
-      case 'theatre':
-        return 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=280&fit=crop';
-      case 'concert':
-        return 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=280&fit=crop';
-      case 'jatra':
-        return 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=400&h=280&fit=crop';
-      default:
-        return 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=280&fit=crop';
+  ImageProvider _getCategoryImageProvider() {
+    if (widget.categoryImage.startsWith('http')) {
+      return NetworkImage(widget.categoryImage);
+    } else if (widget.categoryImage.startsWith('data:image')) {
+      return MemoryImage(base64Decode(widget.categoryImage.split(',')[1]));
+    } else {
+      return AssetImage(widget.categoryImage);
     }
   }
 

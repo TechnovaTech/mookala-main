@@ -386,6 +386,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
           MaterialPageRoute(
             builder: (context) => CategoryEventsScreen(
               categoryName: category['name'],
+              categoryImage: category['image'],
               events: categoryEvents,
             ),
           ),
