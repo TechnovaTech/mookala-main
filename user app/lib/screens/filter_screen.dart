@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 
 class FilterScreen extends StatefulWidget {
-  final Function(Map<String, List<String>>) onFiltersApplied;
+  final Function(Map<String, dynamic>) onFiltersApplied;
   
   const FilterScreen({super.key, required this.onFiltersApplied});
 
@@ -12,6 +13,9 @@ class FilterScreen extends StatefulWidget {
 class _FilterScreenState extends State<FilterScreen> {
   int selectedCategoryIndex = 0;
   String searchQuery = '';
+  bool isLoading = false;
+  DateTime? startDate;
+  DateTime? endDate;
   
   final List<String> filterCategories = [
     'Artist Name',
@@ -21,39 +25,132 @@ class _FilterScreenState extends State<FilterScreen> {
     'Price Range'
   ];
 
-  final List<Map<String, dynamic>> allItems = [
-    // Artists
-    {'name': 'Alok Katdare', 'count': 11, 'selected': false, 'type': 'artist'},
-    {'name': 'Gul Saxena', 'count': 9, 'selected': false, 'type': 'artist'},
-    {'name': 'Sarvesh Mishra', 'count': 5, 'selected': false, 'type': 'artist'},
-    {'name': 'Shailaja Subramanian', 'count': 4, 'selected': false, 'type': 'artist'},
-    {'name': 'Shrikant Narayan', 'count': 4, 'selected': false, 'type': 'artist'},
-    {'name': 'Sampada Goswami', 'count': 3, 'selected': false, 'type': 'artist'},
-    {'name': 'Mona Kamat Prabhugaonkar', 'count': 3, 'selected': false, 'type': 'artist'},
-    {'name': 'Dhanashri Deshpande', 'count': 3, 'selected': false, 'type': 'artist'},
-    {'name': 'Payal Agarwal', 'count': 3, 'selected': false, 'type': 'artist'},
-    {'name': 'Ravindra Shinde', 'count': 3, 'selected': false, 'type': 'artist'},
-    {'name': 'Ajay Madan', 'count': 3, 'selected': false, 'type': 'artist'},
-    {'name': 'Taylor Swift', 'count': 2, 'selected': false, 'type': 'artist'},
-    {'name': 'Rahul Deshpande', 'count': 2, 'selected': false, 'type': 'artist'},
-    {'name': 'Mukhtar Shah', 'count': 2, 'selected': false, 'type': 'artist'},
-    {'name': 'Prajakta Satardekar', 'count': 2, 'selected': false, 'type': 'artist'},
-    {'name': 'Govind Mishra', 'count': 2, 'selected': false, 'type': 'artist'},
-    
-    // Event Titles
-    {'name': 'Classical Music Evening', 'count': 5, 'selected': false, 'type': 'event'},
-    {'name': 'Shakespeare Drama', 'count': 3, 'selected': false, 'type': 'event'},
-    {'name': 'Folk Dance Festival', 'count': 4, 'selected': false, 'type': 'event'},
-    {'name': 'Rock Concert', 'count': 6, 'selected': false, 'type': 'event'},
-    {'name': 'Jazz Night', 'count': 2, 'selected': false, 'type': 'event'},
-    
-    // Venues
-    {'name': 'Tata Theatre', 'count': 8, 'selected': false, 'type': 'venue'},
-    {'name': 'Prithvi Theatre', 'count': 6, 'selected': false, 'type': 'venue'},
-    {'name': 'NSCI Dome', 'count': 4, 'selected': false, 'type': 'venue'},
-    {'name': 'Phoenix Mills', 'count': 3, 'selected': false, 'type': 'venue'},
-    {'name': 'Hard Rock Cafe', 'count': 2, 'selected': false, 'type': 'venue'},
+  List<Map<String, dynamic>> allItems = [];
+  List<Map<String, dynamic>> priceRanges = [
+    {'range': '₹1 - ₹500', 'min': 1, 'max': 500, 'selected': false, 'count': 0},
+    {'range': '₹501 - ₹1000', 'min': 501, 'max': 1000, 'selected': false, 'count': 0},
+    {'range': '₹1001 - ₹1500', 'min': 1001, 'max': 1500, 'selected': false, 'count': 0},
+    {'range': 'Above ₹1500', 'min': 1501, 'max': 999999, 'selected': false, 'count': 0},
+    {'range': 'Free', 'min': 0, 'max': 0, 'selected': false, 'count': 0},
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFilterData();
+  }
+
+  Future<void> _loadFilterData() async {
+    setState(() { isLoading = true; });
+    
+    try {
+      // Load artists
+      final artistsResult = await ApiService.getArtists();
+      List<Map<String, dynamic>> artists = [];
+      if (artistsResult['success'] == true && artistsResult['artists'] != null) {
+        artists = (artistsResult['artists'] as List).map((artist) => {
+          'name': artist['name'] ?? 'Unknown Artist',
+          'count': 1, // Will be updated with real event count
+          'selected': false,
+          'type': 'artist',
+          'id': artist['_id']
+        }).toList();
+      }
+
+      // Load venues
+      final venuesResult = await ApiService.getVenues();
+      List<Map<String, dynamic>> venues = [];
+      if (venuesResult['success'] == true && venuesResult['venues'] != null) {
+        venues = (venuesResult['venues'] as List).map((venue) => {
+          'name': venue['name'] ?? 'Unknown Venue',
+          'count': 0, // Will be updated with event count
+          'selected': false,
+          'type': 'venue',
+          'id': venue['_id']
+        }).toList();
+      }
+
+      // Load events and count occurrences
+      final eventsResult = await ApiService.getApprovedEvents();
+      List<Map<String, dynamic>> events = [];
+      Map<String, int> venueCounts = {};
+      
+      if (eventsResult['success'] == true && eventsResult['events'] != null) {
+        final eventsList = eventsResult['events'] as List;
+        
+        // Count events by title
+        Map<String, int> eventCounts = {};
+        for (var event in eventsList) {
+          final title = event['name'] ?? event['title'] ?? 'Unknown Event';
+          eventCounts[title] = (eventCounts[title] ?? 0) + 1;
+          
+          // Count venues by name
+          if (event['venue'] != null) {
+            String venueName = '';
+            if (event['venue'] is Map) {
+              venueName = event['venue']['name'] ?? 'Unknown Venue';
+            } else if (event['venueDetails'] != null && event['venueDetails'] is Map) {
+              venueName = event['venueDetails']['name'] ?? 'Unknown Venue';
+            } else {
+              // Find venue by ID from loaded venues
+              final venueId = event['venue'].toString();
+              final venue = venues.firstWhere(
+                (v) => v['id'] == venueId,
+                orElse: () => {'name': 'Unknown Venue'}
+              );
+              venueName = venue['name'];
+            }
+            if (venueName.isNotEmpty && venueName != 'Unknown Venue') {
+              venueCounts[venueName] = (venueCounts[venueName] ?? 0) + 1;
+            }
+          }
+          
+          // Update price range counts
+          final price = _extractPrice(event);
+          for (var range in priceRanges) {
+            if (price >= range['min'] && price <= range['max']) {
+              range['count'] = (range['count'] ?? 0) + 1;
+              break;
+            }
+          }
+        }
+        
+        events = eventCounts.entries.map((entry) => {
+          'name': entry.key,
+          'count': entry.value,
+          'selected': false,
+          'type': 'event'
+        }).toList();
+        
+        // Create venue list from counts (real venues with events)
+        venues = venueCounts.entries.map((entry) => {
+          'name': entry.key,
+          'count': entry.value,
+          'selected': false,
+          'type': 'venue'
+        }).toList();
+      }
+
+      setState(() {
+        allItems = [...artists, ...events, ...venues];
+        isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading filter data: $e');
+      setState(() { isLoading = false; });
+    }
+  }
+
+  int _extractPrice(Map<String, dynamic> event) {
+    if (event['tickets'] != null && event['tickets'] is List && (event['tickets'] as List).isNotEmpty) {
+      final tickets = event['tickets'] as List;
+      final firstTicket = tickets[0];
+      if (firstTicket is Map && firstTicket['price'] != null) {
+        return int.tryParse(firstTicket['price'].toString().replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      }
+    }
+    return int.tryParse(event['price']?.toString()?.replaceAll(RegExp(r'[^0-9]'), '') ?? '0') ?? 0;
+  }
 
   List<Map<String, dynamic>> getFilteredItems() {
     String currentType = '';
@@ -61,8 +158,8 @@ class _FilterScreenState extends State<FilterScreen> {
       case 0: currentType = 'artist'; break;
       case 1: currentType = 'event'; break;
       case 2: currentType = 'venue'; break;
-      case 3: return []; // Date - no items to show
-      case 4: return []; // Price Range - no items to show
+      case 3: return [];
+      case 4: return [];
     }
     
     var filtered = allItems.where((item) => item['type'] == currentType).toList();
@@ -83,52 +180,88 @@ class _FilterScreenState extends State<FilterScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Start Date
-          Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.calendar_today, color: Color(0xFF001F3F)),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Start Date', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                      Text('Dec 25, 2024', style: TextStyle(fontSize: 16)),
-                    ],
+          GestureDetector(
+            onTap: () async {
+              final date = await showDatePicker(
+                context: context,
+                initialDate: startDate ?? DateTime.now(),
+                firstDate: DateTime.now(),
+                lastDate: DateTime.now().add(const Duration(days: 365)),
+              );
+              if (date != null) {
+                setState(() { startDate = date; });
+              }
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today, color: Color(0xFF001F3F)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Start Date', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        Text(
+                          startDate != null 
+                            ? '${startDate!.day}/${startDate!.month}/${startDate!.year}'
+                            : 'Select start date',
+                          style: const TextStyle(fontSize: 16)
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const Icon(Icons.arrow_forward_ios, size: 16),
-              ],
+                  const Icon(Icons.arrow_forward_ios, size: 16),
+                ],
+              ),
             ),
           ),
           // End Date
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.calendar_today, color: Color(0xFF001F3F)),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('End Date', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                      Text('Jan 10, 2025', style: TextStyle(fontSize: 16)),
-                    ],
+          GestureDetector(
+            onTap: () async {
+              final date = await showDatePicker(
+                context: context,
+                initialDate: endDate ?? startDate ?? DateTime.now(),
+                firstDate: startDate ?? DateTime.now(),
+                lastDate: DateTime.now().add(const Duration(days: 365)),
+              );
+              if (date != null) {
+                setState(() { endDate = date; });
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today, color: Color(0xFF001F3F)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('End Date', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        Text(
+                          endDate != null 
+                            ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
+                            : 'Select end date',
+                          style: const TextStyle(fontSize: 16)
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const Icon(Icons.arrow_forward_ios, size: 16),
-              ],
+                  const Icon(Icons.arrow_forward_ios, size: 16),
+                ],
+              ),
             ),
           ),
         ],
@@ -137,14 +270,6 @@ class _FilterScreenState extends State<FilterScreen> {
   }
 
   Widget buildPriceContent() {
-    final List<Map<String, dynamic>> priceRanges = [
-      {'range': '₹1 - ₹500 (147)', 'selected': false},
-      {'range': '₹501 - ₹1000 (55)', 'selected': false},
-      {'range': '₹1001 - ₹1500 (23)', 'selected': false},
-      {'range': 'Above ₹1500 (32)', 'selected': false},
-      {'range': 'Free', 'selected': false},
-    ];
-    
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: priceRanges.length,
@@ -158,7 +283,7 @@ class _FilterScreenState extends State<FilterScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    priceRange['range'],
+                    '${priceRange['range']} (${priceRange['count']})',
                     style: const TextStyle(
                       fontSize: 13,
                       color: Colors.black87,
@@ -245,13 +370,32 @@ class _FilterScreenState extends State<FilterScreen> {
           Expanded(
             child: Column(
               children: [
-
+                // Search bar for filterable categories
+                if (selectedCategoryIndex < 3)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    child: TextField(
+                      onChanged: (value) {
+                        setState(() { searchQuery = value; });
+                      },
+                      decoration: InputDecoration(
+                        hintText: 'Search ${filterCategories[selectedCategoryIndex].toLowerCase()}...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                    ),
+                  ),
                 Expanded(
-                  child: selectedCategoryIndex == 3 
-                    ? buildDateContent()
-                    : selectedCategoryIndex == 4
-                      ? buildPriceContent()
-                      : ListView.builder(
+                  child: isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : selectedCategoryIndex == 3 
+                      ? buildDateContent()
+                      : selectedCategoryIndex == 4
+                        ? buildPriceContent()
+                        : ListView.builder(
                           padding: const EdgeInsets.all(16),
                           itemCount: filteredItems.length,
                           itemBuilder: (context, index) {
@@ -295,42 +439,73 @@ class _FilterScreenState extends State<FilterScreen> {
                 // Bottom buttons
                 Container(
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF001F3F),
-                            side: const BorderSide(color: Color(0xFF001F3F)),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                      // Clear filters button
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton(
+                          onPressed: () {
+                            setState(() {
+                              for (var item in allItems) {
+                                item['selected'] = false;
+                              }
+                              for (var range in priceRanges) {
+                                range['selected'] = false;
+                              }
+                              startDate = null;
+                              endDate = null;
+                              searchQuery = '';
+                            });
+                          },
+                          child: const Text(
+                            'Clear All Filters',
+                            style: TextStyle(color: Colors.grey),
                           ),
-                          child: const Text('Close'),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            // Collect selected filters
-                            Map<String, List<String>> selectedFilters = {
-                              'artists': allItems.where((item) => item['type'] == 'artist' && item['selected']).map((item) => item['name'] as String).toList(),
-                              'events': allItems.where((item) => item['type'] == 'event' && item['selected']).map((item) => item['name'] as String).toList(),
-                              'venues': allItems.where((item) => item['type'] == 'venue' && item['selected']).map((item) => item['name'] as String).toList(),
-                            };
-                            
-                            widget.onFiltersApplied(selectedFilters);
-                            Navigator.pop(context);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF001F3F),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF001F3F),
+                                side: const BorderSide(color: Color(0xFF001F3F)),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                              ),
+                              child: const Text('Close'),
+                            ),
                           ),
-                          child: const Text(
-                            'Apply All',
-                            style: TextStyle(color: Colors.white),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                // Collect selected filters
+                                Map<String, dynamic> selectedFilters = {
+                                  'artists': allItems.where((item) => item['type'] == 'artist' && item['selected']).map((item) => item['name'] as String).toList(),
+                                  'events': allItems.where((item) => item['type'] == 'event' && item['selected']).map((item) => item['name'] as String).toList(),
+                                  'venues': allItems.where((item) => item['type'] == 'venue' && item['selected']).map((item) => item['name'] as String).toList(),
+                                  'priceRanges': priceRanges.where((range) => range['selected']).toList(),
+                                  'startDate': startDate,
+                                  'endDate': endDate,
+                                };
+                                
+                                widget.onFiltersApplied(selectedFilters);
+                                Navigator.pop(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF001F3F),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                              ),
+                              child: const Text(
+                                'Apply Filters',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),

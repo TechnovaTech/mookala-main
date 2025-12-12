@@ -9,10 +9,40 @@ export async function GET() {
   try {
     const { db } = await connectToDatabase();
     
-    const events = await db.collection('events').find({
-      status: 'approved',
-      artistResponse: 'accepted'
-    }).sort({ createdAt: -1 }).toArray();
+    const events = await db.collection('events').aggregate([
+      {
+        $match: {
+          status: 'approved',
+          artistResponse: 'accepted'
+        }
+      },
+      {
+        $lookup: {
+          from: 'venues',
+          let: { venueId: { $toObjectId: '$venue' } },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$_id', '$$venueId'] } } }
+          ],
+          as: 'venueDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$venueDetails',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $addFields: {
+          venue: {
+            $ifNull: ['$venueDetails', '$venue']
+          }
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      }
+    ]).toArray();
 
     return NextResponse.json({ 
       success: true, 

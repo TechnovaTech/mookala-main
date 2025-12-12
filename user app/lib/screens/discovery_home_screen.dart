@@ -395,20 +395,116 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     return 'Artist';
   }
 
+  Map<String, dynamic> _appliedFilters = {};
+
   void _filterEvents() {
     String query = _searchController.text.toLowerCase();
+    List<Map<String, dynamic>> allEvents = [...nearbyEvents, ..._organizedEvents];
+    
     setState(() {
-      if (query.isEmpty) {
-        filteredEvents = nearbyEvents;
-      } else {
-        filteredEvents = nearbyEvents.where((event) {
-          return event['title'].toLowerCase().contains(query) ||
-                 event['artist'].toLowerCase().contains(query) ||
-                 event['venue'].toLowerCase().contains(query) ||
-                 event['category'].toLowerCase().contains(query);
-        }).toList();
-      }
+      filteredEvents = allEvents.where((event) {
+        // Text search
+        String venueName = '';
+        if (event['venue'] is Map) {
+          venueName = event['venue']['name'] ?? '';
+        } else if (event['venueDetails'] is Map) {
+          venueName = event['venueDetails']['name'] ?? '';
+        } else if (event['venue'] is String) {
+          venueName = event['venue'];
+        }
+        
+        bool matchesSearch = query.isEmpty || 
+          event['title'].toLowerCase().contains(query) ||
+          _getArtistName(event).toLowerCase().contains(query) ||
+          venueName.toLowerCase().contains(query) ||
+          (event['category'] ?? '').toLowerCase().contains(query);
+        
+        if (!matchesSearch) return false;
+        
+        // Apply filters
+        if (_appliedFilters.isNotEmpty) {
+          // Artist filter
+          if (_appliedFilters['artists'] != null && (_appliedFilters['artists'] as List).isNotEmpty) {
+            bool matchesArtist = (_appliedFilters['artists'] as List).contains(_getArtistName(event));
+            if (!matchesArtist) return false;
+          }
+          
+          // Event title filter
+          if (_appliedFilters['events'] != null && (_appliedFilters['events'] as List).isNotEmpty) {
+            bool matchesEvent = (_appliedFilters['events'] as List).contains(event['title']);
+            if (!matchesEvent) return false;
+          }
+          
+          // Venue filter
+          if (_appliedFilters['venues'] != null && (_appliedFilters['venues'] as List).isNotEmpty) {
+            String venueName = '';
+            if (event['venue'] is Map) {
+              venueName = event['venue']['name'] ?? '';
+            } else if (event['venueDetails'] is Map) {
+              venueName = event['venueDetails']['name'] ?? '';
+            } else if (event['venue'] is String) {
+              venueName = event['venue'];
+            }
+            bool matchesVenue = (_appliedFilters['venues'] as List).contains(venueName);
+            if (!matchesVenue) return false;
+          }
+          
+          // Price filter
+          if (_appliedFilters['priceRanges'] != null && (_appliedFilters['priceRanges'] as List).isNotEmpty) {
+            int eventPrice = _extractEventPrice(event);
+            bool matchesPrice = false;
+            for (var range in _appliedFilters['priceRanges']) {
+              if (eventPrice >= range['min'] && eventPrice <= range['max']) {
+                matchesPrice = true;
+                break;
+              }
+            }
+            if (!matchesPrice) return false;
+          }
+          
+          // Date filter
+          if (_appliedFilters['startDate'] != null || _appliedFilters['endDate'] != null) {
+            // For now, skip date filtering as event dates need proper parsing
+          }
+        }
+        
+        return true;
+      }).toList();
     });
+  }
+  
+  int _extractEventPrice(Map<String, dynamic> event) {
+    if (event['tickets'] != null && event['tickets'] is List && (event['tickets'] as List).isNotEmpty) {
+      final tickets = event['tickets'] as List;
+      final firstTicket = tickets[0];
+      if (firstTicket is Map && firstTicket['price'] != null) {
+        return int.tryParse(firstTicket['price'].toString().replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      }
+    }
+    String priceStr = event['price']?.toString() ?? '0';
+    return int.tryParse(priceStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+  }
+  
+  bool _hasActiveFilters() {
+    if (_appliedFilters.isEmpty) return false;
+    
+    return (_appliedFilters['artists']?.isNotEmpty ?? false) ||
+           (_appliedFilters['events']?.isNotEmpty ?? false) ||
+           (_appliedFilters['venues']?.isNotEmpty ?? false) ||
+           (_appliedFilters['priceRanges']?.isNotEmpty ?? false) ||
+           _appliedFilters['startDate'] != null ||
+           _appliedFilters['endDate'] != null;
+  }
+  
+  int _getFilterCount() {
+    int count = 0;
+    if (_appliedFilters['artists']?.isNotEmpty ?? false) count += (_appliedFilters['artists'] as List).length;
+    if (_appliedFilters['events']?.isNotEmpty ?? false) count += (_appliedFilters['events'] as List).length;
+    if (_appliedFilters['venues']?.isNotEmpty ?? false) count += (_appliedFilters['venues'] as List).length;
+    if (_appliedFilters['priceRanges']?.isNotEmpty ?? false) count += (_appliedFilters['priceRanges'] as List).length;
+    if (_appliedFilters['startDate'] != null) count++;
+    if (_appliedFilters['endDate'] != null) count++;
+    return count;
   }
   
 
@@ -634,11 +730,44 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                   hintText: 'Search events, artists, venues...',
                   hintStyle: TextStyle(color: Colors.grey.shade500),
                   prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
-                  suffixIcon: IconButton(
-                    icon: Icon(Icons.tune, color: const Color(0xFF001F3F)),
-                    onPressed: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => FilterScreen(onFiltersApplied: (filters) {})));
-                    },
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_hasActiveFilters())
+                        Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF001F3F),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            _getFilterCount().toString(),
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.tune, 
+                          color: _hasActiveFilters() ? const Color(0xFF001F3F) : Colors.grey.shade600
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context, 
+                            MaterialPageRoute(
+                              builder: (context) => FilterScreen(
+                                onFiltersApplied: (filters) {
+                                  setState(() {
+                                    _appliedFilters = filters;
+                                  });
+                                  _filterEvents();
+                                }
+                              )
+                            )
+                          );
+                        },
+                      ),
+                    ],
                   ),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -841,19 +970,10 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
             // Ads Section
             if (_ads.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Ads',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
                     _isLoadingAds
                       ? const Center(child: CircularProgressIndicator())
                       : SizedBox(
