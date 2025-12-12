@@ -613,15 +613,15 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
   Widget _buildCategoryCard(Map<String, dynamic> category) {
     return GestureDetector(
       onTap: () {
-        final categoryEvents = nearbyEvents.where((event) => 
-          event['category'].toLowerCase().contains(category['name'].toLowerCase())).toList();
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => CategoryEventsScreen(
               categoryName: category['name'],
               categoryImage: category['image'],
-              events: categoryEvents,
+              subcategories: category['subCategories'] != null 
+                  ? List<Map<String, dynamic>>.from(category['subCategories'])
+                  : null,
             ),
           ),
         );

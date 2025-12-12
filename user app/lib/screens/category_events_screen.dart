@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'event_details_screen.dart';
+import 'organized_event_details_screen.dart';
+import '../services/api_service.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -7,13 +9,13 @@ import 'package:http/http.dart' as http;
 class CategoryEventsScreen extends StatefulWidget {
   final String categoryName;
   final String categoryImage;
-  final List<Map<String, dynamic>> events;
+  final List<Map<String, dynamic>>? subcategories;
 
   const CategoryEventsScreen({
     super.key,
     required this.categoryName,
     required this.categoryImage,
-    required this.events,
+    this.subcategories,
   });
 
   @override
@@ -29,6 +31,8 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
   bool showLocationDropdown = false;
   bool showSubcategoryModal = false;
   bool loadingSubcategories = false;
+  List<Map<String, dynamic>> categoryEvents = [];
+  bool loadingEvents = false;
   
   final List<String> locations = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Kolkata', 'Pune'];
   
@@ -36,6 +40,7 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
   void initState() {
     super.initState();
     fetchSubcategories();
+    fetchCategoryEvents();
   }
   
   Future<void> fetchSubcategories() async {
@@ -44,20 +49,28 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
     });
     
     try {
-      final response = await http.get(Uri.parse('http://localhost:3000/api/categories'));
-      if (response.statusCode == 200) {
-        final List<dynamic> categories = json.decode(response.body);
-        final category = categories.firstWhere(
-          (cat) => cat['name'] == widget.categoryName,
-          orElse: () => null,
-        );
-        
-        if (category != null && category['subCategories'] != null) {
-          setState(() {
-            availableSubcategories = (category['subCategories'] as List)
-                .map((sub) => sub['name'].toString())
-                .toList();
-          });
+      if (widget.subcategories != null) {
+        setState(() {
+          availableSubcategories = widget.subcategories!
+              .map((sub) => sub['name'].toString())
+              .toList();
+        });
+      } else {
+        final response = await http.get(Uri.parse('http://localhost:3000/api/categories'));
+        if (response.statusCode == 200) {
+          final List<dynamic> categories = json.decode(response.body);
+          final category = categories.firstWhere(
+            (cat) => cat['name'] == widget.categoryName,
+            orElse: () => null,
+          );
+          
+          if (category != null && category['subCategories'] != null) {
+            setState(() {
+              availableSubcategories = (category['subCategories'] as List)
+                  .map((sub) => sub['name'].toString())
+                  .toList();
+            });
+          }
         }
       }
     } catch (e) {
@@ -68,111 +81,107 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
       });
     }
   }
+  
+  Future<void> fetchCategoryEvents() async {
+    setState(() {
+      loadingEvents = true;
+    });
+    
+    try {
+      final result = await ApiService.getApprovedEvents(category: widget.categoryName);
+      
+      if (result['success'] == true && result['events'] != null) {
+        final events = result['events'] as List;
+        
+        setState(() {
+          categoryEvents = events.map((event) {
+            final startDate = event['startDate'] ?? '';
+            final startTime = event['startTime'] ?? '';
+            final dateDisplay = startDate.isNotEmpty && startTime.isNotEmpty 
+              ? '$startDate • $startTime' 
+              : 'TBA';
+            
+            String imageUrl = 'assets/images/concert.jpg';
+            if (event['media'] != null && event['media']['bannerImage'] != null && event['media']['bannerImage'].toString().isNotEmpty) {
+              final bannerImage = event['media']['bannerImage'];
+              if (bannerImage.toString().startsWith('http')) {
+                imageUrl = bannerImage;
+              } else {
+                imageUrl = 'data:image/jpeg;base64,$bannerImage';
+              }
+            } else if (event['eventImage'] != null && event['eventImage'].toString().isNotEmpty) {
+              imageUrl = event['eventImage'];
+            } else if (event['image'] != null && event['image'].toString().isNotEmpty) {
+              imageUrl = event['image'];
+            }
+            
+            String price = '₹0';
+            if (event['tickets'] != null && event['tickets'] is List && (event['tickets'] as List).isNotEmpty) {
+              final tickets = event['tickets'] as List;
+              final firstTicket = tickets[0];
+              if (firstTicket is Map && firstTicket['price'] != null) {
+                String rawPrice = firstTicket['price'].toString();
+                rawPrice = rawPrice.replaceAll('₹', '').replaceAll('Rs.', '').replaceAll('Rs', '').trim();
+                if (rawPrice.contains('.')) {
+                  rawPrice = rawPrice.split('.')[0];
+                }
+                price = '₹$rawPrice';
+              }
+            } else if (event['ticketPrice'] != null) {
+              price = '₹${event['ticketPrice']}';
+            } else if (event['price'] != null) {
+              price = '₹${event['price']}';
+            }
+            
+            String venueName = 'Venue TBA';
+            if (event['venue'] is Map) {
+              venueName = event['venue']['name'] ?? 'Venue TBA';
+            } else if (event['venueDetails'] is Map) {
+              venueName = event['venueDetails']['name'] ?? 'Venue TBA';
+            } else if (event['venue'] is String) {
+              venueName = event['venue'];
+            }
+            
+            return {
+              'title': event['name'] ?? event['title'] ?? 'Event',
+              'date': dateDisplay,
+              'time': startTime,
+              'venue': venueName,
+              'address': event['address'] ?? 'Address TBA',
+              'category': event['category'] ?? widget.categoryName,
+              'price': price,
+              'image': imageUrl,
+              'interested': '${(event['interestedCount'] ?? 0)}+ Interested',
+              'description': event['description'] ?? '',
+              'id': event['_id'],
+              'tickets': event['tickets'] ?? [],
+              'type': event['type'] ?? 'event',
+            };
+          }).toList();
+        });
+      }
+    } catch (e) {
+      print('Error fetching category events: $e');
+    } finally {
+      setState(() {
+        loadingEvents = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final Map<String, List<Map<String, dynamic>>> allCategoryEvents = {
-      'Music': [
-        {
-          'title': 'A.R. Rahman Live Concert',
-          'date': 'Sat, 29 Nov, 2025',
-          'time': '7:00 PM',
-          'venue': 'Grand Auditorium',
-          'address': 'Main Street, City Center, State 12345',
-          'category': 'Music',
-          'price': '₹500',
-          'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=200&fit=crop',
-          'interested': '110+ Interested'
-        },
-        {
-          'title': 'Classical Music Evening',
-          'date': 'Sun, 30 Nov, 2025',
-          'time': '6:30 PM',
-          'venue': 'Symphony Hall',
-          'address': 'Cultural District, Downtown',
-          'category': 'Music',
-          'price': '₹400',
-          'image': 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=400&h=200&fit=crop',
-          'interested': '85+ Interested'
-        },
-      ],
-      'Theatre': [
-        {
-          'title': 'Shakespeare Drama Performance',
-          'date': 'Mon, 01 Dec, 2025',
-          'time': '8:00 PM',
-          'venue': 'Royal Theatre',
-          'address': 'Theatre District, Central City',
-          'category': 'Theatre',
-          'price': '₹600',
-          'image': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=200&fit=crop',
-          'interested': '65+ Interested'
-        },
-        {
-          'title': 'Modern Theatre Workshop',
-          'date': 'Tue, 02 Dec, 2025',
-          'time': '7:30 PM',
-          'venue': 'Studio Theatre',
-          'address': 'Arts Quarter, Midtown',
-          'category': 'Theatre',
-          'price': '₹350',
-          'image': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=200&fit=crop',
-          'interested': '45+ Interested'
-        },
-      ],
-      'Concert': [
-        {
-          'title': 'Live Rock Concert',
-          'date': 'Wed, 03 Dec, 2025',
-          'time': '9:00 PM',
-          'venue': 'Rock Arena',
-          'address': 'Entertainment Complex, South Side',
-          'category': 'Concert',
-          'price': '₹800',
-          'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=200&fit=crop',
-          'interested': '120+ Interested'
-        },
-        {
-          'title': 'Pop Music Concert',
-          'date': 'Thu, 04 Dec, 2025',
-          'time': '8:30 PM',
-          'venue': 'Pop Stadium',
-          'address': 'Music District, North End',
-          'category': 'Concert',
-          'price': '₹700',
-          'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=200&fit=crop',
-          'interested': '95+ Interested'
-        },
-      ],
-      'Jatra': [
-        {
-          'title': 'Folk Dance Festival',
-          'date': 'Fri, 05 Dec, 2025',
-          'time': '6:00 PM',
-          'venue': 'Cultural Center',
-          'address': 'Heritage Park, Old Town',
-          'category': 'Jatra',
-          'price': '₹300',
-          'type': 'jatra',
-          'image': 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=400&h=200&fit=crop',
-          'interested': '75+ Interested'
-        },
-        {
-          'title': 'Traditional Folk Performance',
-          'date': 'Sat, 06 Dec, 2025',
-          'time': '7:00 PM',
-          'venue': 'Folk Theatre',
-          'address': 'Traditional Square, East Side',
-          'category': 'Jatra',
-          'price': '₹250',
-          'type': 'jatra',
-          'image': 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=400&h=200&fit=crop',
-          'interested': '60+ Interested'
-        },
-      ],
-    };
-    
-    final filteredEvents = allCategoryEvents[widget.categoryName] ?? [];
+    // Filter events based on selected subcategories
+    List<Map<String, dynamic>> filteredEvents = categoryEvents;
+    if (selectedSubcategories.isNotEmpty) {
+      filteredEvents = categoryEvents.where((event) {
+        // Check if event matches any selected subcategory
+        return selectedSubcategories.any((subcategory) => 
+          event['category'].toString().toLowerCase().contains(subcategory.toLowerCase()) ||
+          event['title'].toString().toLowerCase().contains(subcategory.toLowerCase())
+        );
+      }).toList();
+    }
 
     return Scaffold(
       body: Stack(
@@ -273,14 +282,28 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
               
               // Events list
               Expanded(
-                child: filteredEvents.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No events found in this category',
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
-                        ),
-                      )
-                    : GridView.builder(
+                child: loadingEvents
+                    ? const Center(child: CircularProgressIndicator())
+                    : filteredEvents.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.event_busy, size: 60, color: Colors.grey.shade400),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No events found in ${widget.categoryName}',
+                                  style: const TextStyle(fontSize: 16, color: Colors.grey),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Try adjusting your filters or check back later',
+                                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                                ),
+                              ],
+                            ),
+                          )
+                        : GridView.builder(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 2,
@@ -310,12 +333,21 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
                                   flex: 3,
                                   child: GestureDetector(
                                     onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => EventDetailsScreen(event: event),
-                                        ),
-                                      );
+                                      if (event['type'] == 'jatra') {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => OrganizedEventDetailsScreen(event: event),
+                                          ),
+                                        );
+                                      } else {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => EventDetailsScreen(event: event),
+                                          ),
+                                        );
+                                      }
                                     },
                                     child: Container(
                                       decoration: BoxDecoration(

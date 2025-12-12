@@ -123,11 +123,16 @@ class ApiService {
     }
   }
   
-  static Future<Map<String, dynamic>> getApprovedEvents() async {
+  static Future<Map<String, dynamic>> getApprovedEvents({String? category}) async {
     try {
-      print('Calling API: $baseUrl/events/approved');
+      String url = '$baseUrl/events/approved';
+      if (category != null && category.isNotEmpty) {
+        url += '?category=${Uri.encodeComponent(category)}';
+      }
+      
+      print('Calling API: $url');
       final response = await http.get(
-        Uri.parse('$baseUrl/events/approved'),
+        Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
       );
       
