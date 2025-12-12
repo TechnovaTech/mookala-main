@@ -40,7 +40,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           id: e._id.toString(),
           name: e.name,
           date: e.date
-        }))
+        })),
+        followersCount: artist.followersCount || (artist.followers ? artist.followers.length : 0),
+        followers: artist.followers || []
       }
     });
   } catch (error) {

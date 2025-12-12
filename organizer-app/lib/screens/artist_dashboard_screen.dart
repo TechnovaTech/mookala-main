@@ -22,11 +22,18 @@ class _ArtistDashboardScreenState extends State<ArtistDashboardScreen> {
   String _rejectionNotes = '';
   String _userPhone = '';
   bool _isLoading = true;
+  Map<String, dynamic> _dashboardStats = {
+    'followers': 0,
+    'bookingRequests': 0,
+    'upcomingEvents': 0,
+    'totalEarnings': 0,
+  };
 
   @override
   void initState() {
     super.initState();
     _checkKYCStatus();
+    _fetchDashboardStats();
   }
 
   Future<void> _checkKYCStatus() async {
@@ -58,8 +65,27 @@ class _ArtistDashboardScreenState extends State<ArtistDashboardScreen> {
     }
   }
   
-  final List<Widget> _screens = [
-    const DashboardHomeScreen(),
+  Future<void> _fetchDashboardStats() async {
+    try {
+      final userData = await AuthService.getUserData();
+      final phone = userData['phone'];
+      
+      if (phone != null) {
+        final result = await AuthService.getDashboardStats(phone);
+        
+        if (result['success'] == true) {
+          setState(() {
+            _dashboardStats = result['stats'] ?? _dashboardStats;
+          });
+        }
+      }
+    } catch (error) {
+      print('Error fetching dashboard stats: $error');
+    }
+  }
+
+  List<Widget> get _screens => [
+    DashboardHomeScreen(stats: _dashboardStats, onRefresh: _fetchDashboardStats),
     const ArtistProfileScreen(),
     const ArtistCalendarScreen(),
     const ArtistBookingsScreen(),
@@ -248,15 +274,21 @@ class _ArtistDashboardScreenState extends State<ArtistDashboardScreen> {
 }
 
 class DashboardHomeScreen extends StatelessWidget {
-  const DashboardHomeScreen({super.key});
+  final Map<String, dynamic> stats;
+  final Future<void> Function() onRefresh;
+  
+  const DashboardHomeScreen({super.key, required this.stats, required this.onRefresh});
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // Welcome Section
           Container(
             width: double.infinity,
@@ -305,17 +337,17 @@ class DashboardHomeScreen extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _buildStatCard('Profile Views', '1,234', Icons.visibility, Colors.blue, context)),
+              Expanded(child: _buildStatCard('Followers', '${stats['followers'] ?? 0}', Icons.people, Colors.blue, context)),
               const SizedBox(width: 12),
-              Expanded(child: _buildStatCard('Booking Requests', '8', Icons.event, Colors.orange, context)),
+              Expanded(child: _buildStatCard('Booking Requests', '${stats['bookingRequests'] ?? 0}', Icons.event, Colors.orange, context)),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _buildStatCard('Upcoming Events', '3', Icons.calendar_today, Colors.green, context)),
+              Expanded(child: _buildStatCard('Upcoming Events', '${stats['upcomingEvents'] ?? 0}', Icons.calendar_today, Colors.green, context)),
               const SizedBox(width: 12),
-              Expanded(child: _buildStatCard('Total Earnings', '₹25,000', Icons.currency_rupee, Colors.purple, context)),
+              Expanded(child: _buildStatCard('Total Earnings', '₹${stats['totalEarnings'] ?? 0}', Icons.currency_rupee, Colors.purple, context)),
             ],
           ),
           const SizedBox(height: 24),
@@ -400,6 +432,7 @@ class DashboardHomeScreen extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -407,12 +440,23 @@ class DashboardHomeScreen extends StatelessWidget {
   Widget _buildStatCard(String title, String value, IconData icon, Color color, BuildContext context) {
     return GestureDetector(
       onTap: () {
-        if (title == 'Profile Views') {
+        if (title == 'Followers') {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const ArtistProfileScreen()),
+            MaterialPageRoute(builder: (context) => const ArtistFollowersScreen()),
+          );
+        } else if (title == 'Booking Requests') {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const ArtistBookingsScreen()),
+          );
+        } else if (title == 'Upcoming Events') {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const ArtistCalendarScreen()),
           );
         }
+        onRefresh();
       },
       child: Container(
         padding: const EdgeInsets.all(16),

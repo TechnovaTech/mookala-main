@@ -9,6 +9,7 @@ import '../services/api_service.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DiscoveryHomeScreen extends StatefulWidget {
   const DiscoveryHomeScreen({super.key});
@@ -44,6 +45,21 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     }
   }
   
+  Future<void> _loadFollowStatus(List<Map<String, dynamic>> artistsList) async {
+    final prefs = await SharedPreferences.getInstance();
+    for (var artist in artistsList) {
+      final artistId = artist['id'];
+      if (artistId != null) {
+        artist['isFollowing'] = prefs.getBool('following_$artistId') ?? false;
+      }
+    }
+  }
+  
+  Future<void> _saveFollowStatus(String artistId, bool isFollowing) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('following_$artistId', isFollowing);
+  }
+  
   Future<void> _loadArtists() async {
     setState(() {
       _isLoadingArtists = true;
@@ -52,37 +68,41 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     final result = await ApiService.getArtists();
     
     if (result['success'] == true && result['artists'] != null) {
-      setState(() {
-        artists = (result['artists'] as List).map((artist) {
-          String imageUrl = 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(artist['name'] ?? 'Artist')}&size=200&background=001F3F&color=fff';
-          
-          if (artist['profileImage'] != null && artist['profileImage'].toString().isNotEmpty) {
-            final profileImage = artist['profileImage'].toString();
-            if (profileImage.startsWith('http')) {
-              imageUrl = profileImage;
-            } else {
-              // Base64 image
-              imageUrl = 'data:image/jpeg;base64,$profileImage';
-            }
+      final artistsList = (result['artists'] as List).map((artist) {
+        String imageUrl = 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(artist['name'] ?? 'Artist')}&size=200&background=001F3F&color=fff';
+        
+        if (artist['profileImage'] != null && artist['profileImage'].toString().isNotEmpty) {
+          final profileImage = artist['profileImage'].toString();
+          if (profileImage.startsWith('http')) {
+            imageUrl = profileImage;
+          } else {
+            // Base64 image
+            imageUrl = 'data:image/jpeg;base64,$profileImage';
           }
-          
-          return {
-            'name': artist['name'] ?? 'Unknown Artist',
-            'image': imageUrl,
-            'imageBytes': (artist['profileImage'] != null && 
-                          !artist['profileImage'].toString().startsWith('http') &&
-                          artist['profileImage'].toString().isNotEmpty)
-                ? base64Decode(artist['profileImage'])
-                : null,
-            'bannerImage': artist['bannerImage'],
-            'bio': artist['bio'],
-            'genre': artist['genre'],
-            'media': artist['media'],
-            'followers': '0',
-            'isFollowing': false,
-            'id': artist['_id'],
-          };
-        }).toList();
+        }
+        
+        return {
+          'name': artist['name'] ?? 'Unknown Artist',
+          'image': imageUrl,
+          'imageBytes': (artist['profileImage'] != null && 
+                        !artist['profileImage'].toString().startsWith('http') &&
+                        artist['profileImage'].toString().isNotEmpty)
+              ? base64Decode(artist['profileImage'])
+              : null,
+          'bannerImage': artist['bannerImage'],
+          'bio': artist['bio'],
+          'genre': artist['genre'],
+          'media': artist['media'],
+          'followers': '0',
+          'isFollowing': false,
+          'id': artist['_id'],
+        };
+      }).toList();
+      
+      await _loadFollowStatus(artistsList);
+      
+      setState(() {
+        artists = artistsList;
         _isLoadingArtists = false;
       });
     } else {
@@ -1057,10 +1077,35 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
                                   width: double.infinity,
                                   height: 32,
                                   child: ElevatedButton(
-                                    onPressed: () {
+                                    onPressed: () async {
+                                      final artistId = artists[index]['id'];
+                                      final userPhone = await ApiService.getUserPhone();
+                                      
+                                      if (artistId == null || userPhone == null) return;
+                                      
+                                      final wasFollowing = artists[index]['isFollowing'];
+                                      
+                                      // Update UI immediately
                                       setState(() {
                                         artists[index]['isFollowing'] = !artists[index]['isFollowing'];
                                       });
+                                      
+                                      await _saveFollowStatus(artistId, artists[index]['isFollowing']);
+                                      
+                                      // Save to backend
+                                      final result = await ApiService.toggleFollowArtist(
+                                        artistId: artistId,
+                                        userPhone: userPhone,
+                                        action: artists[index]['isFollowing'] ? 'follow' : 'unfollow',
+                                      );
+                                      
+                                      if (result['success'] != true) {
+                                        // Revert on failure
+                                        setState(() {
+                                          artists[index]['isFollowing'] = wasFollowing;
+                                        });
+                                        await _saveFollowStatus(artistId, wasFollowing);
+                                      }
                                     },
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: artist['isFollowing'] 

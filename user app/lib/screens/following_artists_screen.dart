@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 
 class FollowingArtistsScreen extends StatefulWidget {
@@ -19,6 +20,21 @@ class _FollowingArtistsScreenState extends State<FollowingArtistsScreen> {
     _loadArtists();
   }
   
+  Future<void> _loadFollowStatus(List<Map<String, dynamic>> artists) async {
+    final prefs = await SharedPreferences.getInstance();
+    for (var artist in artists) {
+      final artistId = artist['id'];
+      if (artistId != null) {
+        artist['isFollowing'] = prefs.getBool('following_$artistId') ?? false;
+      }
+    }
+  }
+  
+  Future<void> _saveFollowStatus(String artistId, bool isFollowing) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('following_$artistId', isFollowing);
+  }
+  
   Future<void> _loadArtists() async {
     setState(() {
       _isLoading = true;
@@ -27,20 +43,24 @@ class _FollowingArtistsScreenState extends State<FollowingArtistsScreen> {
     final result = await ApiService.getArtists();
     
     if (result['success'] == true && result['artists'] != null) {
+      final artists = (result['artists'] as List).map((artist) => {
+        'id': artist['_id'],
+        'name': artist['name'] ?? 'Unknown Artist',
+        'image': (artist['profileImage'] != null && artist['profileImage'].toString().isNotEmpty) 
+          ? artist['profileImage'] 
+          : 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(artist['name'] ?? 'Artist')}&size=200&background=001F3F&color=fff',
+        'followers': '0',
+        'upcomingShows': 0,
+        'isFollowing': false,
+        'genre': artist['genre'] ?? 'Artist',
+        'lastShow': 'TBA',
+        'notificationsEnabled': true,
+      }).toList();
+      
+      await _loadFollowStatus(artists);
+      
       setState(() {
-        followingArtists = (result['artists'] as List).map((artist) => {
-          'id': artist['_id'],
-          'name': artist['name'] ?? 'Unknown Artist',
-          'image': (artist['profileImage'] != null && artist['profileImage'].toString().isNotEmpty) 
-            ? artist['profileImage'] 
-            : 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(artist['name'] ?? 'Artist')}&size=200&background=001F3F&color=fff',
-          'followers': '0',
-          'upcomingShows': 0,
-          'isFollowing': true,
-          'genre': artist['genre'] ?? 'Artist',
-          'lastShow': 'TBA',
-          'notificationsEnabled': true,
-        }).toList();
+        followingArtists = artists.where((artist) => artist['isFollowing'] == true).toList();
         _isLoading = false;
       });
     } else {
@@ -302,19 +322,57 @@ class _FollowingArtistsScreenState extends State<FollowingArtistsScreen> {
               Column(
                 children: [
                   ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      final artistId = artist['id'];
+                      final userPhone = await ApiService.getUserPhone();
+                      
+                      if (artistId == null || userPhone == null) return;
+                      
+                      final wasFollowing = artist['isFollowing'];
+                      
                       setState(() {
                         artist['isFollowing'] = !artist['isFollowing'];
                       });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            artist['isFollowing'] 
-                              ? 'Now following ${artist['name']}'
-                              : 'Unfollowed ${artist['name']}',
-                          ),
-                        ),
+                      
+                      await _saveFollowStatus(artistId, artist['isFollowing']);
+                      
+                      // Save to backend
+                      final result = await ApiService.toggleFollowArtist(
+                        artistId: artistId,
+                        userPhone: userPhone,
+                        action: artist['isFollowing'] ? 'follow' : 'unfollow',
                       );
+                      
+                      if (result['success'] == true) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              artist['isFollowing'] 
+                                ? 'Now following ${artist['name']}'
+                                : 'Unfollowed ${artist['name']}',
+                            ),
+                          ),
+                        );
+                        
+                        // Remove from list if unfollowed
+                        if (!artist['isFollowing']) {
+                          setState(() {
+                            followingArtists.removeWhere((a) => a['id'] == artist['id']);
+                          });
+                        }
+                      } else {
+                        // Revert on failure
+                        setState(() {
+                          artist['isFollowing'] = wasFollowing;
+                        });
+                        await _saveFollowStatus(artistId, wasFollowing);
+                        
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to update follow status'),
+                          ),
+                        );
+                      }
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: artist['isFollowing'] ? Colors.grey.shade300 : const Color(0xFF001F3F),

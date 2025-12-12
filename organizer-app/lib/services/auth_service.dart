@@ -273,6 +273,23 @@ class AuthService {
     }
   }
   
+  static Future<Map<String, dynamic>> getDashboardStats(String phone) async {
+    try {
+      final userData = await getUserData();
+      final role = userData['role'];
+      final endpoint = role == 'artist' ? '/artist/dashboard-stats' : '/organizer/dashboard-stats';
+      
+      final response = await http.get(
+        Uri.parse('$baseUrl$endpoint?phone=$phone'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'error': 'Network error: $e'};
+    }
+  }
+  
   static Future<Map<String, dynamic>> resubmitKYC(
     String phone, String aadharId, String panId, String? aadharImage, String? panImage) async {
     try {

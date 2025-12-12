@@ -269,4 +269,26 @@ class ApiService {
       return [];
     }
   }
+  
+  static Future<Map<String, dynamic>> toggleFollowArtist({
+    required String artistId,
+    required String userPhone,
+    required String action,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/artists/follow'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'artistId': artistId,
+          'userPhone': userPhone,
+          'action': action,
+        }),
+      );
+      
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
 }

@@ -19,6 +19,8 @@ interface ArtistDetail {
   bannerImage?: string
   media?: Array<{data: string, type: string} | string>
   events?: any[]
+  followersCount?: number
+  followers?: string[]
 }
 
 export default function ArtistDetailPage() {
@@ -184,6 +186,9 @@ export default function ArtistDetailPage() {
                         {artist.genre}
                       </span>
                     )}
+                    <span className={`px-3 py-1 rounded-full text-sm ${artist.bannerImage ? 'bg-blue-100 text-blue-700' : 'bg-white/20 text-white'}`}>
+                      {artist.followersCount || 0} Followers
+                    </span>
                   </div>
                 </div>
               </div>
@@ -245,6 +250,16 @@ export default function ArtistDetailPage() {
                   <div>
                     <p className="text-sm text-gray-500">Joined Date</p>
                     <p className="text-gray-900 font-medium">{formatDate(artist.createdAt)}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <User size={24} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-blue-600 font-medium">Total Followers</p>
+                    <p className="text-2xl font-bold text-blue-700">{artist.followersCount || 0}</p>
                   </div>
                 </div>
               </div>

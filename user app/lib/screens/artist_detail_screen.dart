@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
 
 class ArtistDetailScreen extends StatefulWidget {
   final Map<String, dynamic> artist;
@@ -21,11 +23,38 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
     super.initState();
     artist = Map.from(widget.artist);
     followerCount = int.tryParse(artist['followers']?.toString() ?? '0') ?? 0;
-    isFollowing = artist['isFollowing'] ?? false;
+    _loadFollowStatus();
+  }
+  
+  Future<void> _loadFollowStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final artistId = artist['id'] ?? artist['_id'] ?? artist['phone'];
+    if (artistId != null) {
+      setState(() {
+        isFollowing = prefs.getBool('following_$artistId') ?? false;
+      });
+    }
+  }
+  
+  Future<void> _saveFollowStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final artistId = artist['id'] ?? artist['_id'] ?? artist['phone'];
+    if (artistId != null) {
+      await prefs.setBool('following_$artistId', isFollowing);
+    }
   }
 
   Future<void> _toggleFollow() async {
     try {
+      final artistId = artist['id'] ?? artist['_id'] ?? artist['phone'];
+      final userPhone = await ApiService.getUserPhone();
+      
+      if (artistId == null || userPhone == null) {
+        print('Missing artist ID or user phone');
+        return;
+      }
+      
+      // Update UI immediately
       setState(() {
         if (isFollowing) {
           followerCount = followerCount > 0 ? followerCount - 1 : 0;
@@ -35,10 +64,43 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
         isFollowing = !isFollowing;
       });
       
-      // Save to backend (placeholder - implement actual API call)
-      // await http.post(Uri.parse('http://localhost:3000/api/artists/${artist['id']}/follow'));
+      // Save to local storage
+      await _saveFollowStatus();
+      
+      // Save to backend
+      final result = await ApiService.toggleFollowArtist(
+        artistId: artistId,
+        userPhone: userPhone,
+        action: isFollowing ? 'follow' : 'unfollow',
+      );
+      if (result['success'] == true) {
+        // Update follower count from server response
+        setState(() {
+          followerCount = result['followerCount'] ?? followerCount;
+        });
+      } else {
+        // Revert UI changes if API call failed
+        setState(() {
+          if (isFollowing) {
+            followerCount = followerCount > 0 ? followerCount - 1 : 0;
+          } else {
+            followerCount++;
+          }
+          isFollowing = !isFollowing;
+        });
+        print('Failed to update follow status: ${result['error']}');
+      }
     } catch (e) {
       print('Error toggling follow: $e');
+      // Revert UI changes on error
+      setState(() {
+        if (isFollowing) {
+          followerCount = followerCount > 0 ? followerCount - 1 : 0;
+        } else {
+          followerCount++;
+        }
+        isFollowing = !isFollowing;
+      });
     }
   }
 
