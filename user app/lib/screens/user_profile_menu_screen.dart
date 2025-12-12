@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'my_bookings_screen.dart';
 import 'following_artists_screen.dart';
 import 'edit_profile_screen.dart';
+import '../services/api_service.dart';
 
 class UserProfileMenuScreen extends StatefulWidget {
   const UserProfileMenuScreen({super.key});
@@ -12,6 +13,35 @@ class UserProfileMenuScreen extends StatefulWidget {
 
 class _UserProfileMenuScreenState extends State<UserProfileMenuScreen> {
   bool isPremium = false;
+  Map<String, dynamic>? userProfile;
+  bool isLoading = true;
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadUserProfile();
+  }
+  
+  Future<void> _loadUserProfile() async {
+    final userPhone = await ApiService.getUserPhone();
+    if (userPhone != null) {
+      final result = await ApiService.getProfile(userPhone);
+      if (result['success'] == true) {
+        setState(() {
+          userProfile = result['user'];
+          isLoading = false;
+        });
+      } else {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    } else {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
   
   @override
   Widget build(BuildContext context) {
@@ -78,8 +108,8 @@ class _UserProfileMenuScreenState extends State<UserProfileMenuScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'John Doe',
+                        Text(
+                          isLoading ? 'Loading...' : (userProfile?['name'] ?? 'User'),
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,

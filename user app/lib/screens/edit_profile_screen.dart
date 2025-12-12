@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:image_picker/image_picker.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -9,11 +13,50 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController(text: 'John Doe');
-  final _emailController = TextEditingController(text: 'john.doe@email.com');
-  final _phoneController = TextEditingController(text: '+91 9876543210');
-  final _locationController = TextEditingController(text: 'Mumbai, India');
-  final _bioController = TextEditingController(text: 'Event enthusiast and music lover');
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _locationController = TextEditingController();
+  final _bioController = TextEditingController();
+  bool isLoading = true;
+  Uint8List? _profileImageBytes;
+  final ImagePicker _picker = ImagePicker();
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadUserProfile();
+  }
+  
+  Future<void> _loadUserProfile() async {
+    final userPhone = await ApiService.getUserPhone();
+    if (userPhone != null) {
+      final result = await ApiService.getProfile(userPhone);
+      if (result['success'] == true) {
+        final user = result['user'];
+        setState(() {
+          _nameController.text = user['name'] ?? '';
+          _emailController.text = user['email'] ?? '';
+          _phoneController.text = userPhone;
+          _locationController.text = user['city'] ?? '';
+          _bioController.text = user['bio'] ?? '';
+          if (user['profileImage'] != null) {
+            _profileImageBytes = base64Decode(user['profileImage']);
+          }
+          isLoading = false;
+        });
+      } else {
+        setState(() {
+          _phoneController.text = userPhone;
+          isLoading = false;
+        });
+      }
+    } else {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +109,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         CircleAvatar(
                           radius: 50,
                           backgroundColor: Colors.grey.shade300,
-                          child: const Icon(Icons.person, size: 60, color: Colors.white),
+                          child: _profileImageBytes != null
+                            ? ClipOval(
+                                child: Image.memory(
+                                  _profileImageBytes!,
+                                  width: 100,
+                                  height: 100,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : const Icon(Icons.person, size: 60, color: Colors.white),
                         ),
                         Positioned(
                           bottom: 0,
@@ -201,11 +253,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       onTap: () => _showPrivacySettings(),
                     ),
                     const Divider(height: 1),
-                    _buildSettingTile(
-                      icon: Icons.lock_outline,
-                      title: 'Change Password',
-                      onTap: () => _changePassword(),
-                    ),
+
                   ],
                 ),
               ),
@@ -296,21 +344,29 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 _buildImageOption(
                   icon: Icons.camera_alt,
                   label: 'Camera',
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Opening camera...')),
-                    );
+                    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+                    if (image != null) {
+                      final bytes = await image.readAsBytes();
+                      setState(() {
+                        _profileImageBytes = bytes;
+                      });
+                    }
                   },
                 ),
                 _buildImageOption(
                   icon: Icons.photo_library,
                   label: 'Gallery',
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Opening gallery...')),
-                    );
+                    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+                    if (image != null) {
+                      final bytes = await image.readAsBytes();
+                      setState(() {
+                        _profileImageBytes = bytes;
+                      });
+                    }
                   },
                 ),
                 _buildImageOption(
@@ -318,9 +374,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   label: 'Remove',
                   onTap: () {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Profile picture removed')),
-                    );
+                    setState(() {
+                      _profileImageBytes = null;
+                    });
                   },
                 ),
               ],
@@ -358,15 +414,40 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  void _saveProfile() {
+  void _saveProfile() async {
     if (_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profile updated successfully!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      Navigator.pop(context);
+      final userPhone = await ApiService.getUserPhone();
+      if (userPhone != null) {
+        String? profileImageBase64;
+        if (_profileImageBytes != null) {
+          profileImageBase64 = base64Encode(_profileImageBytes!);
+        }
+        
+        final result = await ApiService.updateProfile(
+          phone: userPhone,
+          name: _nameController.text,
+          email: _emailController.text,
+          city: _locationController.text,
+          profileImage: profileImageBase64,
+        );
+        
+        if (result['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Profile updated successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['error'] ?? 'Failed to update profile'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -379,12 +460,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void _showPrivacySettings() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Opening privacy settings...')),
-    );
-  }
-
-  void _changePassword() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Opening change password...')),
     );
   }
 
