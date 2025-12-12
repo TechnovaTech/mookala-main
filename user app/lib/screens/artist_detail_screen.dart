@@ -1,10 +1,46 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 
-class ArtistDetailScreen extends StatelessWidget {
+class ArtistDetailScreen extends StatefulWidget {
   final Map<String, dynamic> artist;
 
   const ArtistDetailScreen({super.key, required this.artist});
+
+  @override
+  State<ArtistDetailScreen> createState() => _ArtistDetailScreenState();
+}
+
+class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
+  late Map<String, dynamic> artist;
+  int followerCount = 0;
+  bool isFollowing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    artist = Map.from(widget.artist);
+    followerCount = int.tryParse(artist['followers']?.toString() ?? '0') ?? 0;
+    isFollowing = artist['isFollowing'] ?? false;
+  }
+
+  Future<void> _toggleFollow() async {
+    try {
+      setState(() {
+        if (isFollowing) {
+          followerCount = followerCount > 0 ? followerCount - 1 : 0;
+        } else {
+          followerCount++;
+        }
+        isFollowing = !isFollowing;
+      });
+      
+      // Save to backend (placeholder - implement actual API call)
+      // await http.post(Uri.parse('http://localhost:3000/api/artists/${artist['id']}/follow'));
+    } catch (e) {
+      print('Error toggling follow: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -89,13 +125,39 @@ class ArtistDetailScreen extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 60),
+            const SizedBox(height: 40),
+            
+            // Follower Counter - Right aligned
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(
+                    Icons.people,
+                    size: 18,
+                    color: Colors.grey.shade600,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$followerCount followers',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
             
             Padding(
               padding: const EdgeInsets.all(20.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  
                   // Name & Follow Button
                   Row(
                     children: [
@@ -122,11 +184,14 @@ class ArtistDetailScreen extends StatelessWidget {
                         ),
                       ),
                       ElevatedButton.icon(
-                        onPressed: () {},
-                        icon: const Icon(Icons.person_add, size: 16),
-                        label: Text(artist['isFollowing'] ? 'Following' : 'Follow'),
+                        onPressed: _toggleFollow,
+                        icon: Icon(
+                          isFollowing ? Icons.person_remove : Icons.person_add,
+                          size: 16,
+                        ),
+                        label: Text(isFollowing ? 'Following' : 'Follow'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: artist['isFollowing'] 
+                          backgroundColor: isFollowing 
                               ? Colors.grey.shade800 
                               : const Color(0xFF001F3F),
                           foregroundColor: Colors.white,
