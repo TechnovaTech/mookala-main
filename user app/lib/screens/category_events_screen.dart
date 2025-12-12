@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'event_details_screen.dart';
 import 'organized_event_details_screen.dart';
 import '../services/api_service.dart';
 import 'dart:convert';
@@ -333,21 +332,12 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
                                   flex: 3,
                                   child: GestureDetector(
                                     onTap: () {
-                                      if (event['type'] == 'jatra') {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => OrganizedEventDetailsScreen(event: event),
-                                          ),
-                                        );
-                                      } else {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => EventDetailsScreen(event: event),
-                                          ),
-                                        );
-                                      }
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => OrganizedEventDetailsScreen(event: event),
+                                        ),
+                                      );
                                     },
                                     child: Container(
                                       decoration: BoxDecoration(
