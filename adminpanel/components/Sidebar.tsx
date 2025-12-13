@@ -34,8 +34,9 @@ const menuItems = [
     ]
   },
   { icon: Calendar, label: 'Event Management', href: '/events' },
+  { icon: Ticket, label: 'Bookings Management', href: '/bookings' },
   { icon: UserCheck, label: 'KYC Management', href: '/kyc' },
-  { icon: Ticket, label: 'Ticketing & Finance', href: '/finance' },
+  { icon: CreditCard, label: 'Ticketing & Finance', href: '/finance' },
   { icon: Building2, label: 'Venue Manager', href: '/venues' },
   { 
     icon: Image, 
@@ -74,6 +75,7 @@ export default function Sidebar() {
       setOpenDropdown('User Management')
     }
     else if (path === '/events') setActiveItem('Event Management')
+    else if (path === '/bookings') setActiveItem('Bookings Management')
     else if (path === '/kyc') setActiveItem('KYC Management')
     else if (path === '/finance') setActiveItem('Ticketing & Finance')
     else if (path === '/banners') {

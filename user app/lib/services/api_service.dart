@@ -352,6 +352,31 @@ class ApiService {
   }
   
   static Future<void> saveBookingLocally(Map<String, dynamic> bookingData) async {
+    try {
+      // Try to save to server first
+      final response = await http.post(
+        Uri.parse('$baseUrl/bookings'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(bookingData),
+      );
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          // Successfully saved to server, also save locally as backup
+          final prefs = await SharedPreferences.getInstance();
+          final userPhone = bookingData['userPhone'];
+          final existingBookings = prefs.getStringList('bookings_$userPhone') ?? [];
+          existingBookings.add(jsonEncode(bookingData));
+          await prefs.setStringList('bookings_$userPhone', existingBookings);
+          return;
+        }
+      }
+    } catch (e) {
+      print('Error saving to server: $e');
+    }
+    
+    // Fallback to local storage only
     final prefs = await SharedPreferences.getInstance();
     final userPhone = bookingData['userPhone'];
     final existingBookings = prefs.getStringList('bookings_$userPhone') ?? [];
@@ -361,12 +386,34 @@ class ApiService {
   
   static Future<Map<String, dynamic>> getUserBookings(String userPhone) async {
     try {
+      // Try to fetch from server first
+      final response = await http.get(
+        Uri.parse('$baseUrl/bookings?userPhone=$userPhone'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data;
+        }
+      }
+      
+      // Fallback to local storage
       final prefs = await SharedPreferences.getInstance();
       final bookingStrings = prefs.getStringList('bookings_$userPhone') ?? [];
       final bookings = bookingStrings.map((str) => jsonDecode(str)).toList();
       return {'success': true, 'bookings': bookings};
     } catch (e) {
-      return {'success': false, 'error': 'Error loading bookings: $e'};
+      // Fallback to local storage on error
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final bookingStrings = prefs.getStringList('bookings_$userPhone') ?? [];
+        final bookings = bookingStrings.map((str) => jsonDecode(str)).toList();
+        return {'success': true, 'bookings': bookings};
+      } catch (localError) {
+        return {'success': false, 'error': 'Error loading bookings: $localError'};
+      }
     }
   }
   
