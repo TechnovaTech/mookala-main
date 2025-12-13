@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 
 class MyBookingsScreen extends StatefulWidget {
   const MyBookingsScreen({super.key});
@@ -9,11 +10,35 @@ class MyBookingsScreen extends StatefulWidget {
 
 class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProviderStateMixin {
   late TabController _tabController;
+  List<Map<String, dynamic>> userBookings = [];
+  bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadUserBookings();
+  }
+  
+  Future<void> _loadUserBookings() async {
+    final userPhone = await ApiService.getUserPhone();
+    if (userPhone != null) {
+      final result = await ApiService.getUserBookings(userPhone);
+      if (result['success'] == true && result['bookings'] != null) {
+        setState(() {
+          userBookings = List<Map<String, dynamic>>.from(result['bookings']);
+          isLoading = false;
+        });
+      } else {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    } else {
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   final List<Map<String, dynamic>> upcomingBookings = [
@@ -113,31 +138,43 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
   }
 
   Widget _buildUpcomingTab() {
-    if (upcomingBookings.isEmpty) {
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    final upcoming = userBookings.where((b) => b['status'] == 'confirmed').toList();
+    
+    if (upcoming.isEmpty) {
       return _buildEmptyState('No upcoming bookings', 'Book your first event now!');
     }
 
     return ListView.builder(
       padding: const EdgeInsets.all(20),
-      itemCount: upcomingBookings.length,
+      itemCount: upcoming.length,
       itemBuilder: (context, index) {
-        final booking = upcomingBookings[index];
-        return _buildBookingCard(booking, true);
+        final booking = upcoming[index];
+        return _buildRealBookingCard(booking, true);
       },
     );
   }
 
   Widget _buildPastTab() {
-    if (pastBookings.isEmpty) {
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    final past = userBookings.where((b) => b['status'] == 'attended').toList();
+    
+    if (past.isEmpty) {
       return _buildEmptyState('No past bookings', 'Your event history will appear here');
     }
 
     return ListView.builder(
       padding: const EdgeInsets.all(20),
-      itemCount: pastBookings.length,
+      itemCount: past.length,
       itemBuilder: (context, index) {
-        final booking = pastBookings[index];
-        return _buildBookingCard(booking, false);
+        final booking = past[index];
+        return _buildRealBookingCard(booking, false);
       },
     );
   }
@@ -403,6 +440,116 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
             child: const Text('Close'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRealBookingCard(Map<String, dynamic> booking, bool isUpcoming) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    booking['eventTitle'] ?? 'Event',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF001F3F),
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isUpcoming ? Colors.green : Colors.grey,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    isUpcoming ? 'CONFIRMED' : 'ATTENDED',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.calendar_today, color: Color(0xFF001F3F), size: 16),
+                const SizedBox(width: 8),
+                Text('${booking['eventDate']} • ${booking['eventTime']}'),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.location_on, color: Color(0xFF001F3F), size: 16),
+                const SizedBox(width: 8),
+                Expanded(child: Text(booking['venue'] ?? 'Venue')),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.confirmation_number, color: Color(0xFF001F3F), size: 16),
+                const SizedBox(width: 8),
+                Text('${booking['totalSeats']} Tickets'),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...((booking['tickets'] as List?) ?? []).map<Widget>((ticket) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '${ticket['category']} - Block ${ticket['block']}: ${ticket['block']}${ticket['fromSeat']}-${ticket['block']}${ticket['toSeat']} (${ticket['quantity']} seats) - ₹${ticket['totalPrice']}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              );
+            }).toList(),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Booking ID: ${booking['_id']?.toString().substring(0, 8) ?? 'N/A'}',
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 12,
+                  ),
+                ),
+                Text(
+                  '₹${booking['totalPrice']}',
+                  style: const TextStyle(
+                    color: Color(0xFF001F3F),
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

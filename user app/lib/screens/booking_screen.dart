@@ -514,20 +514,7 @@ class _BookingScreenState extends State<BookingScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context); // Close dialog
-                Navigator.pop(context); // Go back to event details
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => MyBookingsScreen()),
-                );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Booking confirmed! Welcome to My Bookings.'),
-                    backgroundColor: Color(0xFF001F3F),
-                  ),
-                );
-              },
+              onPressed: () => _confirmBooking(),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF001F3F),
               ),
@@ -537,5 +524,79 @@ class _BookingScreenState extends State<BookingScreen> {
         );
       },
     );
+  }
+  
+  Future<void> _confirmBooking() async {
+    try {
+      final userPhone = await ApiService.getUserPhone();
+      if (userPhone == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please login to book tickets')),
+        );
+        return;
+      }
+      
+      // Check for seat conflicts
+      final eventId = widget.event['id'] ?? widget.event['title'];
+      final conflictCheck = await ApiService.checkSeatConflicts(userPhone, eventId, selectedTickets);
+      
+      if (conflictCheck['hasConflict'] == true) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(conflictCheck['message'] ?? 'Some seats are already booked'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      
+      // Save booking locally for now
+      final bookingData = {
+        'userPhone': userPhone,
+        'eventId': eventId,
+        'eventTitle': widget.event['title'],
+        'eventDate': widget.event['date'],
+        'eventTime': widget.event['time'],
+        'venue': widget.event['venue'] ?? 'Venue',
+        'tickets': selectedTickets.map((ticket) => {
+          'category': ticket['category'],
+          'block': ticket['block'],
+          'fromSeat': ticket['fromSeat'],
+          'toSeat': ticket['toSeat'],
+          'quantity': ticket['quantity'],
+          'price': ticket['price'],
+          'totalPrice': ticket['price'] * ticket['quantity'],
+        }).toList(),
+        'totalSeats': _getTotalSeats(),
+        'totalPrice': _getTotalPrice(),
+        'bookingDate': DateTime.now().toIso8601String(),
+        'status': 'confirmed',
+        '_id': DateTime.now().millisecondsSinceEpoch.toString(),
+      };
+      
+      await ApiService.saveBookingLocally(bookingData);
+      
+      Navigator.pop(context); // Close dialog
+      Navigator.pop(context); // Go back to event details
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => MyBookingsScreen()),
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Booking confirmed! Welcome to My Bookings.'),
+          backgroundColor: Color(0xFF001F3F),
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error creating booking. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

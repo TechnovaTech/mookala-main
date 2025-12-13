@@ -350,4 +350,61 @@ class ApiService {
       return {'success': false, 'error': 'Network error: $e'};
     }
   }
+  
+  static Future<void> saveBookingLocally(Map<String, dynamic> bookingData) async {
+    final prefs = await SharedPreferences.getInstance();
+    final userPhone = bookingData['userPhone'];
+    final existingBookings = prefs.getStringList('bookings_$userPhone') ?? [];
+    existingBookings.add(jsonEncode(bookingData));
+    await prefs.setStringList('bookings_$userPhone', existingBookings);
+  }
+  
+  static Future<Map<String, dynamic>> getUserBookings(String userPhone) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final bookingStrings = prefs.getStringList('bookings_$userPhone') ?? [];
+      final bookings = bookingStrings.map((str) => jsonDecode(str)).toList();
+      return {'success': true, 'bookings': bookings};
+    } catch (e) {
+      return {'success': false, 'error': 'Error loading bookings: $e'};
+    }
+  }
+  
+  static Future<Map<String, dynamic>> checkSeatConflicts(String userPhone, String eventId, List<Map<String, dynamic>> selectedTickets) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final bookingStrings = prefs.getStringList('bookings_$userPhone') ?? [];
+      final existingBookings = bookingStrings.map((str) => jsonDecode(str)).toList();
+      
+      // Check for conflicts with existing bookings for the same event
+      for (var existingBooking in existingBookings) {
+        if (existingBooking['eventId'] == eventId) {
+          final existingTickets = existingBooking['tickets'] as List;
+          
+          for (var selectedTicket in selectedTickets) {
+            for (var existingTicket in existingTickets) {
+              if (selectedTicket['block'] == existingTicket['block']) {
+                // Check for seat range overlap
+                final selectedFrom = selectedTicket['fromSeat'] as int;
+                final selectedTo = selectedTicket['toSeat'] as int;
+                final existingFrom = existingTicket['fromSeat'] as int;
+                final existingTo = existingTicket['toSeat'] as int;
+                
+                if ((selectedFrom <= existingTo && selectedTo >= existingFrom)) {
+                  return {
+                    'hasConflict': true,
+                    'message': 'Seats ${selectedTicket['block']}$selectedFrom-${selectedTicket['block']}$selectedTo are already booked for this event'
+                  };
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      return {'hasConflict': false};
+    } catch (e) {
+      return {'hasConflict': false};
+    }
+  }
 }
