@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
         amenities: v.amenities || [],
         status: v.status || 'active',
         image: v.image || null,
-        seatCategories: v.seatCategories || {},
+        seatConfig: v.seatConfig || null,
         createdAt: v.createdAt
       }))
     });
@@ -32,9 +32,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { name, address, city, state, capacity, image } = await request.json();
+    const { name, address, city, state, image } = await request.json();
     
-    if (!name || !address || !city || !state || !capacity) {
+    if (!name || !address || !city || !state) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     const result = await db.collection('venues').insertOne({
       name,
       location: { address, city, state },
-      capacity: parseInt(capacity),
+      capacity: 0,
       image: image || null,
       status: 'active',
       amenities: [],

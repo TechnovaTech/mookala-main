@@ -25,7 +25,7 @@ export async function GET(
         status: venue.status || 'active',
         image: venue.image || null,
         createdAt: venue.createdAt,
-        seatCategories: venue.seatCategories || { VIP: '', Premium: '', Normal: '', Balcony: '' }
+        seatConfig: venue.seatConfig || null
       }
     });
   } catch (error) {

@@ -17,11 +17,13 @@ interface Venue {
   status: string
   image?: string | null
   createdAt: string
-  seatCategories?: {
-    VIP: string
-    Premium: string
-    Normal: string
-    Balcony: string
+  seatConfig?: {
+    numberOfBlocks: number
+    blocks: Array<{
+      name: string
+      type: string
+      totalSeats: number
+    }>
   }
 }
 
@@ -32,16 +34,17 @@ export default function VenueDetailsPage() {
   const [loading, setLoading] = useState(true)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [showSeatModal, setShowSeatModal] = useState(false)
-  const [seatCategories, setSeatCategories] = useState<{[key: string]: string}>({
-    VIP: '',
-    Premium: '',
-    Normal: '',
-    Balcony: ''
+
+  const [seatConfig, setSeatConfig] = useState({
+    numberOfBlocks: 1,
+    blocks: [{
+      name: 'A',
+      type: 'Normal',
+      totalSeats: 100
+    }]
   })
-  const [editingCategoryName, setEditingCategoryName] = useState<string | null>(null)
-  const [newCategoryName, setNewCategoryName] = useState('')
   const [saving, setSaving] = useState(false)
-  const [seatConflicts, setSeatConflicts] = useState<{[key: string]: string[]}>({})
+  const [totalSeats, setTotalSeats] = useState(0)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editFormData, setEditFormData] = useState({
     name: '',
@@ -59,8 +62,8 @@ export default function VenueDetailsPage() {
   }, [params.id])
 
   useEffect(() => {
-    checkSeatConflicts()
-  }, [seatCategories])
+    calculateTotalSeats()
+  }, [seatConfig])
 
   const fetchVenueDetails = async () => {
     setLoading(true)
@@ -69,22 +72,15 @@ export default function VenueDetailsPage() {
       const data = await response.json()
       if (data.success) {
         setVenue(data.venue)
-        if (data.venue.seatCategories) {
-          setSeatCategories(data.venue.seatCategories)
-        } else {
-          setSeatCategories({
-            VIP: '',
-            Premium: '',
-            Normal: '',
-            Balcony: ''
-          })
-        }
+        console.log('Venue seatConfig:', data.venue.seatConfig)
+        // Don't automatically set seat config here, only when modal opens
+        // This prevents overriding user's current work in the modal
         setEditFormData({
           name: data.venue.name,
           address: data.venue.location.address,
           city: data.venue.location.city,
           state: data.venue.location.state,
-          capacity: data.venue.capacity.toString(),
+          capacity: '0',
           image: data.venue.image || ''
         })
       }
@@ -95,75 +91,73 @@ export default function VenueDetailsPage() {
     }
   }
 
-  const parseSeatNumbers = (seatString: string): number[] => {
-    const seats: number[] = []
-    const parts = seatString.split(',').map(p => p.trim())
-    parts.forEach(part => {
-      if (part.includes('-')) {
-        const [start, end] = part.split('-').map(n => parseInt(n.trim()))
-        if (!isNaN(start) && !isNaN(end)) {
-          for (let i = start; i <= end; i++) {
-            seats.push(i)
-          }
-        }
-      } else {
-        const num = parseInt(part)
-        if (!isNaN(num)) seats.push(num)
-      }
-    })
-    return seats
+  const calculateTotalSeats = () => {
+    const total = seatConfig.blocks.reduce((sum, block) => {
+      return sum + block.totalSeats
+    }, 0)
+    setTotalSeats(total)
   }
 
-  const checkSeatConflicts = () => {
-    const conflicts: {[key: string]: string[]} = {}
-    const categorySeats: {[key: string]: number[]} = {}
-    
-    Object.entries(seatCategories).forEach(([category, seatString]) => {
-      if (seatString.trim()) {
-        categorySeats[category] = parseSeatNumbers(seatString)
-      }
-    })
-    
-    Object.entries(categorySeats).forEach(([category, seats]) => {
-      seats.forEach(seat => {
-        Object.entries(categorySeats).forEach(([otherCategory, otherSeats]) => {
-          if (category !== otherCategory && otherSeats.includes(seat)) {
-            if (!conflicts[category]) conflicts[category] = []
-            if (!conflicts[category].includes(`${seat} is used in ${otherCategory}`)) {
-              conflicts[category].push(`${seat} is used in ${otherCategory}`)
-            }
-          }
-        })
+  const generateBlockNames = (count: number) => {
+    const names = []
+    for (let i = 0; i < count; i++) {
+      names.push(String.fromCharCode(65 + i)) // A, B, C, D, E...
+    }
+    return names
+  }
+
+  const handleBlockCountChange = (count: number) => {
+    if (count === 0) {
+      setSeatConfig({
+        numberOfBlocks: 0,
+        blocks: []
       })
-    })
-    
-    setSeatConflicts(conflicts)
-    return Object.keys(conflicts).length === 0
-  }
-
-  const handleSaveSeatCategories = async () => {
-    if (!checkSeatConflicts()) {
-      alert('Please resolve seat conflicts before saving')
       return
     }
+    
+    const blockNames = generateBlockNames(count)
+    const newBlocks = blockNames.map((name, index) => {
+      if (seatConfig.blocks[index]) {
+        return { ...seatConfig.blocks[index], name }
+      }
+      return {
+        name,
+        type: 'Normal',
+        totalSeats: 100
+      }
+    })
+    
+    setSeatConfig({
+      numberOfBlocks: count,
+      blocks: newBlocks
+    })
+  }
+
+  const updateBlock = (index: number, field: string, value: any) => {
+    const newBlocks = [...seatConfig.blocks]
+    newBlocks[index] = { ...newBlocks[index], [field]: value }
+    setSeatConfig({ ...seatConfig, blocks: newBlocks })
+  }
+
+  const handleSaveSeatConfig = async () => {
     setSaving(true)
     try {
       const response = await fetch(`/api/venues/${params.id}/seats`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seatCategories })
+        body: JSON.stringify({ seatConfig, totalSeats })
       })
       const data = await response.json()
       if (data.success) {
-        alert('Seat categories saved successfully!')
+        alert('Seat configuration saved successfully!')
         setShowSeatModal(false)
         fetchVenueDetails()
       } else {
-        alert(data.error || 'Failed to save seat categories')
+        alert(data.error || 'Failed to save seat configuration')
       }
     } catch (error) {
-      console.error('Error saving seat categories:', error)
-      alert('Failed to save seat categories')
+      console.error('Error saving seat configuration:', error)
+      alert('Failed to save seat configuration')
     } finally {
       setSaving(false)
     }
@@ -340,12 +334,31 @@ export default function VenueDetailsPage() {
                   Edit Venue
                 </button>
                 <button
-                  onClick={() => setShowSeatModal(true)}
+                  onClick={() => {
+                    console.log('Opening seat modal, venue.seatConfig:', venue.seatConfig)
+                    // Load existing seat config when opening modal
+                    if (venue.seatConfig && venue.seatConfig.blocks && venue.seatConfig.blocks.length > 0) {
+                      console.log('Loading existing config:', venue.seatConfig)
+                      setSeatConfig(venue.seatConfig)
+                    } else {
+                      console.log('No existing config, using default')
+                      setSeatConfig({
+                        numberOfBlocks: 1,
+                        blocks: [{
+                          name: 'A',
+                          type: 'Normal',
+                          totalSeats: 100
+                        }]
+                      })
+                    }
+                    setShowSeatModal(true)
+                  }}
                   className="flex items-center px-4 py-2 bg-emerald text-white rounded-lg hover:bg-emerald/90 transition-all"
                 >
                   <Armchair size={16} className="mr-2" />
-                  Manage Seats
+                  Edit Seats
                 </button>
+
               </div>
             </div>
 
@@ -416,11 +429,14 @@ export default function VenueDetailsPage() {
 
       {showSeatModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center">
                 <Armchair className="text-emerald mr-3" size={24} />
-                <h3 className="text-xl font-bold text-gray-900">Manage Seat Categories</h3>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Manage Seat Configuration</h3>
+                  <p className="text-sm text-gray-600">Total Seats: {totalSeats}</p>
+                </div>
               </div>
               <button onClick={() => setShowSeatModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
                 <X size={20} />
@@ -428,107 +444,135 @@ export default function VenueDetailsPage() {
             </div>
 
             <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-800">
-                  <strong>How to define seats:</strong> Use ranges (e.g., 1-10) or individual seats (e.g., 13, 14, 20). 
-                  You can combine both: "1-10, 13, 14, 20"
-                </p>
+              {/* Number of Blocks */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Number of Blocks</label>
+                <input
+                  type="text"
+                  value={seatConfig.numberOfBlocks}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    if (value === '' || /^[0-9]+$/.test(value)) {
+                      const num = value === '' ? 0 : parseInt(value)
+                      if (num >= 0 && num <= 26) {
+                        handleBlockCountChange(num)
+                      }
+                    }
+                  }}
+                  placeholder="Enter number of blocks (1-26)"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal"
+                />
+                <p className="text-xs text-gray-500 mt-1">Enter a number between 1-26 (A-Z blocks)</p>
               </div>
 
-              {Object.keys(seatCategories).map((categoryName) => (
-                <div key={categoryName} className="flex items-start space-x-2">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {editingCategoryName === categoryName ? (
-                        <input
-                          type="text"
-                          value={newCategoryName}
-                          onChange={(e) => setNewCategoryName(e.target.value)}
-                          onBlur={() => {
-                            if (newCategoryName && newCategoryName !== categoryName) {
-                              const newCategories = { ...seatCategories }
-                              newCategories[newCategoryName] = newCategories[categoryName]
-                              delete newCategories[categoryName]
-                              setSeatCategories(newCategories)
-                            }
-                            setEditingCategoryName(null)
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.currentTarget.blur()
-                            }
-                          }}
-                          className="px-2 py-1 border border-teal rounded text-sm"
-                          autoFocus
-                        />
-                      ) : (
-                        <span className="inline-flex items-center">
-                          <span className="w-3 h-3 bg-purple-500 rounded-full mr-2"></span>
-                          {categoryName}
-                          <button
-                            onClick={() => {
-                              setEditingCategoryName(categoryName)
-                              setNewCategoryName(categoryName)
-                            }}
-                            className="ml-2 text-blue-600 hover:text-blue-800"
-                          >
-                            <Edit size={14} />
-                          </button>
-                        </span>
-                      )}
-                    </label>
-                    <input
-                      type="text"
-                      value={seatCategories[categoryName]}
-                      onChange={(e) => setSeatCategories({ ...seatCategories, [categoryName]: e.target.value })}
-                      placeholder="e.g., 1-10, 13, 14, 20"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal"
-                    />
-                    {seatConflicts[categoryName] && (
-                      <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                        {seatConflicts[categoryName].map((conflict, idx) => (
-                          <div key={idx}>⚠️ {conflict}</div>
-                        ))}
-                      </div>
-                    )}
+              {/* Visual Block Display */}
+              {seatConfig.numberOfBlocks > 0 && (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Venue Layout</h4>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {seatConfig.blocks.map((block, index) => {
+                      const getBlockColor = (type: string) => {
+                        switch(type) {
+                          case 'VIP': return 'bg-purple-500 text-white'
+                          case 'Premium': return 'bg-blue-500 text-white'
+                          case 'Normal': return 'bg-green-500 text-white'
+                          case 'Balcony': return 'bg-orange-500 text-white'
+                          default: return 'bg-gray-500 text-white'
+                        }
+                      }
+                      return (
+                        <div key={index} className={`w-16 h-16 rounded-lg flex items-center justify-center font-bold text-lg ${getBlockColor(block.type)}`}>
+                          {block.name}
+                        </div>
+                      )
+                    })}
                   </div>
-                  <button
-                    onClick={() => {
-                      const newCategories = { ...seatCategories }
-                      delete newCategories[categoryName]
-                      setSeatCategories(newCategories)
-                    }}
-                    className="mt-8 p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                    title="Delete category"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3 6h18"/>
-                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                    </svg>
-                  </button>
+                  <div className="mt-3 flex flex-wrap gap-4 justify-center text-sm">
+                    <div className="flex items-center"><div className="w-3 h-3 bg-purple-500 rounded mr-1"></div>VIP</div>
+                    <div className="flex items-center"><div className="w-3 h-3 bg-blue-500 rounded mr-1"></div>Premium</div>
+                    <div className="flex items-center"><div className="w-3 h-3 bg-green-500 rounded mr-1"></div>Normal</div>
+                    <div className="flex items-center"><div className="w-3 h-3 bg-orange-500 rounded mr-1"></div>Balcony</div>
+                  </div>
                 </div>
-              ))}
+              )}
 
-              <button
-                onClick={() => {
-                  const newCategoryKey = `Category ${Object.keys(seatCategories).length + 1}`
-                  setSeatCategories({ ...seatCategories, [newCategoryKey]: '' })
-                }}
-                className="w-full py-2 border-2 border-dashed border-gray-300 text-gray-600 rounded-lg hover:border-teal hover:text-teal transition-all flex items-center justify-center"
-              >
-                <Plus size={16} className="mr-2" />
-                Add New Category
-              </button>
+              {/* Block Configuration */}
+              {seatConfig.numberOfBlocks > 0 && (
+                <div className="grid gap-4">
+                {seatConfig.blocks.map((block, index) => {
+                  const getBlockColor = (type: string) => {
+                    switch(type) {
+                      case 'VIP': return 'border-purple-300 bg-purple-50'
+                      case 'Premium': return 'border-blue-300 bg-blue-50'
+                      case 'Normal': return 'border-green-300 bg-green-50'
+                      case 'Balcony': return 'border-orange-300 bg-orange-50'
+                      default: return 'border-gray-300 bg-gray-50'
+                    }
+                  }
+                  return (
+                    <div key={index} className={`border-2 rounded-lg p-4 ${getBlockColor(block.type)}`}>
+                      <div className="flex items-center mb-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white mr-3 ${
+                          block.type === 'VIP' ? 'bg-purple-500' :
+                          block.type === 'Premium' ? 'bg-blue-500' :
+                          block.type === 'Normal' ? 'bg-green-500' :
+                          block.type === 'Balcony' ? 'bg-orange-500' : 'bg-gray-500'
+                        }`}>
+                          {block.name}
+                        </div>
+                        <h4 className="font-semibold text-gray-900">Block {block.name} Configuration</h4>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Block Type</label>
+                          <select
+                            value={block.type}
+                            onChange={(e) => updateBlock(index, 'type', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal bg-white"
+                          >
+                            <option value="VIP">VIP</option>
+                            <option value="Premium">Premium</option>
+                            <option value="Normal">Normal</option>
+                            <option value="Balcony">Balcony</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Total Seats</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="1000"
+                            value={block.totalSeats}
+                            onChange={(e) => updateBlock(index, 'totalSeats', parseInt(e.target.value) || 1)}
+                            placeholder="e.g., 100"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal bg-white"
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-3 p-3 bg-white rounded border text-sm">
+                        <div className="font-medium text-gray-900 mb-2">Block Summary:</div>
+                        <div className="text-gray-600 mb-3">
+                          • Total seats in this block: <span className="font-semibold">{block.totalSeats}</span><br/>
+                          • Seat numbering: {block.name}1, {block.name}2, {block.name}3, ..., {block.name}{block.totalSeats}
+                        </div>
+                        <div className="bg-gray-50 rounded p-2 text-xs text-gray-600">
+                          Example seats: {block.name}1, {block.name}2, {block.name}3{block.totalSeats > 3 ? `, ..., ${block.name}${block.totalSeats}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                </div>
+              )}
 
               <div className="flex space-x-3 pt-4">
                 <button
-                  onClick={handleSaveSeatCategories}
+                  onClick={handleSaveSeatConfig}
                   disabled={saving}
                   className="flex-1 flex items-center justify-center px-4 py-2 bg-emerald text-white rounded-lg hover:bg-emerald/90 disabled:opacity-50"
                 >
                   <Save size={16} className="mr-2" />
-                  {saving ? 'Saving...' : 'Save Seat Categories'}
+                  {saving ? 'Saving...' : 'Save Seat Configuration'}
                 </button>
                 <button
                   onClick={() => setShowSeatModal(false)}
@@ -595,6 +639,8 @@ export default function VenueDetailsPage() {
           </div>
         </div>
       )}
+
+
     </div>
   )
 }

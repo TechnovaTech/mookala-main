@@ -7,10 +7,10 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { seatCategories } = await request.json();
+    const { seatConfig, totalSeats } = await request.json();
     
-    if (!seatCategories) {
-      return NextResponse.json({ success: false, error: 'Seat categories are required' }, { status: 400 });
+    if (!seatConfig) {
+      return NextResponse.json({ success: false, error: 'Seat configuration is required' }, { status: 400 });
     }
 
     const { db } = await connectToDatabase();
@@ -19,7 +19,8 @@ export async function POST(
       { _id: new ObjectId(params.id) },
       { 
         $set: { 
-          seatCategories,
+          seatConfig,
+          capacity: totalSeats || 0,
           updatedAt: new Date()
         } 
       }
@@ -32,6 +33,6 @@ export async function POST(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('POST Error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to update seat categories' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to update seat configuration' }, { status: 500 });
   }
 }
