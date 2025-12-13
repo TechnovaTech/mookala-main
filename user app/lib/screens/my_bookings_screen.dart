@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:path_provider/path_provider.dart';
-import 'package:open_file/open_file.dart';
+import 'dart:html' as html;
 
 class MyBookingsScreen extends StatefulWidget {
   const MyBookingsScreen({super.key});
@@ -410,144 +409,146 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
         pageFormat: PdfPageFormat.a4,
         build: (pw.Context context) {
           return pw.Container(
-            padding: const pw.EdgeInsets.all(20),
+            decoration: pw.BoxDecoration(
+              gradient: pw.LinearGradient(
+                colors: [PdfColors.blue50, PdfColors.white],
+                begin: pw.Alignment.topCenter,
+                end: pw.Alignment.bottomCenter,
+              ),
+            ),
             child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                // Header
+                // Header Banner
                 pw.Container(
                   width: double.infinity,
                   padding: const pw.EdgeInsets.all(20),
                   decoration: pw.BoxDecoration(
-                    color: PdfColors.blue900,
-                    borderRadius: pw.BorderRadius.circular(10),
+                    gradient: pw.LinearGradient(
+                      colors: [PdfColors.orange, PdfColors.amber],
+                      begin: pw.Alignment.centerLeft,
+                      end: pw.Alignment.centerRight,
+                    ),
+                    borderRadius: pw.BorderRadius.only(
+                      topLeft: pw.Radius.circular(20),
+                      topRight: pw.Radius.circular(20),
+                    ),
+                  ),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'MOOKALA',
+                        style: pw.TextStyle(
+                          color: PdfColors.white,
+                          fontSize: 16,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.Text(
+                        'EVENT TICKET',
+                        style: pw.TextStyle(
+                          color: PdfColors.white,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Main Ticket Body
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.all(25),
+                  decoration: pw.BoxDecoration(
+                    gradient: pw.LinearGradient(
+                      colors: [PdfColors.blue900, PdfColors.blue700],
+                      begin: pw.Alignment.topLeft,
+                      end: pw.Alignment.bottomRight,
+                    ),
                   ),
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
                       pw.Text(
-                        'EVENT TICKET',
+                        booking['eventTitle']?.toUpperCase() ?? 'EVENT',
                         style: pw.TextStyle(
                           color: PdfColors.white,
                           fontSize: 24,
                           fontWeight: pw.FontWeight.bold,
                         ),
                       ),
-                      pw.SizedBox(height: 10),
-                      pw.Text(
-                        booking['eventTitle'] ?? 'Event',
-                        style: pw.TextStyle(
-                          color: PdfColors.white,
-                          fontSize: 20,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                pw.SizedBox(height: 20),
-                
-                // Event Details
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(15),
-                  decoration: pw.BoxDecoration(
-                    border: pw.Border.all(color: PdfColors.grey300),
-                    borderRadius: pw.BorderRadius.circular(8),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'EVENT DETAILS',
-                        style: pw.TextStyle(
-                          fontSize: 16,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.blue900,
-                        ),
-                      ),
-                      pw.SizedBox(height: 10),
-                      pw.Row(
-                        children: [
-                          pw.Text('Date: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                          pw.Text('${booking['eventDate']} at ${booking['eventTime']}'),
-                        ],
-                      ),
                       pw.SizedBox(height: 5),
-                      pw.Row(
-                        children: [
-                          pw.Text('Venue: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                          pw.Text(booking['venue'] ?? 'Venue'),
-                        ],
-                      ),
-                      pw.SizedBox(height: 5),
-                      pw.Row(
-                        children: [
-                          pw.Text('Total Seats: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                          pw.Text('${booking['totalSeats']}'),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                pw.SizedBox(height: 20),
-                
-                // Ticket Details
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(15),
-                  decoration: pw.BoxDecoration(
-                    border: pw.Border.all(color: PdfColors.grey300),
-                    borderRadius: pw.BorderRadius.circular(8),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
                       pw.Text(
-                        'TICKET DETAILS',
+                        'GRAND CELEBRATION',
                         style: pw.TextStyle(
+                          color: PdfColors.grey300,
                           fontSize: 16,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.blue900,
                         ),
                       ),
-                      pw.SizedBox(height: 10),
-                      ...((booking['tickets'] as List?) ?? []).map<pw.Widget>((ticket) {
-                        return pw.Container(
-                          margin: const pw.EdgeInsets.only(bottom: 8),
-                          padding: const pw.EdgeInsets.all(10),
-                          decoration: pw.BoxDecoration(
-                            color: PdfColors.grey100,
-                            borderRadius: pw.BorderRadius.circular(5),
-                          ),
-                          child: pw.Row(
-                            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      pw.SizedBox(height: 20),
+                      pw.Row(
+                        children: [
+                          pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
                             children: [
-                              pw.Text('${ticket['category']} - Block ${ticket['block']}: ${ticket['block']}${ticket['fromSeat']}-${ticket['block']}${ticket['toSeat']}'),
-                              pw.Text('₹${ticket['totalPrice']}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                              pw.Text(
+                                'DATE: ${booking['eventDate']?.toUpperCase() ?? 'TBD'}',
+                                style: pw.TextStyle(
+                                  color: PdfColors.white,
+                                  fontSize: 12,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                              pw.SizedBox(height: 5),
+                              pw.Text(
+                                'TIME: ${booking['eventTime']?.toUpperCase() ?? 'TBD'}',
+                                style: pw.TextStyle(
+                                  color: PdfColors.white,
+                                  fontSize: 12,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                              pw.SizedBox(height: 5),
+                              pw.Text(
+                                'VENUE: ${booking['venue']?.toUpperCase() ?? 'VENUE'}',
+                                style: pw.TextStyle(
+                                  color: PdfColors.white,
+                                  fontSize: 12,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
                             ],
                           ),
-                        );
-                      }).toList(),
+                        ],
+                      ),
                     ],
                   ),
                 ),
-                pw.SizedBox(height: 20),
                 
-                // QR Code and Booking Info
-                pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Expanded(
-                      child: pw.Container(
-                        padding: const pw.EdgeInsets.all(15),
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(color: PdfColors.grey300),
-                          borderRadius: pw.BorderRadius.circular(8),
-                        ),
+                // Ticket Details Section
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.all(20),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.white,
+                    border: pw.Border(
+                      top: pw.BorderSide(
+                        color: PdfColors.grey300,
+                        width: 2,
+                        style: pw.BorderStyle.dashed,
+                      ),
+                    ),
+                  ),
+                  child: pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Expanded(
+                        flex: 2,
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
                             pw.Text(
-                              'BOOKING INFORMATION',
+                              'TICKET DETAILS',
                               style: pw.TextStyle(
                                 fontSize: 14,
                                 fontWeight: pw.FontWeight.bold,
@@ -555,72 +556,132 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
                               ),
                             ),
                             pw.SizedBox(height: 10),
-                            pw.Text('Booking ID: ${booking['_id']?.toString().substring(0, 8) ?? 'N/A'}'),
-                            pw.SizedBox(height: 5),
-                            pw.Text('Status: ${booking['status']?.toUpperCase() ?? 'CONFIRMED'}'),
-                            pw.SizedBox(height: 5),
-                            pw.Text(
-                              'Total: ₹${booking['totalPrice']}',
-                              style: pw.TextStyle(
-                                fontSize: 16,
-                                fontWeight: pw.FontWeight.bold,
+                            ...((booking['tickets'] as List?) ?? []).map<pw.Widget>((ticket) {
+                              return pw.Container(
+                                margin: const pw.EdgeInsets.only(bottom: 8),
+                                padding: const pw.EdgeInsets.all(8),
+                                decoration: pw.BoxDecoration(
+                                  color: PdfColors.orange50,
+                                  borderRadius: pw.BorderRadius.circular(5),
+                                  border: pw.Border.all(color: PdfColors.orange200),
+                                ),
+                                child: pw.Column(
+                                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                  children: [
+                                    pw.Text(
+                                      '${ticket['category']} - Block ${ticket['block']}',
+                                      style: pw.TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: pw.FontWeight.bold,
+                                      ),
+                                    ),
+                                    pw.Text(
+                                      'Seats: ${ticket['block']}${ticket['fromSeat']}-${ticket['block']}${ticket['toSeat']}',
+                                      style: const pw.TextStyle(fontSize: 9),
+                                    ),
+                                    pw.Text(
+                                      'Rs.${ticket['totalPrice']}',
+                                      style: pw.TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: PdfColors.orange800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                            pw.SizedBox(height: 10),
+                            pw.Container(
+                              padding: const pw.EdgeInsets.all(8),
+                              decoration: pw.BoxDecoration(
                                 color: PdfColors.blue900,
+                                borderRadius: pw.BorderRadius.circular(5),
+                              ),
+                              child: pw.Row(
+                                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                                children: [
+                                  pw.Text(
+                                    'TOTAL AMOUNT',
+                                    style: pw.TextStyle(
+                                      color: PdfColors.white,
+                                      fontSize: 12,
+                                      fontWeight: pw.FontWeight.bold,
+                                    ),
+                                  ),
+                                  pw.Text(
+                                    'Rs.${booking['totalPrice']}',
+                                    style: pw.TextStyle(
+                                      color: PdfColors.white,
+                                      fontSize: 14,
+                                      fontWeight: pw.FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    pw.SizedBox(width: 20),
-                    pw.Container(
-                      width: 120,
-                      height: 120,
-                      padding: const pw.EdgeInsets.all(10),
-                      decoration: pw.BoxDecoration(
-                        border: pw.Border.all(color: PdfColors.grey300),
-                        borderRadius: pw.BorderRadius.circular(8),
+                      pw.SizedBox(width: 20),
+                      pw.Container(
+                        width: 100,
+                        height: 100,
+                        padding: const pw.EdgeInsets.all(8),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColors.orange100,
+                          borderRadius: pw.BorderRadius.circular(8),
+                          border: pw.Border.all(color: PdfColors.orange300),
+                        ),
+                        child: pw.BarcodeWidget(
+                          barcode: pw.Barcode.qrCode(),
+                          data: jsonEncode({
+                            'bookingId': booking['_id'],
+                            'eventTitle': booking['eventTitle'],
+                            'eventDate': booking['eventDate'],
+                            'eventTime': booking['eventTime'],
+                            'venue': booking['venue'],
+                            'totalSeats': booking['totalSeats'],
+                            'totalPrice': booking['totalPrice'],
+                            'status': booking['status'],
+                          }),
+                        ),
                       ),
-                      child: pw.BarcodeWidget(
-                        barcode: pw.Barcode.qrCode(),
-                        data: jsonEncode({
-                          'bookingId': booking['_id'],
-                          'eventTitle': booking['eventTitle'],
-                          'eventDate': booking['eventDate'],
-                          'eventTime': booking['eventTime'],
-                          'venue': booking['venue'],
-                          'totalSeats': booking['totalSeats'],
-                          'totalPrice': booking['totalPrice'],
-                          'status': booking['status'],
-                        }),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                pw.SizedBox(height: 20),
                 
                 // Footer
                 pw.Container(
                   width: double.infinity,
                   padding: const pw.EdgeInsets.all(15),
                   decoration: pw.BoxDecoration(
-                    color: PdfColors.grey100,
-                    borderRadius: pw.BorderRadius.circular(8),
+                    gradient: pw.LinearGradient(
+                      colors: [PdfColors.green600, PdfColors.green400],
+                      begin: pw.Alignment.centerLeft,
+                      end: pw.Alignment.centerRight,
+                    ),
+                    borderRadius: pw.BorderRadius.only(
+                      bottomLeft: pw.Radius.circular(20),
+                      bottomRight: pw.Radius.circular(20),
+                    ),
                   ),
-                  child: pw.Column(
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Text(
-                        'Please present this ticket at the venue entrance',
+                        'Official Event Partners',
                         style: pw.TextStyle(
+                          color: PdfColors.white,
                           fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
                         ),
-                        textAlign: pw.TextAlign.center,
                       ),
-                      pw.SizedBox(height: 5),
                       pw.Text(
-                        'Scan the QR code for verification',
-                        style: const pw.TextStyle(fontSize: 10),
-                        textAlign: pw.TextAlign.center,
+                        'ID: ${booking['_id']?.toString().substring(0, 8) ?? 'N/A'}',
+                        style: pw.TextStyle(
+                          color: PdfColors.white,
+                          fontSize: 10,
+                        ),
                       ),
                     ],
                   ),
@@ -636,24 +697,90 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
   }
 
   Future<void> _downloadTicketPDF(Map<String, dynamic> booking) async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.download, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Download Ticket'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.confirmation_number, size: 64, color: Colors.blue),
+            SizedBox(height: 16),
+            Text(
+              'Your ticket for ${booking['eventTitle']} is ready!',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Ticket will be saved to your device.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _generateAndSaveTicket(booking);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF001F3F),
+            ),
+            child: Text('Download', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _generateAndSaveTicket(Map<String, dynamic> booking) async {
     try {
       final pdf = await _generateTicketPDF(booking);
-      final output = await getExternalStorageDirectory();
-      final file = File('${output!.path}/ticket_${booking['_id']}.pdf');
-      await file.writeAsBytes(await pdf.save());
+      final bytes = await pdf.save();
+      
+      final blob = html.Blob([bytes]);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final anchor = html.document.createElement('a') as html.AnchorElement
+        ..href = url
+        ..style.display = 'none'
+        ..download = 'Ticket_${booking['eventTitle']?.replaceAll(' ', '_') ?? 'Event'}.pdf';
+      html.document.body?.children.add(anchor);
+      anchor.click();
+      html.document.body?.children.remove(anchor);
+      html.Url.revokeObjectUrl(url);
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Ticket downloaded to ${file.path}'),
-          action: SnackBarAction(
-            label: 'Open',
-            onPressed: () => OpenFile.open(file.path),
+          content: Row(
+            children: [
+              Icon(Icons.download, color: Colors.white),
+              SizedBox(width: 8),
+              Text('PDF Downloaded!'),
+            ],
           ),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
         ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error downloading ticket')),
+        SnackBar(
+          content: Text('Download failed'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
