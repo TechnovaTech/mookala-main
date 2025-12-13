@@ -101,7 +101,10 @@ export default function VenueDetailsPage() {
   const generateBlockNames = (count: number) => {
     const names = []
     for (let i = 0; i < count; i++) {
-      names.push(String.fromCharCode(65 + i)) // A, B, C, D, E...
+      const length = Math.floor(i / 26) + 1
+      const letterIndex = i % 26
+      const letter = String.fromCharCode(65 + letterIndex)
+      names.push(letter.repeat(length))
     }
     return names
   }
@@ -454,15 +457,15 @@ export default function VenueDetailsPage() {
                     const value = e.target.value
                     if (value === '' || /^[0-9]+$/.test(value)) {
                       const num = value === '' ? 0 : parseInt(value)
-                      if (num >= 0 && num <= 26) {
+                      if (num >= 0 && num <= 999) {
                         handleBlockCountChange(num)
                       }
                     }
                   }}
-                  placeholder="Enter number of blocks (1-26)"
+                  placeholder="Enter number of blocks (1-999)"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal"
                 />
-                <p className="text-xs text-gray-500 mt-1">Enter a number between 1-26 (A-Z blocks)</p>
+                <p className="text-xs text-gray-500 mt-1">Enter a number between 1-999 (A-Z, AA-ZZ, AAA-ZZZ...)</p>
               </div>
 
               {/* Visual Block Display */}
