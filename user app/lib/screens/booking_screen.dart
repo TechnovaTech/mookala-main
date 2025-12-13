@@ -13,77 +13,62 @@ class BookingScreen extends StatefulWidget {
 
 class _BookingScreenState extends State<BookingScreen> {
   String? selectedCategory;
-  Map<String, dynamic>? venueData;
-  bool isLoadingVenue = true;
-  Set<int> selectedSeats = {};
+  String? selectedBlock;
+  List<Map<String, dynamic>> seatRanges = [];
+  List<Map<String, dynamic>> availableBlocks = [];
   
   @override
   void initState() {
     super.initState();
-    _loadVenueData();
+    _loadVenueBlocks();
   }
   
-  Future<void> _loadVenueData() async {
-    print('Event data: ${widget.event}');
-    
-    // Get venue name from event location
+  Future<void> _loadVenueBlocks() async {
     String? venueName;
     if (widget.event['location'] != null && widget.event['location']['name'] != null) {
       venueName = widget.event['location']['name'];
     }
     
     if (venueName != null && venueName.isNotEmpty) {
-      print('Loading venue data for name: $venueName');
       final result = await ApiService.getVenueByName(venueName);
-      print('Venue API result: $result');
-      
       if (result['success'] == true && result['venues'] != null && result['venues'].isNotEmpty) {
-        setState(() {
-          venueData = result['venues'][0];
-          isLoadingVenue = false;
-          // Set first seat category as default if available
-          final seatCategories = _getSeatCategories();
-          if (seatCategories.isNotEmpty) {
-            selectedCategory = seatCategories.first['name'];
-          }
-        });
-      } else {
-        print('Failed to load venue data: ${result['error']}');
-        setState(() {
-          isLoadingVenue = false;
-          // Set first seat category as default
-          final seatCategories = _getSeatCategories();
-          if (seatCategories.isNotEmpty) {
-            selectedCategory = seatCategories.first['name'];
-          }
-        });
-      }
-    } else {
-      print('No venue name found in event location');
-      setState(() {
-        isLoadingVenue = false;
-        // Set first seat category as default
-        final seatCategories = _getSeatCategories();
-        if (seatCategories.isNotEmpty) {
-          selectedCategory = seatCategories.first['name'];
+        final venue = result['venues'][0];
+        if (venue['seatConfig'] != null && venue['seatConfig']['blocks'] != null) {
+          setState(() {
+            availableBlocks = List<Map<String, dynamic>>.from(venue['seatConfig']['blocks']);
+            final seatCategories = _getSeatCategories();
+            if (seatCategories.isNotEmpty) {
+              selectedCategory = seatCategories.first['name'];
+            }
+          });
         }
-      });
+      }
     }
   }
   
   List<Map<String, dynamic>> _getSeatCategories() {
-    // Only use tickets from event data
     if (widget.event['tickets'] != null && widget.event['tickets'] is List) {
       final tickets = widget.event['tickets'] as List;
       if (tickets.isNotEmpty) {
-        return tickets.map((ticket) => {
-          'name': ticket['name'] ?? 'Ticket',
-          'price': _extractPriceFromTicket(ticket['price']),
+        return tickets.map<Map<String, dynamic>>((ticket) {
+          final name = ticket['name'] ?? 'Ticket';
+          final priceType = ticket['priceType'] ?? 'Normal';
+          final blockName = ticket['blockName'] ?? 'A';
+          final startSeat = ticket['startSeat'] ?? 1;
+          final endSeat = ticket['endSeat'] ?? (int.tryParse(ticket['quantity'].toString()) ?? 100);
+          
+          return {
+            'name': name,
+            'price': _extractPriceFromTicket(ticket['price']),
+            'blockName': blockName,
+            'priceType': priceType,
+            'startSeat': startSeat,
+            'endSeat': endSeat,
+            'seatRange': '$blockName$startSeat to $blockName$endSeat',
+          };
         }).toList();
       }
     }
-    
-    // Return empty list if no tickets
     return [];
   }
   
@@ -100,20 +85,7 @@ class _BookingScreenState extends State<BookingScreen> {
   
 
   
-  String _getVenueImage() {
-    if (venueData != null && venueData!['image'] != null) {
-      final image = venueData!['image'];
-      if (image.toString().startsWith('data:image')) {
-        return image;
-      } else if (image.toString().startsWith('http')) {
-        return image;
-      } else {
-        // Base64 image without data URL prefix
-        return 'data:image/jpeg;base64,$image';
-      }
-    }
-    return 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?w=800&h=400&fit=crop';
-  }
+
   
 
   
@@ -126,100 +98,184 @@ class _BookingScreenState extends State<BookingScreen> {
     return found['price'] ?? 500;
   }
   
-  int _getCategoryQuantity(String category) {
+  void _addSeatRange() {
+    final minSeat = _getBlockMinSeat();
+    final maxSeat = _getBlockMaxSeat();
+    setState(() {
+      seatRanges.add({
+        'fromSeat': minSeat,
+        'toSeat': minSeat,
+        'quantity': 1,
+      });
+    });
+  }
+  
+  void _removeSeatRange(int index) {
+    setState(() {
+      seatRanges.removeAt(index);
+    });
+  }
+  
+  int _getTotalSeats() {
+    return seatRanges.fold(0, (sum, range) => sum + (range['quantity'] as int));
+  }
+  
+  int _getTotalPrice() {
+    if (selectedCategory == null) return 0;
+    final price = _getCategoryPrice(selectedCategory!);
+    return price * _getTotalSeats();
+  }
+  
+  List<Map<String, dynamic>> _getAvailableBlocksForCategory() {
+    if (selectedCategory == null) return [];
+    
     final tickets = widget.event['tickets'] as List?;
-    if (tickets != null) {
-      final ticket = tickets.firstWhere(
-        (t) => t['name'] == category,
-        orElse: () => {'quantity': '0'},
-      );
-      return int.tryParse(ticket['quantity'].toString()) ?? 0;
-    }
-    return 0;
+    if (tickets == null) return [];
+    
+    final categoryTickets = tickets.where((ticket) => ticket['name'] == selectedCategory).toList();
+    
+    return categoryTickets.map<Map<String, dynamic>>((ticket) {
+      final priceType = ticket['priceType'] ?? 'Normal';
+      final blockName = ticket['blockName'] ?? 'A';
+      final startSeat = ticket['startSeat'] ?? 1;
+      final endSeat = ticket['endSeat'] ?? (int.tryParse(ticket['quantity'].toString()) ?? 100);
+      
+      return {
+        'blockName': blockName,
+        'priceType': priceType,
+        'startSeat': startSeat,
+        'endSeat': endSeat,
+        'price': _extractPriceFromTicket(ticket['price']),
+        'seatRange': '$blockName$startSeat to $blockName$endSeat',
+      };
+    }).toList();
   }
   
-  Widget _buildSeatGrid() {
-    if (selectedCategory == null) return const SizedBox();
-    
-    final quantity = _getCategoryQuantity(selectedCategory!);
-    if (quantity == 0) return const Center(child: Text('No seats available'));
-    
-    final columns = (quantity / 10).ceil().clamp(1, 10);
-    final rows = (quantity / columns).ceil();
-    
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(16),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        childAspectRatio: 1,
-      ),
-      itemCount: quantity,
-      itemBuilder: (context, index) {
-        final seatNumber = index + 1;
-        final isSelected = selectedSeats.contains(seatNumber);
-        
-        return GestureDetector(
-          onTap: () {
-            setState(() {
-              if (isSelected) {
-                selectedSeats.remove(seatNumber);
-              } else {
-                selectedSeats.add(seatNumber);
-              }
-            });
-          },
-          child: Container(
-            decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade300,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade400,
-                width: 2,
-              ),
-            ),
-            child: Center(
-              child: Text(
-                seatNumber.toString(),
-                style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.black87,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+  int _getBlockMinSeat() {
+    if (selectedCategory == null || selectedBlock == null) return 1;
+    final blockInfo = _getAvailableBlocksForCategory().firstWhere(
+      (block) => block['blockName'] == selectedBlock,
+      orElse: () => {'startSeat': 1},
     );
+    return blockInfo['startSeat'] ?? 1;
   }
   
-  Widget _buildLegendItem(Color color, String label) {
-    return Row(
+  int _getBlockMaxSeat() {
+    if (selectedCategory == null || selectedBlock == null) return 100;
+    final blockInfo = _getAvailableBlocksForCategory().firstWhere(
+      (block) => block['blockName'] == selectedBlock,
+      orElse: () => {'endSeat': 100},
+    );
+    return blockInfo['endSeat'] ?? 100;
+  }
+  
+  Widget _buildSeatRangeSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: Colors.grey.shade400),
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Select Seats',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF001F3F),
+              ),
+            ),
+            IconButton(
+              onPressed: _addSeatRange,
+              icon: const Icon(Icons.add_circle, color: Color(0xFF001F3F)),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Colors.black87,
+        const SizedBox(height: 16),
+        ...seatRanges.asMap().entries.map((entry) {
+          final index = entry.key;
+          final range = entry.value;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'From Seat',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.number,
+                        onChanged: (value) {
+                          final fromSeat = int.tryParse(value) ?? _getBlockMinSeat();
+                          final maxSeat = _getBlockMaxSeat();
+                          setState(() {
+                            seatRanges[index]['fromSeat'] = fromSeat.clamp(_getBlockMinSeat(), maxSeat);
+                            seatRanges[index]['quantity'] = (seatRanges[index]['toSeat'] - seatRanges[index]['fromSeat'] + 1).clamp(1, 999);
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'To Seat',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.number,
+                        onChanged: (value) {
+                          final toSeat = int.tryParse(value) ?? _getBlockMaxSeat();
+                          final maxSeat = _getBlockMaxSeat();
+                          setState(() {
+                            seatRanges[index]['toSeat'] = toSeat.clamp(_getBlockMinSeat(), maxSeat);
+                            seatRanges[index]['quantity'] = (seatRanges[index]['toSeat'] - seatRanges[index]['fromSeat'] + 1).clamp(1, 999);
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      onPressed: seatRanges.length > 1 ? () => _removeSeatRange(index) : null,
+                      icon: const Icon(Icons.remove_circle, color: Colors.red),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Seats: ${selectedBlock ?? 'A'}${range['fromSeat']} to ${selectedBlock ?? 'A'}${range['toSeat']} (${range['quantity']} seats)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+        if (seatRanges.isEmpty)
+          ElevatedButton(
+            onPressed: _addSeatRange,
+            child: const Text('Add Seat Range'),
           ),
-        ),
       ],
     );
   }
+  
+
 
   @override
   Widget build(BuildContext context) {
@@ -278,60 +334,7 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
             ),
 
-            // Venue Image
-            Container(
-              margin: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  height: 200,
-                  width: double.infinity,
-                  child: isLoadingVenue
-                    ? Container(
-                        color: Colors.grey.shade200,
-                        child: const Center(
-                          child: CircularProgressIndicator(),
-                        ),
-                      )
-                    : _getVenueImage().startsWith('data:image')
-                      ? Image.memory(
-                          base64Decode(_getVenueImage().split(',')[1]),
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              color: Colors.grey.shade300,
-                              child: const Center(
-                                child: Icon(Icons.image, size: 50, color: Colors.grey),
-                              ),
-                            );
-                          },
-                        )
-                      : Image.network(
-                          _getVenueImage(),
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              color: Colors.grey.shade300,
-                              child: const Center(
-                                child: Icon(Icons.image, size: 50, color: Colors.grey),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ),
-            ),
+
 
             // Seat Category Selection
             Container(
@@ -361,105 +364,132 @@ class _BookingScreenState extends State<BookingScreen> {
                   ),
                   const SizedBox(height: 16),
                   
-                  // Seat Category Dropdown
-                  isLoadingVenue
-                    ? Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Center(
-                          child: CircularProgressIndicator(),
-                        ),
-                      )
-                    : Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: selectedCategory,
-                            hint: const Text('Select Category'),
-                            isExpanded: true,
-                            items: _getSeatCategories().map((category) {
-                              return DropdownMenuItem<String>(
-                                value: category['name'],
-                                child: Row(
+                  // Category Dropdown
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: selectedCategory,
+                        hint: const Text('Select Category'),
+                        isExpanded: true,
+                        items: _getSeatCategories().map((category) {
+                          return DropdownMenuItem<String>(
+                            value: category['name'],
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      category['name'],
+                                      category['priceType'] ?? 'Normal',
                                       style: const TextStyle(
                                         fontSize: 16,
-                                        fontWeight: FontWeight.w500,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                     Text(
                                       '₹${category['price']}',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey.shade600,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF001F3F),
                                       ),
                                     ),
                                   ],
                                 ),
-                              );
-                            }).toList(),
-                            onChanged: (value) {
-                              setState(() {
-                                selectedCategory = value;
-                                selectedSeats.clear(); // Clear selected seats when category changes
-                              });
-                            },
-                          ),
-                        ),
+                                Text(
+                                  'Block ${category['blockName']} (${category['seatRange']})',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            selectedCategory = value;
+                            selectedBlock = null;
+                            seatRanges.clear();
+                          });
+                        },
                       ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Block Selection
+                  const Text(
+                    'Select Block',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: selectedBlock,
+                        hint: const Text('Select Block'),
+                        isExpanded: true,
+                        items: _getAvailableBlocksForCategory().map((blockInfo) {
+                          return DropdownMenuItem<String>(
+                            value: blockInfo['blockName'],
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Block ${blockInfo['blockName']}',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  '${blockInfo['priceType']} - ${blockInfo['seatRange']} (₹${blockInfo['price']})',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            selectedBlock = value;
+                            seatRanges.clear();
+                          });
+                        },
+                      ),
+                    ),
+                  ),
                   
 
                   
-                  // Seat Selection Grid
-                  if (selectedCategory != null) ...[
+                  // Seat Range Selection
+                  if (selectedCategory != null && selectedBlock != null) ...[
                     const SizedBox(height: 24),
-                    const Text(
-                      'Select Seats',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF001F3F),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      height: 400,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: InteractiveViewer(
-                        boundaryMargin: const EdgeInsets.all(20),
-                        minScale: 0.5,
-                        maxScale: 3.0,
-                        child: Center(
-                          child: _buildSeatGrid(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildLegendItem(Colors.grey.shade300, 'Available'),
-                        const SizedBox(width: 16),
-                        _buildLegendItem(const Color(0xFF001F3F), 'Selected'),
-                        const SizedBox(width: 16),
-                        _buildLegendItem(Colors.red.shade300, 'Booked'),
-                      ],
-                    ),
+                    _buildSeatRangeSelector(),
                   ],
 
                 ],
@@ -489,7 +519,7 @@ class _BookingScreenState extends State<BookingScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Seats ${selectedSeats.length}',
+                  'Seats ${_getTotalSeats()}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -497,9 +527,7 @@ class _BookingScreenState extends State<BookingScreen> {
                   ),
                 ),
                 Text(
-                  selectedCategory != null && selectedSeats.isNotEmpty
-                    ? '₹ ${(_getCategoryPrice(selectedCategory!) * selectedSeats.length).toString()}'
-                    : '₹ 0',
+                  '₹ ${_getTotalPrice()}',
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -512,10 +540,9 @@ class _BookingScreenState extends State<BookingScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  // Show booking confirmation
+                onPressed: _getTotalSeats() > 0 ? () {
                   _showBookingConfirmation();
-                },
+                } : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF001F3F),
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -561,12 +588,10 @@ class _BookingScreenState extends State<BookingScreen> {
               Text('Date: ${widget.event['date'] ?? 'Date TBD'}'),
               Text('Time: ${widget.event['time'] ?? 'Time TBD'}'),
               Text('Category: ${selectedCategory ?? 'None'}'),
-              Text('Seats: ${selectedSeats.join(", ")}'),
+              Text('Seats: ${seatRanges.map((r) => '${selectedBlock ?? 'A'}${r['fromSeat']}-${selectedBlock ?? 'A'}${r['toSeat']}').join(', ')}'),
               const SizedBox(height: 8),
               Text(
-                selectedCategory != null && selectedSeats.isNotEmpty
-                  ? 'Total: ₹${(_getCategoryPrice(selectedCategory!) * selectedSeats.length).toString()}'
-                  : 'Total: ₹0',
+                'Total: ₹${_getTotalPrice()}',
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 16,

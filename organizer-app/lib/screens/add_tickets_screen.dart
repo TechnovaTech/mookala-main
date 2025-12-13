@@ -69,6 +69,10 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
             'price': '₹${ticket['price']}.00',
             'quantity': ticket['quantity'],
             'sold': '0',
+            'blockName': ticket['blockName'],
+            'startSeat': ticket['startSeat'],
+            'endSeat': ticket['endSeat'],
+            'priceType': ticket['priceType'],
           });
         }
       });
