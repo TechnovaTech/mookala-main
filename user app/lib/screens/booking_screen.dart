@@ -13,15 +13,14 @@ class BookingScreen extends StatefulWidget {
 }
 
 class _BookingScreenState extends State<BookingScreen> {
-  String? selectedCategory;
-  String? selectedBlock;
-  List<Map<String, dynamic>> seatRanges = [];
+  List<Map<String, dynamic>> selectedTickets = [];
   List<Map<String, dynamic>> availableBlocks = [];
   
   @override
   void initState() {
     super.initState();
     _loadVenueBlocks();
+    _addTicketSelection(); // Start with one ticket selection
   }
   
   Future<void> _loadVenueBlocks() async {
@@ -37,10 +36,6 @@ class _BookingScreenState extends State<BookingScreen> {
         if (venue['seatConfig'] != null && venue['seatConfig']['blocks'] != null) {
           setState(() {
             availableBlocks = List<Map<String, dynamic>>.from(venue['seatConfig']['blocks']);
-            final seatCategories = _getSeatCategories();
-            if (seatCategories.isNotEmpty) {
-              selectedCategory = seatCategories.first['name'];
-            }
           });
         }
       }
@@ -90,50 +85,38 @@ class _BookingScreenState extends State<BookingScreen> {
   
 
   
-  int _getCategoryPrice(String category) {
-    final categories = _getSeatCategories();
-    final found = categories.firstWhere(
-      (cat) => cat['name'] == category,
-      orElse: () => {'price': 500},
-    );
-    return found['price'] ?? 500;
-  }
-  
-  void _addSeatRange() {
-    final minSeat = _getBlockMinSeat();
-    final maxSeat = _getBlockMaxSeat();
+  void _addTicketSelection() {
     setState(() {
-      seatRanges.add({
-        'fromSeat': minSeat,
-        'toSeat': minSeat,
+      selectedTickets.add({
+        'category': null,
+        'block': null,
+        'fromSeat': 1,
+        'toSeat': 1,
         'quantity': 1,
+        'price': 0,
       });
     });
   }
   
-  void _removeSeatRange(int index) {
+  void _removeTicketSelection(int index) {
     setState(() {
-      seatRanges.removeAt(index);
+      selectedTickets.removeAt(index);
     });
   }
   
   int _getTotalSeats() {
-    return seatRanges.fold(0, (sum, range) => sum + (range['quantity'] as int));
+    return selectedTickets.fold(0, (sum, ticket) => sum + (ticket['quantity'] as int));
   }
   
   int _getTotalPrice() {
-    if (selectedCategory == null) return 0;
-    final price = _getCategoryPrice(selectedCategory!);
-    return price * _getTotalSeats();
+    return selectedTickets.fold(0, (sum, ticket) => sum + ((ticket['price'] as int) * (ticket['quantity'] as int)));
   }
   
-  List<Map<String, dynamic>> _getAvailableBlocksForCategory() {
-    if (selectedCategory == null) return [];
-    
+  List<Map<String, dynamic>> _getAvailableBlocksForCategory(String categoryName) {
     final tickets = widget.event['tickets'] as List?;
     if (tickets == null) return [];
     
-    final categoryTickets = tickets.where((ticket) => ticket['name'] == selectedCategory).toList();
+    final categoryTickets = tickets.where((ticket) => ticket['name'] == categoryName).toList();
     
     return categoryTickets.map<Map<String, dynamic>>((ticket) {
       final priceType = ticket['priceType'] ?? 'Normal';
@@ -152,127 +135,161 @@ class _BookingScreenState extends State<BookingScreen> {
     }).toList();
   }
   
-  int _getBlockMinSeat() {
-    if (selectedCategory == null || selectedBlock == null) return 1;
-    final blockInfo = _getAvailableBlocksForCategory().firstWhere(
-      (block) => block['blockName'] == selectedBlock,
+  int _getBlockMinSeat(String categoryName, String blockName) {
+    final blocks = _getAvailableBlocksForCategory(categoryName);
+    final blockInfo = blocks.firstWhere(
+      (block) => block['blockName'] == blockName,
       orElse: () => {'startSeat': 1},
     );
     return blockInfo['startSeat'] ?? 1;
   }
   
-  int _getBlockMaxSeat() {
-    if (selectedCategory == null || selectedBlock == null) return 100;
-    final blockInfo = _getAvailableBlocksForCategory().firstWhere(
-      (block) => block['blockName'] == selectedBlock,
+  int _getBlockMaxSeat(String categoryName, String blockName) {
+    final blocks = _getAvailableBlocksForCategory(categoryName);
+    final blockInfo = blocks.firstWhere(
+      (block) => block['blockName'] == blockName,
       orElse: () => {'endSeat': 100},
     );
     return blockInfo['endSeat'] ?? 100;
   }
   
-  Widget _buildSeatRangeSelector() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Select Seats',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF001F3F),
+  Widget _buildTicketSelector(int ticketIndex) {
+    final ticket = selectedTickets[ticketIndex];
+    final categories = _getSeatCategories();
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Ticket ${ticketIndex + 1}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              IconButton(
+                onPressed: selectedTickets.length > 1 ? () => _removeTicketSelection(ticketIndex) : null,
+                icon: const Icon(Icons.remove_circle, color: Colors.red),
               ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          // Category Selection
+          DropdownButtonFormField<String>(
+            value: ticket['category'],
+            decoration: const InputDecoration(
+              labelText: 'Category',
+              border: OutlineInputBorder(),
             ),
-            IconButton(
-              onPressed: _addSeatRange,
-              icon: const Icon(Icons.add_circle, color: Color(0xFF001F3F)),
+            items: categories.map((category) {
+              return DropdownMenuItem<String>(
+                value: category['name'],
+                child: Text(
+                  '${category['priceType']} - ₹${category['price']} (${category['seatRange']})',
+                  style: const TextStyle(fontSize: 14),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              );
+            }).toList(),
+            onChanged: (value) {
+              setState(() {
+                selectedTickets[ticketIndex]['category'] = value;
+                selectedTickets[ticketIndex]['block'] = null;
+                selectedTickets[ticketIndex]['price'] = categories.firstWhere((c) => c['name'] == value)['price'];
+              });
+            },
+          ),
+          
+          if (ticket['category'] != null) ...[
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: ticket['block'],
+              decoration: const InputDecoration(
+                labelText: 'Block',
+                border: OutlineInputBorder(),
+              ),
+              items: _getAvailableBlocksForCategory(ticket['category']).map((block) {
+                return DropdownMenuItem<String>(
+                  value: block['blockName'],
+                  child: Text('Block ${block['blockName']} (${block['seatRange']})')
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  selectedTickets[ticketIndex]['block'] = value;
+                  if (value != null) {
+                    final minSeat = _getBlockMinSeat(ticket['category'], value);
+                    selectedTickets[ticketIndex]['fromSeat'] = minSeat;
+                    selectedTickets[ticketIndex]['toSeat'] = minSeat;
+                    selectedTickets[ticketIndex]['quantity'] = 1;
+                  }
+                });
+              },
             ),
           ],
-        ),
-        const SizedBox(height: 16),
-        ...seatRanges.asMap().entries.map((entry) {
-          final index = entry.key;
-          final range = entry.value;
-          return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
+          
+          if (ticket['block'] != null) ...[
+            const SizedBox(height: 12),
+            Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'From Seat',
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (value) {
-                          final fromSeat = int.tryParse(value) ?? _getBlockMinSeat();
-                          final maxSeat = _getBlockMaxSeat();
-                          setState(() {
-                            seatRanges[index]['fromSeat'] = fromSeat.clamp(_getBlockMinSeat(), maxSeat);
-                            seatRanges[index]['quantity'] = (seatRanges[index]['toSeat'] - seatRanges[index]['fromSeat'] + 1).clamp(1, 999);
-                          });
-                        },
-                      ),
+                Expanded(
+                  child: TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'From Seat',
+                      border: OutlineInputBorder(),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'To Seat',
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (value) {
-                          final toSeat = int.tryParse(value) ?? _getBlockMaxSeat();
-                          final maxSeat = _getBlockMaxSeat();
-                          setState(() {
-                            seatRanges[index]['toSeat'] = toSeat.clamp(_getBlockMinSeat(), maxSeat);
-                            seatRanges[index]['quantity'] = (seatRanges[index]['toSeat'] - seatRanges[index]['fromSeat'] + 1).clamp(1, 999);
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    IconButton(
-                      onPressed: seatRanges.length > 1 ? () => _removeSeatRange(index) : null,
-                      icon: const Icon(Icons.remove_circle, color: Colors.red),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(4),
+                    keyboardType: TextInputType.number,
+                    initialValue: ticket['fromSeat'].toString(),
+                    onChanged: (value) {
+                      final fromSeat = int.tryParse(value) ?? ticket['fromSeat'];
+                      setState(() {
+                        selectedTickets[ticketIndex]['fromSeat'] = fromSeat;
+                        selectedTickets[ticketIndex]['quantity'] = (selectedTickets[ticketIndex]['toSeat'] - fromSeat + 1).clamp(1, 999);
+                      });
+                    },
                   ),
-                  child: Text(
-                    'Seats: ${selectedBlock ?? 'A'}${range['fromSeat']} to ${selectedBlock ?? 'A'}${range['toSeat']} (${range['quantity']} seats)',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.blue.shade700,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'To Seat',
+                      border: OutlineInputBorder(),
                     ),
+                    keyboardType: TextInputType.number,
+                    initialValue: ticket['toSeat'].toString(),
+                    onChanged: (value) {
+                      final toSeat = int.tryParse(value) ?? ticket['toSeat'];
+                      setState(() {
+                        selectedTickets[ticketIndex]['toSeat'] = toSeat;
+                        selectedTickets[ticketIndex]['quantity'] = (toSeat - selectedTickets[ticketIndex]['fromSeat'] + 1).clamp(1, 999);
+                      });
+                    },
                   ),
                 ),
               ],
             ),
-          );
-        }).toList(),
-        if (seatRanges.isEmpty)
-          ElevatedButton(
-            onPressed: _addSeatRange,
-            child: const Text('Add Seat Range'),
-          ),
-      ],
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Seats: ${ticket['block']}${ticket['fromSeat']} to ${ticket['block']}${ticket['toSeat']} (${ticket['quantity']} seats) - ₹${(ticket['price'] * ticket['quantity'])}',
+                style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
   
@@ -337,7 +354,7 @@ class _BookingScreenState extends State<BookingScreen> {
 
 
 
-            // Seat Category Selection
+            // Multiple Ticket Selection
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 20),
               padding: const EdgeInsets.all(20),
@@ -355,144 +372,34 @@ class _BookingScreenState extends State<BookingScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Select Seat Category',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF001F3F),
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Select Tickets',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF001F3F),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _addTicketSelection,
+                        icon: const Icon(Icons.add_circle, color: Color(0xFF001F3F)),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   
-                  // Category Dropdown
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: selectedCategory,
-                        hint: const Text('Select Category'),
-                        isExpanded: true,
-                        items: _getSeatCategories().map((category) {
-                          return DropdownMenuItem<String>(
-                            value: category['name'],
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      category['priceType'] ?? 'Normal',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      '₹${category['price']}',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF001F3F),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Text(
-                                  'Block ${category['blockName']} (${category['seatRange']})',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            selectedCategory = value;
-                            selectedBlock = null;
-                            seatRanges.clear();
-                          });
-                        },
-                      ),
-                    ),
-                  ),
+                  ...selectedTickets.asMap().entries.map((entry) {
+                    return _buildTicketSelector(entry.key);
+                  }).toList(),
                   
-                  const SizedBox(height: 24),
-                  
-                  // Block Selection
-                  const Text(
-                    'Select Block',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                  if (selectedTickets.isEmpty)
+                    ElevatedButton(
+                      onPressed: _addTicketSelection,
+                      child: const Text('Add Ticket'),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: selectedBlock,
-                        hint: const Text('Select Block'),
-                        isExpanded: true,
-                        items: _getAvailableBlocksForCategory().map((blockInfo) {
-                          return DropdownMenuItem<String>(
-                            value: blockInfo['blockName'],
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Block ${blockInfo['blockName']}',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                Text(
-                                  '${blockInfo['priceType']} - ${blockInfo['seatRange']} (₹${blockInfo['price']})',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            selectedBlock = value;
-                            seatRanges.clear();
-                          });
-                        },
-                      ),
-                    ),
-                  ),
-                  
-
-                  
-                  // Seat Range Selection
-                  if (selectedCategory != null && selectedBlock != null) ...[
-                    const SizedBox(height: 24),
-                    _buildSeatRangeSelector(),
-                  ],
-
                 ],
               ),
             ),
@@ -588,8 +495,8 @@ class _BookingScreenState extends State<BookingScreen> {
               Text('Venue: ${widget.event['venue'] ?? 'Event Venue'}'),
               Text('Date: ${widget.event['date'] ?? 'Date TBD'}'),
               Text('Time: ${widget.event['time'] ?? 'Time TBD'}'),
-              Text('Category: ${selectedCategory ?? 'None'}'),
-              Text('Seats: ${seatRanges.map((r) => '${selectedBlock ?? 'A'}${r['fromSeat']}-${selectedBlock ?? 'A'}${r['toSeat']}').join(', ')}'),
+              Text('Tickets: ${selectedTickets.length}'),
+              ...selectedTickets.map((ticket) => Text('${ticket['category']} - Block ${ticket['block']}: ${ticket['block']}${ticket['fromSeat']}-${ticket['block']}${ticket['toSeat']} (${ticket['quantity']} seats)')).toList(),
               const SizedBox(height: 8),
               Text(
                 'Total: ₹${_getTotalPrice()}',
