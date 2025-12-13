@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../services/api_service.dart';
+import 'my_bookings_screen.dart';
 
 class BookingScreen extends StatefulWidget {
   final Map<String, dynamic> event;
@@ -607,11 +608,15 @@ class _BookingScreenState extends State<BookingScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                Navigator.pop(context);
+                Navigator.pop(context); // Close dialog
                 Navigator.pop(context); // Go back to event details
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => MyBookingsScreen()),
+                );
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Booking confirmed! Check My Bookings for details.'),
+                    content: Text('Booking confirmed! Welcome to My Bookings.'),
                     backgroundColor: Color(0xFF001F3F),
                   ),
                 );

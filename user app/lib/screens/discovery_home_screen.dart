@@ -5,6 +5,7 @@ import 'user_profile_menu_screen.dart';
 import 'category_events_screen.dart';
 import 'organized_event_details_screen.dart';
 import 'artist_detail_screen.dart';
+import 'my_bookings_screen.dart';
 import '../services/api_service.dart';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -1776,7 +1777,12 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
         unselectedItemColor: Colors.grey,
         currentIndex: _currentBottomIndex,
         onTap: (index) {
-          if (index == 2) {
+          if (index == 1) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => MyBookingsScreen()),
+            );
+          } else if (index == 2) {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const UserProfileMenuScreen()),
