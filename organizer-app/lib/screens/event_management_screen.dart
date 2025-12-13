@@ -25,6 +25,8 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   List<Map<String, dynamic>> _locationSuggestions = [];
   bool _showSuggestions = false;
   final String _googleApiKey = 'YOUR_GOOGLE_PLACES_API_KEY'; // Replace with your API key
+  List<Map<String, dynamic>> _availableVenues = [];
+  String? _selectedVenueId;
   final TextEditingController _accessInstructionsController = TextEditingController();
   final TextEditingController _videoLinkController = TextEditingController();
   String _selectedPlatform = 'youtube';
@@ -62,7 +64,27 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   }
   
   Future<void> _loadData() async {
-    await Future.wait([_loadArtists(), _loadCategories(), _loadLanguages()]);
+    await Future.wait([_loadArtists(), _loadCategories(), _loadLanguages(), _loadVenues()]);
+  }
+  
+  Future<void> _loadVenues() async {
+    try {
+      final response = await http.get(
+        Uri.parse('http://localhost:3000/api/venues'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] && data['venues'] != null) {
+          setState(() {
+            _availableVenues = List<Map<String, dynamic>>.from(data['venues']);
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading venues: $e');
+    }
   }
   
   Future<void> _loadCategories() async {
@@ -636,7 +658,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
             // Venue Fields (show immediately after venue option if selected)
             if (_selectedLocationType == 'venue') ...[
               const SizedBox(height: 20),
-              _buildLocationAutocompleteField(),
+              _buildVenueDropdown(),
               const SizedBox(height: 16),
               _buildTextField('Address *', _addressController, 'Enter the full address'),
               const SizedBox(height: 16),
@@ -1524,12 +1546,12 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     );
   }
 
-  Widget _buildLocationAutocompleteField() {
+  Widget _buildVenueDropdown() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Location Name *',
+          'Select Venue *',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -1537,20 +1559,129 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
           ),
         ),
         const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedVenueId,
+              isExpanded: true,
+              hint: const Text('Available Venues'),
+              menuMaxHeight: 300,
+              items: [
+                // Add "None" option to unselect
+                const DropdownMenuItem<String>(
+                  value: 'none',
+                  child: Text(
+                    'None (Enter manually)',
+                    style: TextStyle(
+                      fontStyle: FontStyle.italic,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+                ..._availableVenues.map((venue) {
+                  return DropdownMenuItem<String>(
+                    value: venue['_id'],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          venue['name'] ?? 'Unknown Venue',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          '${venue['location']?['city'] ?? ''}, ${venue['location']?['state'] ?? ''}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  if (value == 'none') {
+                    // Clear all fields when "None" is selected
+                    setState(() {
+                      _selectedVenueId = null;
+                      _locationController.clear();
+                      _addressController.clear();
+                      _cityController.clear();
+                    });
+                  } else {
+                    // Auto-fill when venue is selected
+                    final selectedVenue = _availableVenues.firstWhere(
+                      (venue) => venue['_id'] == value,
+                    );
+                    setState(() {
+                      _selectedVenueId = value;
+                      _locationController.text = selectedVenue['name'] ?? '';
+                      _addressController.text = selectedVenue['location']?['address'] ?? '';
+                      _cityController.text = selectedVenue['location']?['city'] ?? '';
+                    });
+                  }
+                }
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _selectedVenueId != null && _selectedVenueId != 'none' 
+                    ? 'Selected venue details (you can modify below)'
+                    : 'Or manually enter venue details below',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ),
+            if (_selectedVenueId != null && _selectedVenueId != 'none')
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _selectedVenueId = null;
+                    _locationController.clear();
+                    _addressController.clear();
+                    _cityController.clear();
+                  });
+                },
+                child: const Text(
+                  'Clear',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.red,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
         TextField(
           controller: _locationController,
           onChanged: (value) {
-            if (value.length > 2) {
-              _searchPlaces(value);
-            } else {
+            // If user starts typing, clear the selected venue
+            if (_selectedVenueId != null && _selectedVenueId != 'none') {
               setState(() {
-                _showSuggestions = false;
-                _locationSuggestions.clear();
+                _selectedVenueId = null;
               });
             }
           },
           decoration: InputDecoration(
-            hintText: 'Start typing location name for suggestions',
+            labelText: 'Venue Name',
+            hintText: 'Enter venue name manually',
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(color: Colors.grey.shade300),
@@ -1564,61 +1695,19 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
               borderSide: const BorderSide(color: Color(0xFF001F3F)),
             ),
             contentPadding: const EdgeInsets.all(16),
+            suffixIcon: _locationController.text.isNotEmpty
+                ? IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _locationController.clear();
+                        _selectedVenueId = null;
+                      });
+                    },
+                    icon: const Icon(Icons.clear, size: 20),
+                  )
+                : null,
           ),
         ),
-        if (_showSuggestions && _locationSuggestions.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.2),
-                  spreadRadius: 1,
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _locationSuggestions.length,
-              itemBuilder: (context, index) {
-                final suggestion = _locationSuggestions[index];
-                return ListTile(
-                  leading: const Icon(Icons.location_on, color: Colors.grey),
-                  title: Text(
-                    suggestion['main_text'] ?? '',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    suggestion['secondary_text'] ?? '',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                  ),
-                  onTap: () => _selectPlace(suggestion),
-                );
-              },
-            ),
-          ),
-        if (_showSuggestions && _locationSuggestions.isNotEmpty)
-          Container(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Text(
-                  'powered by ',
-                  style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-                ),
-                Image.network(
-                  'https://developers.google.com/maps/documentation/places/web-service/images/powered_by_google_on_white.png',
-                  height: 12,
-                ),
-              ],
-            ),
-          ),
       ],
     );
   }
@@ -1741,7 +1830,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
 
     if (_selectedLocationType == 'venue' && _locationController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter location details')),
+        const SnackBar(content: Text('Please select a venue or enter venue details')),
       );
       return;
     }
