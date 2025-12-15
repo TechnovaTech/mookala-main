@@ -648,7 +648,22 @@ class _BookingScreenState extends State<BookingScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Event: ${widget.event['title'] ?? 'Event Title'}'),
-              Text('Venue: ${widget.event['venue'] ?? 'Event Venue'}'),
+              FutureBuilder<Map<String, String>>(
+                future: _getVenueDetails(),
+                builder: (context, snapshot) {
+                  final venueInfo = snapshot.data ?? {'name': 'Loading...', 'address': '', 'city': ''};
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Venue: ${venueInfo['name']}'),
+                      if (venueInfo['address']!.isNotEmpty)
+                        Text('Address: ${venueInfo['address']}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      if (venueInfo['city']!.isNotEmpty)
+                        Text('Location: ${venueInfo['city']}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                    ],
+                  );
+                },
+              ),
               Text('Date: ${widget.event['date'] ?? 'Date TBD'}'),
               Text('Time: ${widget.event['time'] ?? 'Time TBD'}'),
               Text('Tickets: ${selectedTickets.length}'),
@@ -845,6 +860,45 @@ class _BookingScreenState extends State<BookingScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Download failed: $e')),
       );
+    }
+  }
+  
+  Future<Map<String, String>> _getVenueDetails() async {
+    try {
+      String? venueName;
+      if (widget.event['location'] != null) {
+        if (widget.event['location'] is String) {
+          venueName = widget.event['location'];
+        } else if (widget.event['location']['name'] != null) {
+          venueName = widget.event['location']['name'];
+        }
+      } else if (widget.event['venue'] != null) {
+        venueName = widget.event['venue'];
+      }
+      
+      if (venueName != null && venueName.isNotEmpty && venueName != 'Venue') {
+        final venueResult = await ApiService.getVenueByName(venueName);
+        if (venueResult['success'] == true && venueResult['venues'] != null && venueResult['venues'].isNotEmpty) {
+          final venue = venueResult['venues'][0];
+          return {
+            'name': venue['name'] ?? venueName,
+            'address': venue['location']?['address'] ?? '',
+            'city': '${venue['location']?['city'] ?? ''}, ${venue['location']?['state'] ?? ''}'.trim().replaceAll(RegExp(r'^,\s*|,\s*$'), ''),
+          };
+        }
+      }
+      
+      return {
+        'name': venueName ?? 'Venue TBD',
+        'address': '',
+        'city': '',
+      };
+    } catch (e) {
+      return {
+        'name': 'Venue TBD',
+        'address': '',
+        'city': '',
+      };
     }
   }
 }
