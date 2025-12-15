@@ -880,10 +880,15 @@ class _BookingScreenState extends State<BookingScreen> {
         final venueResult = await ApiService.getVenueByName(venueName);
         if (venueResult['success'] == true && venueResult['venues'] != null && venueResult['venues'].isNotEmpty) {
           final venue = venueResult['venues'][0];
+          final address = venue['location']?['address']?.toString() ?? '';
+          final city = venue['location']?['city']?.toString() ?? '';
+          final state = venue['location']?['state']?.toString() ?? '';
+          final cityState = [city, state].where((s) => s.isNotEmpty).join(', ');
+          
           return {
-            'name': venue['name'] ?? venueName,
-            'address': venue['location']?['address'] ?? '',
-            'city': '${venue['location']?['city'] ?? ''}, ${venue['location']?['state'] ?? ''}'.trim().replaceAll(RegExp(r'^,\s*|,\s*$'), ''),
+            'name': venue['name']?.toString() ?? venueName,
+            'address': address,
+            'city': cityState,
           };
         }
       }

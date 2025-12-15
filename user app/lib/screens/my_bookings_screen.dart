@@ -264,12 +264,12 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
                                 booking['venueName'] ?? booking['venue'] ?? 'Venue',
                                 style: const TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.w600),
                               ),
-                              if (booking['venueAddress'] != null)
+                              if (booking['venueAddress'] != null && booking['venueAddress'].toString().isNotEmpty)
                                 Text(
                                   booking['venueAddress'],
                                   style: const TextStyle(color: Colors.white60, fontSize: 12),
                                 ),
-                              if (booking['venueCity'] != null)
+                              if (booking['venueCity'] != null && booking['venueCity'].toString().isNotEmpty)
                                 Text(
                                   booking['venueCity'],
                                   style: const TextStyle(color: Colors.white60, fontSize: 12),
@@ -436,36 +436,12 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
   Future<pw.Document> _generateTicketPDF(Map<String, dynamic> booking) async {
     final pdf = pw.Document();
     
-    // Get venue name from booking
-    Map<String, dynamic>? venueDetails;
-    String venueName = 'VENUE TBD';
-    
-    // Try to get venue from different possible fields
-    String? venueToSearch;
-    if (booking['venue'] != null && booking['venue'].toString().isNotEmpty) {
-      venueToSearch = booking['venue'].toString();
-    } else if (booking['eventVenue'] != null) {
-      venueToSearch = booking['eventVenue'].toString();
-    } else if (booking['location'] != null) {
-      if (booking['location'] is String) {
-        venueToSearch = booking['location'].toString();
-      } else if (booking['location']['name'] != null) {
-        venueToSearch = booking['location']['name'].toString();
-      }
-    }
-    
-    if (venueToSearch != null && venueToSearch.isNotEmpty && venueToSearch != 'Venue') {
-      venueName = venueToSearch.toUpperCase();
-      try {
-        final venueResult = await ApiService.getVenueByName(venueToSearch);
-        if (venueResult['success'] == true && venueResult['venues'] != null && venueResult['venues'].isNotEmpty) {
-          venueDetails = venueResult['venues'][0];
-          venueName = venueDetails?['name']?.toString().toUpperCase() ?? venueName;
-        }
-      } catch (e) {
-        print('Error fetching venue: $e');
-      }
-    }
+    // Use venue data that's already fetched and stored in booking
+    String venueName = booking['venueName']?.toString().toUpperCase() ?? 
+                      booking['venue']?.toString().toUpperCase() ?? 
+                      'VENUE TBD';
+    String venueAddress = booking['venueAddress']?.toString() ?? '';
+    String venueCity = booking['venueCity']?.toString() ?? '';
     
     pdf.addPage(
       pw.Page(
@@ -580,24 +556,25 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
                                   fontWeight: pw.FontWeight.bold,
                                 ),
                               ),
-                              if (venueDetails != null && venueDetails['location'] != null) ...[
+                              if (venueAddress.isNotEmpty) ...[
                                 pw.SizedBox(height: 5),
-                                if (venueDetails['location']['address'] != null && venueDetails['location']['address'].toString().isNotEmpty)
-                                  pw.Text(
-                                    'ADDRESS: ${venueDetails['location']['address'].toString().toUpperCase()}',
-                                    style: pw.TextStyle(
-                                      color: PdfColors.grey300,
-                                      fontSize: 10,
-                                    ),
+                                pw.Text(
+                                  'ADDRESS: ${venueAddress.toUpperCase()}',
+                                  style: pw.TextStyle(
+                                    color: PdfColors.grey300,
+                                    fontSize: 10,
                                   ),
-                                if (venueDetails['location']['city'] != null || venueDetails['location']['state'] != null)
-                                  pw.Text(
-                                    '${venueDetails['location']['city']?.toString().toUpperCase() ?? ''}, ${venueDetails['location']['state']?.toString().toUpperCase() ?? ''}',
-                                    style: pw.TextStyle(
-                                      color: PdfColors.grey300,
-                                      fontSize: 10,
-                                    ),
+                                ),
+                              ],
+                              if (venueCity.isNotEmpty) ...[
+                                pw.SizedBox(height: 2),
+                                pw.Text(
+                                  venueCity.toUpperCase(),
+                                  style: pw.TextStyle(
+                                    color: PdfColors.grey300,
+                                    fontSize: 10,
                                   ),
+                                ),
                               ],
                             ],
                           ),
@@ -754,9 +731,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
                             'eventTitle': booking['eventTitle'],
                             'eventDate': booking['eventDate'],
                             'eventTime': booking['eventTime'],
-                            'venue': booking['venue'],
-                            'venueAddress': venueDetails?['location']['address'],
-                            'venueCity': venueDetails?['location']['city'],
+                            'venue': venueName,
+                            'venueAddress': venueAddress,
+                            'venueCity': venueCity,
                             'userName': booking['userName'],
                             'userPhone': booking['userPhone'],
                             'totalSeats': booking['totalSeats'],
@@ -1074,10 +1051,15 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
                 final venueResult = await ApiService.getVenueByName(venueName);
                 if (venueResult['success'] == true && venueResult['venues'] != null && venueResult['venues'].isNotEmpty) {
                   final venue = venueResult['venues'][0];
+                  final address = venue['location']?['address']?.toString() ?? '';
+                  final city = venue['location']?['city']?.toString() ?? '';
+                  final state = venue['location']?['state']?.toString() ?? '';
+                  final cityState = [city, state].where((s) => s.isNotEmpty).join(', ');
+                  
                   final venueData = {
-                    'name': venue['name'] ?? venueName,
-                    'address': venue['location']?['address'] ?? '',
-                    'city': '${venue['location']?['city'] ?? ''}, ${venue['location']?['state'] ?? ''}'.trim().replaceAll(RegExp(r'^,\s*|,\s*$'), ''),
+                    'name': venue['name']?.toString() ?? venueName,
+                    'address': address,
+                    'city': cityState,
                   };
                   
                   // Cache the result
@@ -1101,9 +1083,14 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
         final venueResult = await ApiService.getVenueByName(venueToSearch);
         if (venueResult['success'] == true && venueResult['venues'] != null && venueResult['venues'].isNotEmpty) {
           final venue = venueResult['venues'][0];
-          booking['venueName'] = venue['name'] ?? venueToSearch;
-          booking['venueAddress'] = venue['location']?['address'] ?? '';
-          booking['venueCity'] = '${venue['location']?['city'] ?? ''}, ${venue['location']?['state'] ?? ''}'.trim().replaceAll(RegExp(r'^,\s*|,\s*$'), '');
+          final address = venue['location']?['address']?.toString() ?? '';
+          final city = venue['location']?['city']?.toString() ?? '';
+          final state = venue['location']?['state']?.toString() ?? '';
+          final cityState = [city, state].where((s) => s.isNotEmpty).join(', ');
+          
+          booking['venueName'] = venue['name']?.toString() ?? venueToSearch;
+          booking['venueAddress'] = address;
+          booking['venueCity'] = cityState;
         }
       }
     } catch (e) {
