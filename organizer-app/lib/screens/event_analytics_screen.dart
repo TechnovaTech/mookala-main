@@ -1,9 +1,91 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../services/auth_service.dart';
 
-class EventAnalyticsScreen extends StatelessWidget {
+class EventAnalyticsScreen extends StatefulWidget {
   final String eventTitle;
   
   const EventAnalyticsScreen({super.key, required this.eventTitle});
+  
+  @override
+  State<EventAnalyticsScreen> createState() => _EventAnalyticsScreenState();
+}
+
+class _EventAnalyticsScreenState extends State<EventAnalyticsScreen> {
+  bool _isLoading = true;
+  int _totalTicketsSold = 0;
+  double _totalRevenue = 0.0;
+  int _totalCheckIns = 0;
+  List<Map<String, dynamic>> _bookingData = [];
+  
+  @override
+  void initState() {
+    super.initState();
+    _fetchAnalyticsData();
+  }
+  
+  Future<void> _fetchAnalyticsData() async {
+    try {
+      final userData = await AuthService.getUserData();
+      final userPhone = userData['phone'];
+      
+      if (userPhone != null) {
+        // Fetch bookings for this event
+        final response = await http.get(
+          Uri.parse('http://localhost:3000/api/bookings?organizerPhone=$userPhone&eventTitle=${Uri.encodeComponent(widget.eventTitle)}'),
+          headers: {'Content-Type': 'application/json'},
+        );
+        
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data['success'] == true && data['bookings'] != null) {
+            final bookings = List<Map<String, dynamic>>.from(data['bookings']);
+            _calculateAnalytics(bookings);
+          }
+        }
+      }
+    } catch (e) {
+      print('Error fetching analytics: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+  
+  void _calculateAnalytics(List<Map<String, dynamic>> bookings) {
+    int totalTickets = 0;
+    double totalRevenue = 0.0;
+    int checkIns = 0;
+    
+    for (var booking in bookings) {
+      if (booking['eventTitle'] == widget.eventTitle) {
+        // Count tickets
+        if (booking['tickets'] != null) {
+          for (var ticket in booking['tickets']) {
+            totalTickets += (ticket['quantity'] as int? ?? 0);
+            totalRevenue += ((ticket['totalPrice'] as num? ?? 0).toDouble());
+          }
+        } else {
+          totalTickets += (booking['totalSeats'] as int? ?? 0);
+          totalRevenue += ((booking['totalPrice'] as num? ?? 0).toDouble());
+        }
+        
+        // Count check-ins (assuming checked-in status exists)
+        if (booking['status'] == 'checked-in') {
+          checkIns++;
+        }
+      }
+    }
+    
+    setState(() {
+      _totalTicketsSold = totalTickets;
+      _totalRevenue = totalRevenue;
+      _totalCheckIns = checkIns;
+      _bookingData = bookings;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +99,7 @@ class EventAnalyticsScreen extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Analytics - $eventTitle',
+          'Analytics - ${widget.eventTitle}',
           style: const TextStyle(
             color: Colors.white,
             fontSize: 18,
@@ -44,28 +126,60 @@ class EventAnalyticsScreen extends StatelessWidget {
 
             
             // Performance Metrics
-            _buildPerformanceCard(
-              'Total Tickets Sold',
-              '0',
-              'No tickets sold yet',
-              Icons.confirmation_number,
-              Colors.blue,
-            ),
-            const SizedBox(height: 12),
-            _buildPerformanceCard(
-              'Revenue Generated',
-              '\$0.00',
-              'Total earnings from ticket sales',
-              Icons.attach_money,
-              Colors.green,
-            ),
-            const SizedBox(height: 12),
-            _buildPerformanceCard(
-              'Check-in Count',
-              '0',
-              'Attendees who checked in',
-              Icons.check_circle,
-              Colors.orange,
+            if (_isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(40),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else ...[
+              _buildPerformanceCard(
+                'Total Tickets Sold',
+                _totalTicketsSold.toString(),
+                _totalTicketsSold == 0 ? 'No tickets sold yet' : 'Tickets sold successfully',
+                Icons.confirmation_number,
+                Colors.blue,
+              ),
+              const SizedBox(height: 12),
+              _buildPerformanceCard(
+                'Revenue Generated',
+                '₹${_totalRevenue.toStringAsFixed(2)}',
+                'Total earnings from ticket sales',
+                Icons.currency_rupee,
+                Colors.green,
+              ),
+              const SizedBox(height: 12),
+              _buildPerformanceCard(
+                'Check-in Count',
+                _totalCheckIns.toString(),
+                'Attendees who checked in',
+                Icons.check_circle,
+                Colors.orange,
+              ),
+            ],
+            
+            const SizedBox(height: 32),
+            
+            // Refresh Button
+            Center(
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _isLoading = true;
+                  });
+                  _fetchAnalyticsData();
+                },
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                label: const Text('Refresh Data', style: TextStyle(color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF001F3F),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
             ),
             
             const SizedBox(height: 32),
@@ -156,9 +270,9 @@ class EventAnalyticsScreen extends StatelessWidget {
                           color: Colors.grey.shade600,
                         ),
                       ),
-                      const Text(
-                        '\$0.00',
-                        style: TextStyle(
+                      Text(
+                        '₹${_totalRevenue.toStringAsFixed(2)}',
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                           color: Colors.black87,
