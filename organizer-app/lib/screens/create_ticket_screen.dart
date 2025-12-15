@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'dart:typed_data';
+import 'dart:html' as html;
 
 class CreateTicketScreen extends StatefulWidget {
   final Map<String, dynamic>? venueData;
@@ -17,6 +19,11 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
   String? _selectedVenueId;
   Map<String, List<Map<String, dynamic>>> _blockPricingCategories = {};
   List<String> _priceTypes = ['VIP', 'Premium', 'Normal', 'Balcony'];
+  
+  // Image viewer state
+  bool _showImageViewer = false;
+  double _imageScale = 1.0;
+  final TransformationController _transformationController = TransformationController();
 
   @override
   void initState() {
@@ -54,6 +61,8 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
       if (seatConfig['blocks'] != null) {
         setState(() {
           _blockPricingCategories = {};
+          _imageScale = 1.0;
+          _transformationController.value = Matrix4.identity();
           for (var block in seatConfig['blocks']) {
             final blockName = block['name'] ?? 'A';
             final totalSeats = block['totalSeats'] ?? 100;
@@ -190,6 +199,109 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
               const SizedBox(height: 24),
             ],
 
+            // Seating Layout Image Viewer
+            if (_selectedVenueData != null && _selectedVenueData!['seatingLayoutImage'] != null) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header with controls
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(12),
+                          topRight: Radius.circular(12),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.map, color: Color(0xFF001F3F)),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Seating Layout',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF001F3F),
+                              ),
+                            ),
+                          ),
+                          // Zoom controls
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _imageScale = (_imageScale - 0.2).clamp(0.5, 3.0);
+                                _transformationController.value = Matrix4.identity()..scale(_imageScale);
+                              });
+                            },
+                            icon: const Icon(Icons.zoom_out),
+                            tooltip: 'Zoom Out',
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _imageScale = (_imageScale + 0.2).clamp(0.5, 3.0);
+                                _transformationController.value = Matrix4.identity()..scale(_imageScale);
+                              });
+                            },
+                            icon: const Icon(Icons.zoom_in),
+                            tooltip: 'Zoom In',
+                          ),
+                          // Download button
+                          IconButton(
+                            onPressed: _downloadSeatingLayout,
+                            icon: const Icon(Icons.download),
+                            tooltip: 'Download Layout',
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Image container
+                    Container(
+                      height: 200,
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      child: InteractiveViewer(
+                        transformationController: _transformationController,
+                        minScale: 0.5,
+                        maxScale: 3.0,
+                        child: Image.memory(
+                          base64Decode(_selectedVenueData!['seatingLayoutImage'].split(',')[1]),
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.error_outline, size: 48, color: Colors.grey),
+                                    SizedBox(height: 8),
+                                    Text('Failed to load seating layout'),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            
             if (_blockPricingCategories.isEmpty) ...[
               const Text(
                 'No venue blocks found. Please select a venue with seat configuration.',
@@ -568,6 +680,47 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
           ],
         ),
       ),
+
     );
+  }
+  
+  Future<void> _downloadSeatingLayout() async {
+    try {
+      if (_selectedVenueData == null || _selectedVenueData!['seatingLayoutImage'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No seating layout image available')),
+        );
+        return;
+      }
+      
+      // Get image data and decode
+      final imageData = _selectedVenueData!['seatingLayoutImage'];
+      final bytes = base64Decode(imageData.split(',')[1]);
+      
+      // Create blob and download for web
+      final blob = html.Blob([bytes]);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final venueName = _selectedVenueData!['name'] ?? 'venue';
+      final fileName = '${venueName.replaceAll(' ', '_')}_seating_layout.png';
+      
+      // Create download link
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..click();
+      
+      // Clean up
+      html.Url.revokeObjectUrl(url);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Seating layout downloaded as $fileName'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Download failed: $e')),
+      );
+    }
   }
 }
