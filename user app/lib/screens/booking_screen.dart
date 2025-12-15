@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../services/api_service.dart';
 import 'my_bookings_screen.dart';
+import 'dart:typed_data';
+import 'dart:html' as html;
 
 class BookingScreen extends StatefulWidget {
   final Map<String, dynamic> event;
@@ -15,6 +17,11 @@ class BookingScreen extends StatefulWidget {
 class _BookingScreenState extends State<BookingScreen> {
   List<Map<String, dynamic>> selectedTickets = [];
   List<Map<String, dynamic>> availableBlocks = [];
+  Map<String, dynamic>? venueData;
+  
+  // Image viewer state
+  double _imageScale = 1.0;
+  final TransformationController _transformationController = TransformationController();
   
   @override
   void initState() {
@@ -33,6 +40,9 @@ class _BookingScreenState extends State<BookingScreen> {
       final result = await ApiService.getVenueByName(venueName);
       if (result['success'] == true && result['venues'] != null && result['venues'].isNotEmpty) {
         final venue = result['venues'][0];
+        setState(() {
+          venueData = venue;
+        });
         if (venue['seatConfig'] != null && venue['seatConfig']['blocks'] != null) {
           setState(() {
             availableBlocks = List<Map<String, dynamic>>.from(venue['seatConfig']['blocks']);
@@ -352,7 +362,115 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
             ),
 
-
+            // Seating Layout Image Viewer
+            if (venueData != null && venueData!['seatingLayoutImage'] != null) ...[
+              Container(
+                margin: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header with controls
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(16),
+                          topRight: Radius.circular(16),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.map, color: Color(0xFF001F3F)),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Seating Layout',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF001F3F),
+                              ),
+                            ),
+                          ),
+                          // Zoom controls
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _imageScale = (_imageScale - 0.2).clamp(0.5, 3.0);
+                                _transformationController.value = Matrix4.identity()..scale(_imageScale);
+                              });
+                            },
+                            icon: const Icon(Icons.zoom_out),
+                            tooltip: 'Zoom Out',
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _imageScale = (_imageScale + 0.2).clamp(0.5, 3.0);
+                                _transformationController.value = Matrix4.identity()..scale(_imageScale);
+                              });
+                            },
+                            icon: const Icon(Icons.zoom_in),
+                            tooltip: 'Zoom In',
+                          ),
+                          // Download button
+                          IconButton(
+                            onPressed: _downloadSeatingLayout,
+                            icon: const Icon(Icons.download),
+                            tooltip: 'Download Layout',
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Image container
+                    Container(
+                      height: 200,
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      child: InteractiveViewer(
+                        transformationController: _transformationController,
+                        minScale: 0.5,
+                        maxScale: 3.0,
+                        child: Image.memory(
+                          base64Decode(venueData!['seatingLayoutImage'].split(',')[1]),
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.error_outline, size: 48, color: Colors.grey),
+                                    SizedBox(height: 8),
+                                    Text('Failed to load seating layout'),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             // Multiple Ticket Selection
             Container(
@@ -596,6 +714,46 @@ class _BookingScreenState extends State<BookingScreen> {
           content: Text('Error creating booking. Please try again.'),
           backgroundColor: Colors.red,
         ),
+      );
+    }
+  }
+  
+  Future<void> _downloadSeatingLayout() async {
+    try {
+      if (venueData == null || venueData!['seatingLayoutImage'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No seating layout image available')),
+        );
+        return;
+      }
+      
+      // Get image data and decode
+      final imageData = venueData!['seatingLayoutImage'];
+      final bytes = base64Decode(imageData.split(',')[1]);
+      
+      // Create blob and download for web
+      final blob = html.Blob([bytes]);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final venueName = venueData!['name'] ?? 'venue';
+      final fileName = '${venueName.replaceAll(' ', '_')}_seating_layout.png';
+      
+      // Create download link
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..click();
+      
+      // Clean up
+      html.Url.revokeObjectUrl(url);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Seating layout downloaded as $fileName'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Download failed: $e')),
       );
     }
   }
