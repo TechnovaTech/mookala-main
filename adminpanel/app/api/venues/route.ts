@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
         amenities: v.amenities || [],
         status: v.status || 'active',
         image: v.image || null,
+        seatingLayoutImage: v.seatingLayoutImage || null,
         seatConfig: v.seatConfig || null,
         createdAt: v.createdAt
       }))
@@ -32,14 +33,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { name, address, city, state, image } = await request.json();
+    const { name, address, city, state, image, seatingLayoutImage } = await request.json();
     
     if (!name || !address || !city || !state) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
     }
 
     if (image && !image.match(/^data:image\/(png|jpg|jpeg|svg\+xml);base64,/)) {
-      return NextResponse.json({ success: false, error: 'Invalid image format. Only PNG, JPG, and SVG are allowed' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Invalid image format. Only PNG, JPG, JPEG, and SVG are allowed' }, { status: 400 });
+    }
+
+    if (seatingLayoutImage && !seatingLayoutImage.match(/^data:image\/(png|jpg|jpeg|svg\+xml);base64,/)) {
+      return NextResponse.json({ success: false, error: 'Invalid seating layout image format. Only PNG, JPG, JPEG, and SVG are allowed' }, { status: 400 });
     }
 
     const { db } = await connectToDatabase();
@@ -49,6 +54,7 @@ export async function POST(request: NextRequest) {
       location: { address, city, state },
       capacity: 0,
       image: image || null,
+      seatingLayoutImage: seatingLayoutImage || null,
       status: 'active',
       amenities: [],
       createdAt: new Date()

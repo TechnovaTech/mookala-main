@@ -28,7 +28,8 @@ export default function VenuesPage() {
     address: '',
     city: '',
     state: '',
-    image: ''
+    image: '',
+    seatingLayoutImage: ''
   })
   const [submitting, setSubmitting] = useState(false)
 
@@ -51,17 +52,17 @@ export default function VenuesPage() {
     }
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
     const file = e.target.files?.[0]
     if (file) {
       const validTypes = ['image/png', 'image/jpg', 'image/jpeg', 'image/svg+xml']
       if (!validTypes.includes(file.type)) {
-        alert('Only PNG, JPG, and SVG files are allowed')
+        alert('Only PNG, JPG, JPEG, and SVG files are allowed')
         return
       }
       const reader = new FileReader()
       reader.onloadend = () => {
-        setFormData({ ...formData, image: reader.result as string })
+        setFormData({ ...formData, [field]: reader.result as string })
       }
       reader.readAsDataURL(file)
     }
@@ -80,7 +81,7 @@ export default function VenuesPage() {
       if (data.success) {
         alert('Venue added successfully!')
         setShowModal(false)
-        setFormData({ name: '', address: '', city: '', state: '', image: '' })
+        setFormData({ name: '', address: '', city: '', state: '', image: '', seatingLayoutImage: '' })
         fetchVenues()
       } else {
         alert(data.error || 'Failed to add venue')
@@ -266,9 +267,23 @@ export default function VenuesPage() {
                   ) : (
                     <Upload className="mx-auto text-gray-400 mb-2" size={32} />
                   )}
-                  <input type="file" accept=".png,.jpg,.jpeg,.svg" onChange={handleImageUpload} className="hidden" id="image-upload" />
+                  <input type="file" accept=".png,.jpg,.jpeg,.svg" onChange={(e) => handleImageUpload(e, 'image')} className="hidden" id="image-upload" />
                   <label htmlFor="image-upload" className="cursor-pointer text-sm text-teal hover:text-teal/80">
                     {formData.image ? 'Change Image' : 'Upload Image'}
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Seating Layout Image</label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                  {formData.seatingLayoutImage ? (
+                    <img src={formData.seatingLayoutImage} alt="Seating Layout Preview" className="w-full h-32 object-cover rounded-lg mb-2" />
+                  ) : (
+                    <Upload className="mx-auto text-gray-400 mb-2" size={32} />
+                  )}
+                  <input type="file" accept=".png,.jpg,.jpeg,.svg" onChange={(e) => handleImageUpload(e, 'seatingLayoutImage')} className="hidden" id="seating-layout-upload" />
+                  <label htmlFor="seating-layout-upload" className="cursor-pointer text-sm text-teal hover:text-teal/80">
+                    {formData.seatingLayoutImage ? 'Change Layout' : 'Upload Seating Layout'}
                   </label>
                 </div>
               </div>

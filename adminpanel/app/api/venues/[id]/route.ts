@@ -24,6 +24,7 @@ export async function GET(
         amenities: venue.amenities || [],
         status: venue.status || 'active',
         image: venue.image || null,
+        seatingLayoutImage: venue.seatingLayoutImage || null,
         createdAt: venue.createdAt,
         seatConfig: venue.seatConfig || null
       }
@@ -39,14 +40,18 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { name, address, city, state, capacity, image } = await request.json();
+    const { name, address, city, state, capacity, image, seatingLayoutImage } = await request.json();
     
     if (!name || !address || !city || !state || !capacity) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
     }
 
     if (image && !image.match(/^data:image\/(png|jpg|jpeg|svg\+xml);base64,/)) {
-      return NextResponse.json({ success: false, error: 'Invalid image format' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Invalid image format. Only PNG, JPG, JPEG, and SVG are allowed' }, { status: 400 });
+    }
+
+    if (seatingLayoutImage && !seatingLayoutImage.match(/^data:image\/(png|jpg|jpeg|svg\+xml);base64,/)) {
+      return NextResponse.json({ success: false, error: 'Invalid seating layout image format. Only PNG, JPG, JPEG, and SVG are allowed' }, { status: 400 });
     }
 
     const { db } = await connectToDatabase();
@@ -59,6 +64,7 @@ export async function PUT(
           location: { address, city, state },
           capacity: parseInt(capacity),
           image: image || null,
+          seatingLayoutImage: seatingLayoutImage || null,
           updatedAt: new Date()
         }
       }

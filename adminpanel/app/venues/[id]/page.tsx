@@ -52,7 +52,8 @@ export default function VenueDetailsPage() {
     city: '',
     state: '',
     capacity: '',
-    image: ''
+    image: '',
+    seatingLayoutImage: ''
   })
 
   useEffect(() => {
@@ -81,7 +82,8 @@ export default function VenueDetailsPage() {
           city: data.venue.location.city,
           state: data.venue.location.state,
           capacity: '0',
-          image: data.venue.image || ''
+          image: data.venue.image || '',
+          seatingLayoutImage: data.venue.seatingLayoutImage || ''
         })
       }
     } catch (error) {
@@ -166,17 +168,17 @@ export default function VenueDetailsPage() {
     }
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
     const file = e.target.files?.[0]
     if (file) {
       const validTypes = ['image/png', 'image/jpg', 'image/jpeg', 'image/svg+xml']
       if (!validTypes.includes(file.type)) {
-        alert('Only PNG, JPG, and SVG files are allowed')
+        alert('Only PNG, JPG, JPEG, and SVG files are allowed')
         return
       }
       const reader = new FileReader()
       reader.onloadend = () => {
-        setEditFormData({ ...editFormData, image: reader.result as string })
+        setEditFormData({ ...editFormData, [field]: reader.result as string })
       }
       reader.readAsDataURL(file)
     }
@@ -607,9 +609,23 @@ export default function VenueDetailsPage() {
                   ) : (
                     <Upload className="mx-auto text-gray-400 mb-2" size={32} />
                   )}
-                  <input type="file" accept=".png,.jpg,.jpeg,.svg" onChange={handleImageUpload} className="hidden" id="edit-image-upload" />
+                  <input type="file" accept=".png,.jpg,.jpeg,.svg" onChange={(e) => handleImageUpload(e, 'image')} className="hidden" id="edit-image-upload" />
                   <label htmlFor="edit-image-upload" className="cursor-pointer text-sm text-teal hover:text-teal/80">
                     {editFormData.image ? 'Change Image' : 'Upload Image'}
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Seating Layout Image</label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                  {editFormData.seatingLayoutImage ? (
+                    <img src={editFormData.seatingLayoutImage} alt="Seating Layout Preview" className="w-full h-32 object-cover rounded-lg mb-2" />
+                  ) : (
+                    <Upload className="mx-auto text-gray-400 mb-2" size={32} />
+                  )}
+                  <input type="file" accept=".png,.jpg,.jpeg,.svg" onChange={(e) => handleImageUpload(e, 'seatingLayoutImage')} className="hidden" id="edit-seating-layout-upload" />
+                  <label htmlFor="edit-seating-layout-upload" className="cursor-pointer text-sm text-teal hover:text-teal/80">
+                    {editFormData.seatingLayoutImage ? 'Change Layout' : 'Upload Seating Layout'}
                   </label>
                 </div>
               </div>
