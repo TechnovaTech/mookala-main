@@ -27,6 +27,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <title>Mookaala Event App</title>
+  
+  <!-- Razorpay Checkout -->
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 
   <script>
     var serviceWorkerVersion = null;
@@ -46,6 +49,17 @@
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('flutter_service_worker.js');
       });
+    }
+    
+    // Razorpay payment handler
+    function openRazorpay(options) {
+      var rzp = new Razorpay(options);
+      rzp.on('payment.failed', function (response) {
+        if (window.razorpayErrorHandler) {
+          window.razorpayErrorHandler(response);
+        }
+      });
+      rzp.open();
     }
   </script>
 </head>
