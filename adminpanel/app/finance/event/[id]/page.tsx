@@ -157,6 +157,43 @@ export default function EventPaymentDetailsPage() {
                   })}
                 </div>
               </div>
+
+              {/* Bookings List */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-xl font-bold mb-4">Ticket Bookings ({bookings.length})</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">User Name</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ticket Type</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {bookings.map((booking: any, index: number) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-4 py-4 text-sm font-medium text-gray-900">{booking.userName}</td>
+                          <td className="px-4 py-4 text-sm text-gray-600">{booking.userPhone}</td>
+                          <td className="px-4 py-4 text-sm text-gray-600">{booking.ticketType}</td>
+                          <td className="px-4 py-4 text-sm text-gray-600">{booking.quantity}</td>
+                          <td className="px-4 py-4 text-sm font-semibold text-green-600">₹{booking.amount}</td>
+                          <td className="px-4 py-4 text-sm text-gray-500">{new Date(booking.createdAt).toLocaleDateString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  
+                  {bookings.length === 0 && (
+                    <div className="text-center py-8 text-gray-500">
+                      No bookings found for this event
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
