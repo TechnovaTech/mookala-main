@@ -3,14 +3,17 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Calendar, MapPin, Download, QrCode } from "lucide-react"
+import { Calendar, MapPin, Download, QrCode, ArrowLeft } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { generateQRCode } from "@/lib/qr-generator"
 import { printTicketPDF } from "@/lib/pdf-direct"
+import { showToast, showConfirmation } from "@/lib/toast"
 
 export default function BookingsPage() {
   const [bookings, setBookings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const router = useRouter()
 
   useEffect(() => {
     loadBookings()
@@ -57,12 +60,13 @@ export default function BookingsPage() {
     const modal = document.createElement('div')
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'
     modal.innerHTML = `
-      <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+      <div class="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
         <div class="text-center">
-          <h3 class="text-lg font-bold mb-4">QR Code - ${booking.eventTitle}</h3>
-          <div id="qrcode" class="flex justify-center mb-4"></div>
-          <p class="text-sm text-gray-600 mb-4">Show this QR code at the venue for entry</p>
-          <button onclick="this.closest('.fixed').remove()" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">
+          <h3 class="text-xl font-bold mb-4 text-slate-800">QR Code</h3>
+          <p class="text-sm text-slate-600 mb-4">${booking.eventTitle}</p>
+          <div id="qrcode" class="flex justify-center mb-6"></div>
+          <p class="text-xs text-slate-500 mb-6">Show this QR code at the venue for entry</p>
+          <button onclick="this.closest('.fixed').remove()" class="bg-slate-800 text-white px-6 py-3 rounded-lg hover:bg-slate-900 font-medium">
             Close
           </button>
         </div>
@@ -75,18 +79,23 @@ export default function BookingsPage() {
     if (qrElement) {
       const qrImageUrl = generateQRCode(qrData)
       qrElement.innerHTML = `
-        <img src="${qrImageUrl}" alt="QR Code" class="mx-auto border rounded" />
-        <p class="text-xs text-gray-500 mt-2">Booking ID: ${booking._id.substring(0, 8)}</p>
+        <div class="bg-white p-4 rounded-xl border-2 border-slate-200 inline-block">
+          <img src="${qrImageUrl}" alt="QR Code" class="w-32 h-32" />
+        </div>
+        <p class="text-xs text-slate-500 mt-3">ID: ${booking._id.substring(0, 8)}</p>
       `
     }
+    
+    showToast('QR Code displayed successfully!', 'success')
   }
 
   const downloadPDF = (booking: any) => {
     try {
       printTicketPDF(booking)
+      showToast('PDF download started successfully!', 'success')
     } catch (error) {
       console.error('PDF generation failed:', error)
-      alert('PDF generation failed. Please try again.')
+      showToast('PDF generation failed. Please try again.', 'error')
     }
   }
 
@@ -101,11 +110,11 @@ export default function BookingsPage() {
   const userPhone = localStorage.getItem('userPhone')
   if (!userPhone) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Please Login</h1>
-          <p className="text-gray-600 mb-6">You need to login to view your bookings</p>
-          <Button asChild>
+      <div className="min-h-screen flex items-center justify-center" style={{background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)'}}>
+        <div className="text-center bg-white rounded-3xl p-12 shadow-2xl">
+          <h1 className="text-3xl font-bold mb-4 text-gray-900">Please Login</h1>
+          <p className="text-gray-600 mb-8 text-lg">You need to login to view your bookings</p>
+          <Button asChild className="px-8 py-4 text-lg font-semibold rounded-xl" style={{background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)'}}>
             <Link href="/login">Login</Link>
           </Button>
         </div>
@@ -115,11 +124,11 @@ export default function BookingsPage() {
 
   if (bookings.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">No Bookings Found</h1>
-          <p className="text-gray-600 mb-6">You haven't booked any events yet</p>
-          <Button asChild>
+      <div className="min-h-screen flex items-center justify-center" style={{background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)'}}>
+        <div className="text-center bg-white rounded-3xl p-12 shadow-2xl">
+          <h1 className="text-3xl font-bold mb-4 text-gray-900">No Bookings Found</h1>
+          <p className="text-gray-600 mb-8 text-lg">You haven't booked any events yet</p>
+          <Button asChild className="px-8 py-4 text-lg font-semibold rounded-xl" style={{background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)'}}>
             <Link href="/">Browse Events</Link>
           </Button>
         </div>
@@ -128,43 +137,54 @@ export default function BookingsPage() {
   }
 
   return (
-    <div className="min-h-screen">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">My Bookings</h1>
-          <p className="text-gray-600">Manage your event tickets and bookings</p>
+    <div className="min-h-screen" style={{background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)'}}>
+      <div className="max-w-4xl mx-auto px-6 py-12">
+        <div className="mb-12">
+          <div className="flex items-center gap-4 mb-6">
+            <Button
+              onClick={() => router.push('/profile')}
+              className="p-3 rounded-lg shadow-lg transition-all duration-200"
+              style={{background: 'linear-gradient(135deg, #475569 0%, #64748b 100%)'}}
+            >
+              <ArrowLeft size={20} className="text-white" />
+            </Button>
+            <div>
+              <h1 className="text-4xl font-bold text-white">My Bookings</h1>
+              <p className="text-blue-200 text-lg">Manage your event tickets and bookings</p>
+            </div>
+          </div>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-8">
           {bookings.map((booking) => (
-            <Card key={booking._id} className="overflow-hidden bg-white rounded-xl shadow-lg">
-              {/* Header - Dark Blue Background */}
-              <div className="bg-slate-800 text-white p-6 relative">
+            <div key={booking._id} className="rounded-2xl shadow-2xl overflow-hidden border border-blue-800/30" style={{background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)'}}>
+              {/* Header */}
+              <div className="text-white p-6 relative" style={{background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'}}>
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className="text-2xl font-bold mb-3">{booking.eventTitle.toUpperCase()}</h3>
-                    <div className="space-y-2 text-sm">
+                    <h3 className="text-xl font-bold mb-3 text-white">{booking.eventTitle}</h3>
+                    <div className="space-y-2 text-sm text-blue-200">
                       <div className="flex items-center gap-2">
-                        <Calendar size={16} />
+                        <Calendar size={16} className="text-blue-300" />
                         <span>{booking.eventDate} • {booking.eventTime}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <MapPin size={16} />
+                        <MapPin size={16} className="text-blue-300" />
                         <span>{booking.venue}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="bg-green-500 px-4 py-2 rounded-full text-sm font-bold">
+                  <div className="bg-green-500 px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg">
                     CONFIRMED
                   </div>
                 </div>
               </div>
 
               {/* Ticket Count */}
-              <div className="bg-gray-50 px-6 py-3 border-b">
+              <div className="px-6 py-3 border-b border-blue-700/30" style={{background: 'rgba(30, 41, 59, 0.5)'}}>
                 <div className="flex items-center gap-2">
-                  <span className="text-blue-600">🎫</span>
-                  <span className="font-semibold">{booking.totalSeats} Tickets</span>
+                  <span className="text-orange-400 text-lg">🎫</span>
+                  <span className="font-semibold text-blue-100">{booking.totalSeats} Tickets</span>
                 </div>
               </div>
 
@@ -172,24 +192,24 @@ export default function BookingsPage() {
               <div className="p-6">
                 <div className="space-y-3 mb-6">
                   {booking.tickets.map((ticket: any, index: number) => (
-                    <div key={index} className="flex justify-between items-center">
-                      <span className="text-sm font-medium">
-                        {ticket.category} - Block {ticket.block} - Block {ticket.block}: {ticket.block}{ticket.fromSeat}-{ticket.block}{ticket.toSeat}
+                    <div key={index} className="flex justify-between items-center py-3 px-4 rounded-lg border border-blue-700/30" style={{background: 'rgba(30, 41, 59, 0.3)'}}>
+                      <span className="text-sm font-medium text-blue-100">
+                        {ticket.category} - Block {ticket.block}: {ticket.block}{ticket.fromSeat}-{ticket.block}{ticket.toSeat}
                       </span>
-                      <span className="font-bold">₹{ticket.totalPrice}</span>
+                      <span className="font-bold text-white text-lg">₹{ticket.totalPrice}</span>
                     </div>
                   ))}
                 </div>
 
                 {/* Booking ID and Total */}
-                <div className="flex justify-between items-center mb-6 pt-4 border-t">
+                <div className="flex justify-between items-center mb-6 pt-4 border-t border-blue-700/30">
                   <div>
-                    <p className="text-sm text-gray-500">Booking ID</p>
-                    <p className="font-bold text-lg">{booking._id.substring(0, 8)}</p>
+                    <p className="text-sm text-blue-300 mb-1">Booking ID</p>
+                    <p className="font-bold text-lg text-white">{booking._id.substring(0, 8)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-gray-500">Total Amount</p>
-                    <p className="text-2xl font-bold">₹{booking.totalPrice}</p>
+                    <p className="text-sm text-blue-300 mb-1">Total Amount</p>
+                    <p className="text-2xl font-bold text-white">₹{booking.totalPrice}</p>
                   </div>
                 </div>
 
@@ -197,21 +217,23 @@ export default function BookingsPage() {
                 <div className="flex gap-3">
                   <Button
                     onClick={() => downloadPDF(booking)}
-                    className="flex-1 bg-gray-600 hover:bg-gray-700 text-white"
+                    className="flex-1 py-3 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
+                    style={{background: 'linear-gradient(135deg, #475569 0%, #64748b 100%)'}} 
                   >
                     <Download size={16} className="mr-2" />
                     Download PDF
                   </Button>
                   <Button
                     onClick={() => showQRCode(booking)}
-                    className="flex-1 bg-slate-800 hover:bg-slate-900 text-white"
+                    className="flex-1 py-3 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
+                    style={{background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'}}
                   >
                     <QrCode size={16} className="mr-2" />
                     Show QR
                   </Button>
                 </div>
               </div>
-            </Card>
+            </div>
           ))}
         </div>
       </div>

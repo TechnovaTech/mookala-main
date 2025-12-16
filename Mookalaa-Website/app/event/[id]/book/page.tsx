@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Calendar, Clock, MapPin, Minus, Plus, X, ZoomIn, ZoomOut, Download, Map } from "lucide-react"
 import { fetchEventById } from "@/lib/api"
 import Link from "next/link"
+import { showToast, showConfirmation } from "@/lib/toast"
 
 interface BookingPageProps {
   params: Promise<{ id: string }>
@@ -188,8 +189,10 @@ export default function BookingPage({ params }: BookingPageProps) {
     // Check if user is logged in
     const userPhone = localStorage.getItem('userPhone')
     if (!userPhone) {
-      alert('Please login to book tickets')
-      window.location.href = '/login'
+      showToast('Please login to book tickets', 'error')
+      setTimeout(() => {
+        window.location.href = '/login'
+      }, 1500)
       return
     }
 
@@ -255,33 +258,20 @@ export default function BookingPage({ params }: BookingPageProps) {
     const venue = getVenueDetails()
     const ticketDetails = selectedTickets.map(ticket => 
       `${ticket.category} - Block ${ticket.block}: ${ticket.block}${ticket.fromSeat}-${ticket.block}${ticket.toSeat} (${ticket.quantity} seats)`
-    ).join('\n')
+    ).join(', ')
     
-    const confirmed = confirm(`Booking Confirmation
-
-Event: ${event.title}
-Venue: ${venue.name}
-${venue.address ? `Address: ${venue.address}\n` : ''}${venue.city ? `Location: ${venue.city}${venue.state ? `, ${venue.state}` : ''}\n` : ''}Date: ${new Date(event.date).toLocaleDateString()}
-Time: ${event.time}
-
-Ticket Details:
-${ticketDetails}
-
-Total Seats: ${getTotalSeats()}
-Total Amount: ₹${getTotalPrice()}
-
-Proceed with payment?`)
-
-    if (confirmed) {
+    const message = `Confirm booking for ${event.title}? Total: ₹${getTotalPrice()} for ${getTotalSeats()} seats.`
+    
+    showConfirmation(message, () => {
       initiatePayment()
-    }
+    })
   }
 
   const initiatePayment = async () => {
     // Check for seat conflicts first
     const conflictCheck = await checkSeatConflicts()
     if (conflictCheck.hasConflict) {
-      alert(conflictCheck.message || 'Some seats are already booked')
+      showToast(conflictCheck.message || 'Some seats are already booked', 'error')
       return
     }
 
@@ -358,13 +348,15 @@ Proceed with payment?`)
       const result = await response.json()
       
       if (result.success) {
-        alert('Booking confirmed successfully!')
-        window.location.href = '/bookings'
+        showToast('Booking confirmed successfully! 🎉', 'success')
+        setTimeout(() => {
+          window.location.href = '/bookings'
+        }, 1500)
       } else {
         throw new Error(result.error || 'Booking failed')
       }
     } catch (error) {
-      alert('Booking failed. Please try again.')
+      showToast('Booking failed. Please try again.', 'error')
     }
   }
 
