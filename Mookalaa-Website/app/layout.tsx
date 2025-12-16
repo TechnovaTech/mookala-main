@@ -50,6 +50,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
         <link rel="icon" type="image/png" href="/mookalaa-logo.png" />
+        <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
       </head>
       <body className={`font-sans antialiased bg-background text-foreground`} suppressHydrationWarning>
         <LanguageProvider>

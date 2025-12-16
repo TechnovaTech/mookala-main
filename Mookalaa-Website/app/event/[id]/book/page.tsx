@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-import { Calendar, Clock, MapPin, Minus, Plus, X } from "lucide-react"
+import { Calendar, Clock, MapPin, Minus, Plus, X, ZoomIn, ZoomOut, Download, Map } from "lucide-react"
 import { fetchEventById } from "@/lib/api"
 import Link from "next/link"
 
@@ -29,15 +29,47 @@ export default function BookingPage({ params }: BookingPageProps) {
   const [selectedTickets, setSelectedTickets] = useState<TicketSelection[]>([
     { category: null, block: null, fromSeat: 1, toSeat: 1, quantity: 1, price: 0 }
   ])
+  const [venueData, setVenueData] = useState<any>(null)
+  const [imageScale, setImageScale] = useState(1.0)
+  const [razorpayKeyId, setRazorpayKeyId] = useState('')
 
   useEffect(() => {
     async function loadEvent() {
       const eventData = await fetchEventById(id)
       setEvent(eventData)
+      if (eventData) {
+        await loadVenueData(eventData.location)
+        await fetchPaymentConfig()
+      }
       setLoading(false)
     }
     loadEvent()
   }, [id])
+
+  const loadVenueData = async (venueName: string) => {
+    if (!venueName) return
+    try {
+      const response = await fetch(`http://localhost:3000/api/venues?name=${encodeURIComponent(venueName)}`)
+      const data = await response.json()
+      if (data.success && data.venues?.length > 0) {
+        setVenueData(data.venues[0])
+      }
+    } catch (error) {
+      console.error('Error loading venue:', error)
+    }
+  }
+
+  const fetchPaymentConfig = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/payment/config')
+      const data = await response.json()
+      if (data.success) {
+        setRazorpayKeyId(data.razorpayKeyId || '')
+      }
+    } catch (error) {
+      console.error('Error fetching payment config:', error)
+    }
+  }
 
   if (loading) {
     return (
@@ -165,28 +197,133 @@ export default function BookingPage({ params }: BookingPageProps) {
     showBookingConfirmation()
   }
 
-  const showBookingConfirmation = () => {
-    const confirmed = confirm(`
-Booking Confirmation
-
-Event: ${event.title}
-Date: ${new Date(event.date).toLocaleDateString()}
-Time: ${event.time}
-Location: ${event.location}
-Tickets: ${getTotalSeats()}
-Total: ₹${getTotalPrice()}
-
-Proceed with booking?
-    `)
-
-    if (confirmed) {
-      confirmBooking()
+  const checkSeatConflicts = async () => {
+    const userPhone = localStorage.getItem('userPhone')
+    if (!userPhone) return { hasConflict: false }
+    
+    try {
+      const response = await fetch(`/api/bookings?userPhone=${userPhone}`)
+      const data = await response.json()
+      
+      if (data.success && data.bookings) {
+        for (const booking of data.bookings) {
+          if (booking.eventId === event.id) {
+            for (const selectedTicket of selectedTickets) {
+              for (const existingTicket of booking.tickets) {
+                if (selectedTicket.block === existingTicket.block) {
+                  const selectedFrom = selectedTicket.fromSeat
+                  const selectedTo = selectedTicket.toSeat
+                  const existingFrom = existingTicket.fromSeat
+                  const existingTo = existingTicket.toSeat
+                  
+                  if (selectedFrom <= existingTo && selectedTo >= existingFrom) {
+                    return {
+                      hasConflict: true,
+                      message: `Seats ${selectedTicket.block}${selectedFrom}-${selectedTicket.block}${selectedTo} are already booked`
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      return { hasConflict: false }
+    } catch (error) {
+      return { hasConflict: false }
     }
   }
 
-  const confirmBooking = async () => {
+  const getVenueDetails = () => {
+    if (venueData) {
+      return {
+        name: venueData.name || event.location,
+        address: venueData.location?.address || '',
+        city: venueData.location?.city || '',
+        state: venueData.location?.state || ''
+      }
+    }
+    return {
+      name: event.location || 'Venue TBD',
+      address: '',
+      city: '',
+      state: ''
+    }
+  }
+
+  const showBookingConfirmation = () => {
+    const venue = getVenueDetails()
+    const ticketDetails = selectedTickets.map(ticket => 
+      `${ticket.category} - Block ${ticket.block}: ${ticket.block}${ticket.fromSeat}-${ticket.block}${ticket.toSeat} (${ticket.quantity} seats)`
+    ).join('\n')
+    
+    const confirmed = confirm(`Booking Confirmation
+
+Event: ${event.title}
+Venue: ${venue.name}
+${venue.address ? `Address: ${venue.address}\n` : ''}${venue.city ? `Location: ${venue.city}${venue.state ? `, ${venue.state}` : ''}\n` : ''}Date: ${new Date(event.date).toLocaleDateString()}
+Time: ${event.time}
+
+Ticket Details:
+${ticketDetails}
+
+Total Seats: ${getTotalSeats()}
+Total Amount: ₹${getTotalPrice()}
+
+Proceed with payment?`)
+
+    if (confirmed) {
+      initiatePayment()
+    }
+  }
+
+  const initiatePayment = async () => {
+    // Check for seat conflicts first
+    const conflictCheck = await checkSeatConflicts()
+    if (conflictCheck.hasConflict) {
+      alert(conflictCheck.message || 'Some seats are already booked')
+      return
+    }
+
+    if (!razorpayKeyId) {
+      // Fallback to direct booking if no payment config
+      confirmBooking('test_payment_' + Date.now())
+      return
+    }
+
+    // Setup Razorpay payment
+    const options = {
+      key: razorpayKeyId,
+      amount: getTotalPrice() * 100,
+      name: 'Mookala Events',
+      description: `Ticket booking for ${event.title}`,
+      handler: function(response: any) {
+        confirmBooking(response.razorpay_payment_id)
+      },
+      modal: {
+        ondismiss: function() {
+          console.log('Payment cancelled')
+        }
+      },
+      theme: {
+        color: '#9333ea'
+      }
+    }
+
+    try {
+      // @ts-ignore
+      const rzp = new window.Razorpay(options)
+      rzp.open()
+    } catch (error) {
+      // Fallback if Razorpay not loaded
+      confirmBooking('web_payment_' + Date.now())
+    }
+  }
+
+  const confirmBooking = async (paymentId: string) => {
     try {
       const userPhone = localStorage.getItem('userPhone')
+      const venue = getVenueDetails()
       
       const bookingData = {
         userPhone,
@@ -194,7 +331,7 @@ Proceed with booking?
         eventTitle: event.title,
         eventDate: new Date(event.date).toLocaleDateString(),
         eventTime: event.time,
-        venue: event.location,
+        venue: venue.name,
         tickets: selectedTickets.map(ticket => ({
           category: ticket.category,
           block: ticket.block,
@@ -208,11 +345,10 @@ Proceed with booking?
         totalPrice: getTotalPrice(),
         bookingDate: new Date().toISOString(),
         status: 'confirmed',
-        paymentId: `web_${Date.now()}`,
+        paymentId: paymentId,
         paymentStatus: 'paid'
       }
 
-      // Save to admin panel database via API
       const response = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -232,13 +368,44 @@ Proceed with booking?
     }
   }
 
+  const downloadSeatingLayout = () => {
+    if (!venueData?.seatingLayoutImage) {
+      alert('No seating layout available')
+      return
+    }
+
+    try {
+      const imageData = venueData.seatingLayoutImage
+      const byteCharacters = atob(imageData.split(',')[1])
+      const byteNumbers = new Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      }
+      const byteArray = new Uint8Array(byteNumbers)
+      const blob = new Blob([byteArray], { type: 'image/png' })
+      
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${venueData.name?.replace(/\s+/g, '_') || 'venue'}_seating_layout.png`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      
+      alert('Seating layout downloaded successfully!')
+    } catch (error) {
+      alert('Download failed. Please try again.')
+    }
+  }
+
   const categories = getSeatCategories()
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       {/* Header */}
       <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white">
-        <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center gap-4 mb-4">
             <Button variant="ghost" size="sm" asChild className="text-white hover:bg-white/20">
               <Link href={`/event/${id}`}>← Back</Link>
@@ -266,7 +433,55 @@ Proceed with booking?
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Seating Layout Viewer */}
+        {venueData?.seatingLayoutImage && (
+          <Card className="p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Map size={20} className="text-purple-600" />
+                <h3 className="text-lg font-semibold">Seating Layout</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={() => setImageScale(Math.max(0.5, imageScale - 0.2))}
+                  variant="outline"
+                  size="sm"
+                >
+                  <ZoomOut size={16} />
+                </Button>
+                <Button
+                  onClick={() => setImageScale(Math.min(3.0, imageScale + 0.2))}
+                  variant="outline"
+                  size="sm"
+                >
+                  <ZoomIn size={16} />
+                </Button>
+                <Button
+                  onClick={downloadSeatingLayout}
+                  variant="outline"
+                  size="sm"
+                >
+                  <Download size={16} />
+                </Button>
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 overflow-auto" style={{ height: '300px' }}>
+              <div 
+                className="flex items-center justify-center h-full"
+                style={{ transform: `scale(${imageScale})`, transformOrigin: 'center' }}
+              >
+                <img
+                  src={venueData.seatingLayoutImage}
+                  alt="Seating Layout"
+                  className="max-w-full max-h-full object-contain cursor-move"
+                  onError={() => alert('Failed to load seating layout')}
+                />
+              </div>
+            </div>
+          </Card>
+        )}
+
         {/* Ticket Selection */}
         <Card className="p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
