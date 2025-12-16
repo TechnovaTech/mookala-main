@@ -107,7 +107,7 @@ export default function EventsPage() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8" suppressHydrationWarning>
           {/* Sidebar Filters */}
           <div className="md:col-span-1" suppressHydrationWarning>
-            <EventFilters filters={filters} onFiltersChange={setFilters} onClear={handleClearFilters} />
+            <EventFilters filters={filters} onFiltersChange={setFilters} onClear={handleClearFilters} events={events} />
           </div>
 
           {/* Main Content */}

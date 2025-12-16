@@ -15,8 +15,8 @@ function transformEvent(adminEvent: any) {
 
   const cleanCategory = (cat: string) => {
     if (!cat) return 'General';
-    // Remove 'categories.' prefix if it exists
-    return cat.replace(/^categories\./, '');
+    // Remove 'categories.' prefix if it exists (case insensitive)
+    return cat.replace(/^categories\./i, '');
   };
 
   return {
@@ -77,7 +77,7 @@ export async function fetchApprovedEvents(category?: string) {
 
 export async function fetchCategories() {
   try {
-    const response = await fetch(`${ADMIN_API_URL}/genres`, {
+    const response = await fetch(`${ADMIN_API_URL}/categories`, {
       cache: 'no-store',
     });
     
@@ -86,7 +86,7 @@ export async function fetchCategories() {
     }
     
     const data = await response.json();
-    return data.genres || [];
+    return Array.isArray(data) ? data.map((cat: any) => cat.name) : [];
   } catch (error) {
     console.error('Error fetching categories:', error);
     return [];

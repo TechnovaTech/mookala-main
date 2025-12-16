@@ -23,6 +23,8 @@ export function EventCard({ event, variant = "grid" }: EventCardProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  
+  const cleanCategory = event.category?.replace(/^categories\./i, '') || event.category
 
   useEffect(() => {
     const checkMobile = () => {
@@ -87,7 +89,7 @@ export function EventCard({ event, variant = "grid" }: EventCardProps) {
           <div className="p-5">
             <div className="flex items-start justify-between gap-2 mb-3">
               <Badge variant="outline" className="rounded-md" suppressHydrationWarning>
-                {event.category}
+                {cleanCategory}
               </Badge>
               {event.isFree && (
                 <Badge variant="secondary" className="rounded-md text-xs">
@@ -235,7 +237,7 @@ export function EventCard({ event, variant = "grid" }: EventCardProps) {
         </div>
         <div className="p-4 flex-1 flex flex-col" suppressHydrationWarning>
           <Badge variant="outline" className="w-fit rounded-md text-xs mb-2" suppressHydrationWarning>
-            {event.category}
+            {cleanCategory}
           </Badge>
           <h3 className="font-bold text-sm mb-2 line-clamp-2 group-hover:text-primary transition flex-1" suppressHydrationWarning>
             {translateEvent(event.id, 'title', event.title)}

@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { categories } from "@/lib/mock-data"
+import { fetchCategories } from "@/lib/api"
 import type { FilterOptions } from "@/lib/types"
 import { useLanguage } from "@/lib/language-context"
 
@@ -12,11 +12,14 @@ interface EventFiltersProps {
   filters: FilterOptions
   onFiltersChange: (filters: FilterOptions) => void
   onClear: () => void
+  events?: any[]
 }
 
-export function EventFilters({ filters, onFiltersChange, onClear }: EventFiltersProps) {
+export function EventFilters({ filters, onFiltersChange, onClear, events = [] }: EventFiltersProps) {
   const { t, translateCategory } = useLanguage()
   const [isOpen, setIsOpen] = useState(false)
+  
+  const categories = [...new Set(events.map((e: any) => e.category).filter(Boolean))]
 
   const updateFilter = <K extends keyof FilterOptions>(key: K, value: FilterOptions[K]) => {
     onFiltersChange({ ...filters, [key]: value })
@@ -51,7 +54,7 @@ export function EventFilters({ filters, onFiltersChange, onClear }: EventFilters
                   className="cursor-pointer rounded-md"
                   suppressHydrationWarning
                 >
-                  {translateCategory(cat)}
+                  {cat}
                 </Badge>
               ))}
             </div>

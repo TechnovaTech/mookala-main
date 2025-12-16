@@ -175,7 +175,7 @@ export default function EventDetailPage({ params }: EventDetailProps) {
               {/* Title & Meta */}
               <div className="mb-8">
                 <div className="flex flex-wrap gap-2 mb-4">
-                  <Badge className="rounded-md" suppressHydrationWarning>{translateCategory(event.category)}</Badge>
+                  <Badge className="rounded-md" suppressHydrationWarning>{event.category}</Badge>
                   {event.isFree && (
                     <Badge variant="secondary" className="rounded-md">
                       {t("card.free")}
