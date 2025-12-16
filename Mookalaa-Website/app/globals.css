@@ -1,0 +1,207 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Mobile viewport fix */
+@viewport {
+  width: device-width;
+  initial-scale: 1;
+  maximum-scale: 1;
+  user-scalable: no;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Updated color palette based on MOOKALAA logo: Navy Blue, Teal, Gold, Dark Green */
+  --background: #0a0e27;
+  --foreground: #f5f7fa;
+  --card: #131b3a;
+  --card-foreground: #f5f7fa;
+  --popover: #131b3a;
+  --popover-foreground: #f5f7fa;
+  --primary: #d4a574;
+  --primary-foreground: #0a0e27;
+  --secondary: #155e54;
+  --secondary-foreground: #f5f7fa;
+  --muted: #2a3453;
+  --muted-foreground: #a0a8b8;
+  --accent: #17a2b8;
+  --accent-foreground: #0a0e27;
+  --destructive: #ef4444;
+  --destructive-foreground: #f5f7fa;
+  --border: #2a3453;
+  --input: #1a2342;
+  --ring: #d4a574;
+  --chart-1: #d4a574;
+  --chart-2: #17a2b8;
+  --chart-3: #155e54;
+  --chart-4: #001f3f;
+  --chart-5: #a0a8b8;
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: #0a0e27;
+  --foreground: #f5f7fa;
+  --card: #131b3a;
+  --card-foreground: #f5f7fa;
+  --popover: #131b3a;
+  --popover-foreground: #f5f7fa;
+  --primary: #d4a574;
+  --primary-foreground: #0a0e27;
+  --secondary: #155e54;
+  --secondary-foreground: #f5f7fa;
+  --muted: #2a3453;
+  --muted-foreground: #a0a8b8;
+  --accent: #17a2b8;
+  --accent-foreground: #0a0e27;
+  --destructive: #ef4444;
+  --destructive-foreground: #f5f7fa;
+  --border: #2a3453;
+  --input: #1a2342;
+  --ring: #d4a574;
+  --chart-1: #d4a574;
+  --chart-2: #17a2b8;
+  --chart-3: #155e54;
+  --chart-4: #001f3f;
+  --chart-5: #a0a8b8;
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.269 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
+}
+
+@theme inline {
+  /* optional: --font-sans, --font-serif, --font-mono if they are applied in the layout.tsx */
+  --font-sans: "Geist", "Geist Fallback";
+  --font-mono: "Geist Mono", "Geist Mono Fallback";
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  .glass {
+    @apply backdrop-blur-xl bg-white/10;
+  }
+
+  * {
+    @apply transition-colors duration-200;
+  }
+
+  /* Mobile-specific utilities */
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .safe-area-pt {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /* Prevent horizontal scroll on mobile */
+  body {
+    overflow-x: hidden;
+  }
+
+  /* Better touch targets for mobile */
+  @media (max-width: 640px) {
+    button, a, input, select {
+      min-height: 44px;
+    }
+    
+    /* Improve tap highlighting */
+    button, a {
+      -webkit-tap-highlight-color: rgba(255, 165, 0, 0.2);
+      tap-highlight-color: rgba(255, 165, 0, 0.2);
+    }
+  }
+
+  /* Smooth scrolling for mobile */
+  @media (max-width: 768px) {
+    html {
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Prevent zoom on input focus */
+    input, select, textarea {
+      font-size: 16px;
+    }
+  }
+
+  /* Active states for better mobile feedback */
+  .active\:scale-95:active {
+    transform: scale(0.95);
+  }
+
+  /* Custom scrollbar for mobile */
+  @media (max-width: 768px) {
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+    
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 165, 0, 0.3);
+      border-radius: 2px;
+    }
+  }
+}
