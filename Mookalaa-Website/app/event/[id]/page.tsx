@@ -225,7 +225,7 @@ export default function EventDetailPage({ params }: EventDetailProps) {
                 {/* Action Buttons */}
                 <div className="flex gap-3">
                   <Button asChild className="flex-1 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
-                    <Link href={`/event/${id}/book`}>{t('eventDetail.bookTicket')}</Link>
+                    <Link href={`/event/${id}/book`}>Book Tickets</Link>
                   </Button>
                   <Button onClick={() => addToCalendar(event)} className="flex-1 rounded-lg bg-blue-600 hover:bg-blue-700">
                     <Calendar size={18} className="mr-2" />

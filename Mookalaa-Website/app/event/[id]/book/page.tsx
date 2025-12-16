@@ -1,415 +1,405 @@
 "use client"
 
-import { useState, use } from "react"
-import { mockEvents } from "@/lib/mock-data"
+import { useState, useEffect, use } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { ChevronLeft, ChevronDown } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { Calendar, Clock, MapPin, Minus, Plus, X } from "lucide-react"
+import { fetchEventById } from "@/lib/api"
 import Link from "next/link"
-import { useLanguage } from "@/lib/language-context"
 
 interface BookingPageProps {
   params: Promise<{ id: string }>
 }
 
-
-
-const ticketTypes = [
-  { id: 1, name: "General", price: 500, available: 50 },
-  { id: 2, name: "VIP", price: 1500, available: 20 },
-  { id: 3, name: "Premium", price: 2500, available: 10 },
-]
+interface TicketSelection {
+  category: string | null
+  block: string | null
+  fromSeat: number
+  toSeat: number
+  quantity: number
+  price: number
+}
 
 export default function BookingPage({ params }: BookingPageProps) {
   const { id } = use(params)
-  const event = mockEvents.find((e) => e.id === id)
-  const { t } = useLanguage()
-  
-  const ticketTypes = [
-    { id: 1, name: t('booking.general'), price: 500, available: 50 },
-    { id: 2, name: t('booking.vip'), price: 1500, available: 20 },
-    { id: 3, name: t('booking.premium'), price: 2500, available: 10 },
-  ]
-  
-  const [step, setStep] = useState(1)
-  const [selectedVenue, setSelectedVenue] = useState<string | null>(null)
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [selectedTime, setSelectedTime] = useState<string | null>(null)
-  const [tickets, setTickets] = useState<{ [key: number]: number }>({})
-  const [expandedVenue, setExpandedVenue] = useState<number | null>(null)
+  const [event, setEvent] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [selectedTickets, setSelectedTickets] = useState<TicketSelection[]>([
+    { category: null, block: null, fromSeat: 1, toSeat: 1, quantity: 1, price: 0 }
+  ])
 
-  if (!event) return null
+  useEffect(() => {
+    async function loadEvent() {
+      const eventData = await fetchEventById(id)
+      setEvent(eventData)
+      setLoading(false)
+    }
+    loadEvent()
+  }, [id])
 
-  const venues = [
-    { 
-      id: 1,
-      city: event.location.split(',')[0],
-      name: event.location, 
-      address: event.location,
-      dates: [new Date(event.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })],
-      status: "Fast Filling"
-    },
-  ]
-
-  const times = [event.time]
-
-  const totalAmount = Object.entries(tickets).reduce((sum, [typeId, count]) => {
-    const ticket = ticketTypes.find(t => t.id === Number(typeId))
-    return sum + (ticket?.price || 0) * count
-  }, 0)
-
-  const totalTickets = Object.values(tickets).reduce((sum, count) => sum + count, 0)
-
-  const handleVenueSelect = (venueName: string, venueId: number) => {
-    setSelectedVenue(venueName)
-    setExpandedVenue(expandedVenue === venueId ? null : venueId)
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Loading booking details...</p>
+      </div>
+    )
   }
 
-  const handleDateSelect = (date: string) => {
-    setSelectedDate(date)
-    setStep(2)
+  if (!event) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Event not found</h1>
+          <Button asChild>
+            <Link href="/">Back to Home</Link>
+          </Button>
+        </div>
+      </div>
+    )
   }
 
-  const handleTimeSelect = (time: string) => {
-    setSelectedTime(time)
-    setStep(3)
+  const getSeatCategories = () => {
+    if (!event.tickets || !Array.isArray(event.tickets)) return []
+    
+    return event.tickets.map((ticket: any) => ({
+      name: ticket.name || 'Ticket',
+      price: extractPriceFromTicket(ticket.price),
+      blockName: ticket.blockName || 'A',
+      priceType: ticket.priceType || 'Normal',
+      startSeat: ticket.startSeat || 1,
+      endSeat: ticket.endSeat || parseInt(ticket.quantity) || 100,
+      seatRange: `${ticket.blockName || 'A'}${ticket.startSeat || 1} to ${ticket.blockName || 'A'}${ticket.endSeat || parseInt(ticket.quantity) || 100}`
+    }))
   }
 
-  const updateTicketCount = (typeId: number, increment: boolean) => {
-    setTickets(prev => {
-      const current = prev[typeId] || 0
-      const newCount = increment ? current + 1 : Math.max(0, current - 1)
-      if (newCount === 0) {
-        const { [typeId]: _, ...rest } = prev
-        return rest
+  const extractPriceFromTicket = (price: any): number => {
+    if (typeof price === 'number') return price
+    if (typeof price === 'string') {
+      const cleanPrice = price.replace(/[₹,]/g, '')
+      return parseInt(cleanPrice) || 0
+    }
+    return 0
+  }
+
+  const getAvailableBlocksForCategory = (categoryName: string) => {
+    const categories = getSeatCategories()
+    return categories.filter(cat => cat.name === categoryName)
+  }
+
+  const getBlockMinSeat = (categoryName: string, blockName: string) => {
+    const blocks = getAvailableBlocksForCategory(categoryName)
+    const block = blocks.find(b => b.blockName === blockName)
+    return block?.startSeat || 1
+  }
+
+  const getBlockMaxSeat = (categoryName: string, blockName: string) => {
+    const blocks = getAvailableBlocksForCategory(categoryName)
+    const block = blocks.find(b => b.blockName === blockName)
+    return block?.endSeat || 100
+  }
+
+  const addTicketSelection = () => {
+    setSelectedTickets([...selectedTickets, {
+      category: null,
+      block: null,
+      fromSeat: 1,
+      toSeat: 1,
+      quantity: 1,
+      price: 0
+    }])
+  }
+
+  const removeTicketSelection = (index: number) => {
+    if (selectedTickets.length > 1) {
+      setSelectedTickets(selectedTickets.filter((_, i) => i !== index))
+    }
+  }
+
+  const updateTicketSelection = (index: number, field: string, value: any) => {
+    const updated = [...selectedTickets]
+    updated[index] = { ...updated[index], [field]: value }
+    
+    if (field === 'category') {
+      const categories = getSeatCategories()
+      const category = categories.find(c => c.name === value)
+      updated[index].price = category?.price || 0
+      updated[index].block = null
+    }
+    
+    if (field === 'block') {
+      const minSeat = getBlockMinSeat(updated[index].category!, value)
+      updated[index].fromSeat = minSeat
+      updated[index].toSeat = minSeat
+      updated[index].quantity = 1
+    }
+    
+    if (field === 'fromSeat' || field === 'toSeat') {
+      const fromSeat = field === 'fromSeat' ? value : updated[index].fromSeat
+      const toSeat = field === 'toSeat' ? value : updated[index].toSeat
+      updated[index].quantity = Math.max(1, toSeat - fromSeat + 1)
+    }
+    
+    setSelectedTickets(updated)
+  }
+
+  const getTotalSeats = () => {
+    return selectedTickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
+  }
+
+  const getTotalPrice = () => {
+    return selectedTickets.reduce((sum, ticket) => sum + (ticket.price * ticket.quantity), 0)
+  }
+
+  const handleProceedToPayment = () => {
+    // Check if user is logged in
+    const userPhone = localStorage.getItem('userPhone')
+    if (!userPhone) {
+      alert('Please login to book tickets')
+      window.location.href = '/login'
+      return
+    }
+
+    // Show booking confirmation
+    showBookingConfirmation()
+  }
+
+  const showBookingConfirmation = () => {
+    const confirmed = confirm(`
+Booking Confirmation
+
+Event: ${event.title}
+Date: ${new Date(event.date).toLocaleDateString()}
+Time: ${event.time}
+Location: ${event.location}
+Tickets: ${getTotalSeats()}
+Total: ₹${getTotalPrice()}
+
+Proceed with booking?
+    `)
+
+    if (confirmed) {
+      confirmBooking()
+    }
+  }
+
+  const confirmBooking = async () => {
+    try {
+      const userPhone = localStorage.getItem('userPhone')
+      
+      const bookingData = {
+        userPhone,
+        eventId: event.id,
+        eventTitle: event.title,
+        eventDate: new Date(event.date).toLocaleDateString(),
+        eventTime: event.time,
+        venue: event.location,
+        tickets: selectedTickets.map(ticket => ({
+          category: ticket.category,
+          block: ticket.block,
+          fromSeat: ticket.fromSeat,
+          toSeat: ticket.toSeat,
+          quantity: ticket.quantity,
+          price: ticket.price,
+          totalPrice: ticket.price * ticket.quantity
+        })),
+        totalSeats: getTotalSeats(),
+        totalPrice: getTotalPrice(),
+        bookingDate: new Date().toISOString(),
+        status: 'confirmed',
+        paymentId: `web_${Date.now()}`,
+        paymentStatus: 'paid'
       }
-      return { ...prev, [typeId]: newCount }
-    })
+
+      // Save to admin panel database via API
+      const response = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bookingData)
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        alert('Booking confirmed successfully!')
+        window.location.href = '/bookings'
+      } else {
+        throw new Error(result.error || 'Booking failed')
+      }
+    } catch (error) {
+      alert('Booking failed. Please try again.')
+    }
   }
+
+  const categories = getSeatCategories()
 
   return (
-    <main className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="sticky top-0 z-50 bg-background border-b">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
-          <div className="flex items-center justify-center gap-4 relative max-w-3xl mx-auto">
-            <Link href={`/event/${id}`} className="absolute left-0 p-1">
-              <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-            </Link>
-            <h1 className="text-lg sm:text-xl font-bold text-center px-8 truncate">{t(`event.${event.id}.title`) || event.title}</h1>
+      <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex items-center gap-4 mb-4">
+            <Button variant="ghost" size="sm" asChild className="text-white hover:bg-white/20">
+              <Link href={`/event/${id}`}>← Back</Link>
+            </Button>
+            <h1 className="text-2xl font-bold">Book Tickets</h1>
           </div>
-        </div>
-      </div>
-
-      {/* Progress Steps */}
-      <div className="bg-muted/30 border-b">
-        <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2 sm:py-4">
-          <div className="flex items-center justify-between max-w-4xl mx-auto">
-            {/* Step 1 - Venue */}
-            <div className="flex flex-col items-center gap-1 sm:gap-2 flex-1">
-              <div className={`w-7 h-7 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold ${step >= 1 ? 'bg-orange-500 text-white' : 'bg-gray-300 text-gray-600'} transition-all duration-300`}>
-                1
+          
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold">{event.title}</h2>
+            <div className="flex items-center gap-6 text-sm opacity-90">
+              <div className="flex items-center gap-2">
+                <Calendar size={16} />
+                <span>{new Date(event.date).toLocaleDateString()}</span>
               </div>
-              <span className={`text-xs sm:text-sm font-medium text-center ${step >= 1 ? 'text-orange-500' : 'text-gray-400'} transition-colors duration-300`}>
-                {t('booking.venue')}
-              </span>
-            </div>
-            
-            {/* Connector Line 1 */}
-            <div className="flex-1 h-0.5 bg-gray-300 mx-1 sm:mx-3 relative">
-              <div className={`h-full bg-orange-500 transition-all duration-500 ${step >= 2 ? 'w-full' : 'w-0'}`}></div>
-            </div>
-            
-            {/* Step 2 - Date & Time */}
-            <div className="flex flex-col items-center gap-1 sm:gap-2 flex-1">
-              <div className={`w-7 h-7 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold ${step >= 2 ? 'bg-orange-500 text-white' : 'bg-gray-300 text-gray-600'} transition-all duration-300`}>
-                2
+              <div className="flex items-center gap-2">
+                <Clock size={16} />
+                <span>{event.time}</span>
               </div>
-              <span className={`text-xs sm:text-sm font-medium text-center ${step >= 2 ? 'text-orange-500' : 'text-gray-400'} transition-colors duration-300`}>
-                <span className="hidden sm:inline">{t('booking.dateTime').split(' ')[0]} &</span> {t('booking.dateTime').split(' ').slice(-1)}
-              </span>
-            </div>
-            
-            {/* Connector Line 2 */}
-            <div className="flex-1 h-0.5 bg-gray-300 mx-1 sm:mx-3 relative">
-              <div className={`h-full bg-orange-500 transition-all duration-500 ${step >= 3 ? 'w-full' : 'w-0'}`}></div>
-            </div>
-            
-            {/* Step 3 - Ticket */}
-            <div className="flex flex-col items-center gap-1 sm:gap-2 flex-1">
-              <div className={`w-7 h-7 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold ${step >= 3 ? 'bg-orange-500 text-white' : 'bg-gray-300 text-gray-600'} transition-all duration-300`}>
-                3
+              <div className="flex items-center gap-2">
+                <MapPin size={16} />
+                <span>{event.location}</span>
               </div>
-              <span className={`text-xs sm:text-sm font-medium text-center ${step >= 3 ? 'text-orange-500' : 'text-gray-400'} transition-colors duration-300`}>
-                {t('booking.ticket')}
-              </span>
-            </div>
-            
-            {/* Connector Line 3 */}
-            <div className="flex-1 h-0.5 bg-gray-300 mx-1 sm:mx-3 relative">
-              <div className={`h-full bg-orange-500 transition-all duration-500 ${step >= 4 ? 'w-full' : 'w-0'}`}></div>
-            </div>
-            
-            {/* Step 4 - Proceed to Pay */}
-            <div className="flex flex-col items-center gap-1 sm:gap-2 flex-1">
-              <div className={`w-7 h-7 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold ${step >= 4 ? 'bg-orange-500 text-white' : 'bg-gray-300 text-gray-600'} transition-all duration-300`}>
-                4
-              </div>
-              <span className={`text-xs sm:text-sm font-medium text-center ${step >= 4 ? 'text-orange-500' : 'text-gray-400'} transition-colors duration-300`}>
-                <span className="hidden sm:inline">{t('booking.proceedToPay').split(' ')[0]} {t('booking.proceedToPay').split(' ')[1]}</span>
-                <span className="sm:hidden">{t('booking.proceedToPay').split(' ').slice(-1)}</span>
-              </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
-        {/* Step 1: Select Venue */}
-        {step === 1 && (
-          <div className="max-w-3xl mx-auto">
-            <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">{t('booking.selectVenue')}</h2>
-            <div className="space-y-3 sm:space-y-4">
-              {venues.map((venue) => (
-                <Card key={venue.id} className="overflow-hidden">
-                  <button
-                    onClick={() => handleVenueSelect(venue.name, venue.id)}
-                    className="w-full p-4 sm:p-6 text-left hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-base sm:text-lg font-semibold">{venue.city}</h3>
-                      <ChevronDown className={`w-4 h-4 sm:w-5 sm:h-5 transition-transform flex-shrink-0 ${expandedVenue === venue.id ? 'rotate-180' : ''}`} />
-                    </div>
-                  </button>
-                  
-                  {expandedVenue === venue.id && (
-                    <button
-                      onClick={() => handleDateSelect(venue.dates[0])}
-                      className="w-full px-4 sm:px-6 pb-4 sm:pb-6 pt-2 sm:pt-4 text-left hover:bg-muted/30 transition-colors"
-                    >
-                      <h4 className="text-base sm:text-lg font-semibold mb-2">{venue.name}</h4>
-                      <p className="text-sm text-muted-foreground mb-2">{venue.dates[0]} | <span className="text-orange-500 font-medium">{t('booking.fastFilling')}</span></p>
-                      <div className="border-t border-border my-3"></div>
-                      <p className="text-sm text-muted-foreground mb-2 break-words">{venue.address}</p>
-                      <span className="text-sm text-red-500 font-medium inline-block cursor-pointer">{t('booking.viewMaps')}</span>
-                    </button>
-                  )}
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: Select Time */}
-        {step === 2 && (
-          <div className="max-w-3xl mx-auto">
-            <Card className="p-4 sm:p-6 mb-4 sm:mb-6">
-              {/* Status Indicators */}
-              <div className="flex items-center gap-3 sm:gap-6 mb-4 sm:mb-6 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                  <span className="text-xs sm:text-sm">{t('booking.available')}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-                  <span className="text-xs sm:text-sm">{t('booking.fastFilling')}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-gray-400"></div>
-                  <span className="text-xs sm:text-sm">{t('booking.soldOut')}</span>
-                </div>
-              </div>
-
-              {/* Select Date */}
-              <div className="mb-4 sm:mb-6">
-                <h3 className="text-base sm:text-lg font-semibold mb-3">{t('booking.selectDate')}</h3>
-                <Button
-                  variant="outline"
-                  className="bg-orange-400 hover:bg-orange-500 text-black border-none h-auto py-3 sm:py-4 px-4 sm:px-6 text-sm sm:text-base w-full sm:w-auto rounded-lg font-medium shadow-md transition-all duration-200 active:scale-95"
-                >
-                  {selectedDate}
-                </Button>
-              </div>
-
-              {/* Select Time */}
-              <div>
-                <h3 className="text-base sm:text-lg font-semibold mb-3">{t('booking.selectTime')}</h3>
-                <Button
-                  variant="outline"
-                  className="bg-orange-400 hover:bg-orange-500 text-black border-none h-auto py-3 sm:py-4 px-4 sm:px-6 text-sm sm:text-base w-full sm:w-auto rounded-lg font-medium shadow-md transition-all duration-200 active:scale-95"
-                >
-                  {event.time}
-                </Button>
-              </div>
-            </Card>
-
-            {/* Proceed Button */}
-            <Button
-              onClick={() => setStep(3)}
-              className="w-full h-12 sm:h-14 text-base sm:text-lg bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold shadow-lg transition-all duration-200 active:scale-95"
-            >
-              Proceed
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* Ticket Selection */}
+        <Card className="p-6 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-semibold">Select Tickets</h3>
+            <Button onClick={addTicketSelection} variant="outline" size="sm">
+              <Plus size={16} className="mr-2" />
+              Add Ticket
             </Button>
           </div>
-        )}
 
-        {/* Step 3: Select Tickets */}
-        {step === 3 && (
-          <div className="max-w-3xl mx-auto pb-24 sm:pb-32">
-            <h2 className="text-xl sm:text-2xl font-bold mb-2">{t('booking.selectTickets')}</h2>
-            <p className="text-sm text-muted-foreground mb-4 sm:mb-6 break-words">{t(`location.${selectedVenue}`) || selectedVenue} - {selectedDate} - {selectedTime}</p>
-            <div className="space-y-3 sm:space-y-4">
-              {ticketTypes.map((ticket) => (
-                <Card key={ticket.id} className="p-4 sm:p-6">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-base sm:text-lg">{ticket.name}</h3>
-                      <p className="text-sm text-muted-foreground">₹{ticket.price} {t('booking.perTicket')}</p>
-                      <p className="text-xs text-muted-foreground">{ticket.available} {t('booking.available')}</p>
-                    </div>
-                    <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => updateTicketCount(ticket.id, false)}
-                        disabled={!tickets[ticket.id]}
-                        className="h-8 w-8 p-0"
-                      >
-                        -
-                      </Button>
-                      <span className="w-6 sm:w-8 text-center font-semibold text-sm sm:text-base">{tickets[ticket.id] || 0}</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => updateTicketCount(ticket.id, true)}
-                        className="h-8 w-8 p-0"
-                      >
-                        +
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-
-            {totalTickets > 0 && (
-              <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-sm border-t shadow-lg p-3 sm:p-4 z-50">
-                <div className="max-w-3xl mx-auto">
-                  <div className="flex items-center justify-between gap-3 sm:gap-4 mb-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-lg sm:text-2xl font-bold text-orange-500">₹{totalAmount}</p>
-                      <p className="text-xs sm:text-sm text-muted-foreground">{totalTickets} {t('booking.tickets')}</p>
-                    </div>
+          <div className="space-y-4">
+            {selectedTickets.map((ticket, index) => (
+              <Card key={index} className="p-4 border-2">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-medium">Ticket {index + 1}</h4>
+                  {selectedTickets.length > 1 && (
                     <Button
-                      onClick={() => setStep(4)}
-                      className="bg-orange-500 hover:bg-orange-600 text-white px-6 sm:px-12 h-12 sm:h-14 text-sm sm:text-base flex-shrink-0 rounded-lg font-semibold shadow-lg transition-all duration-200 active:scale-95"
+                      onClick={() => removeTicketSelection(index)}
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-500 hover:text-red-700"
                     >
-                      {t('booking.proceed')}
+                      <X size={16} />
                     </Button>
-                  </div>
-                  {/* Safe area for mobile devices */}
-                  <div className="h-2 sm:h-0"></div>
+                  )}
                 </div>
-              </div>
-            )}
-          </div>
-        )}
 
-        {/* Step 4: Review & Proceed */}
-        {step === 4 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 pb-4 sm:pb-8">
-            {/* Left Side - Ticket Options */}
-            <div className="order-2 lg:order-1">
-              <p className="text-sm text-muted-foreground mb-3 sm:mb-4">{t('booking.selectOptions')}</p>
-              <Card className="p-4 sm:p-6">
-                <div className="flex items-start gap-3 mb-4">
-                  <input type="radio" checked readOnly className="mt-1 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <h3 className="font-semibold text-base sm:text-lg mb-1">{t('booking.mTicket')}</h3>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span>🌍</span>
-                      <span>{t('booking.savePlanet')}</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Category Selection */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Category</label>
+                    <Select
+                      value={ticket.category || ""}
+                      onValueChange={(value) => updateTicketSelection(index, 'category', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category.name} value={category.name}>
+                            {category.priceType} - ₹{category.price} ({category.seatRange})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Block Selection */}
+                  {ticket.category && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Block</label>
+                      <Select
+                        value={ticket.block || ""}
+                        onValueChange={(value) => updateTicketSelection(index, 'block', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select block" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {getAvailableBlocksForCategory(ticket.category).map((block) => (
+                            <SelectItem key={block.blockName} value={block.blockName}>
+                              Block {block.blockName} ({block.seatRange})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+
+                {/* Seat Range Selection */}
+                {ticket.block && (
+                  <div className="mt-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-2">From Seat</label>
+                        <Input
+                          type="number"
+                          value={ticket.fromSeat}
+                          onChange={(e) => updateTicketSelection(index, 'fromSeat', parseInt(e.target.value) || 1)}
+                          min={getBlockMinSeat(ticket.category!, ticket.block)}
+                          max={getBlockMaxSeat(ticket.category!, ticket.block)}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-2">To Seat</label>
+                        <Input
+                          type="number"
+                          value={ticket.toSeat}
+                          onChange={(e) => updateTicketSelection(index, 'toSeat', parseInt(e.target.value) || 1)}
+                          min={ticket.fromSeat}
+                          max={getBlockMaxSeat(ticket.category!, ticket.block)}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+                      <p className="text-sm text-blue-700">
+                        Seats: {ticket.block}{ticket.fromSeat} to {ticket.block}{ticket.toSeat} ({ticket.quantity} seats) - ₹{ticket.price * ticket.quantity}
+                      </p>
                     </div>
                   </div>
-                </div>
-                
-                <div className="p-3 sm:p-4 rounded-lg border border-white">
-                  <h4 className="font-semibold mb-3 text-white text-sm sm:text-base">{t('booking.mTicketInfo')}</h4>
-                  <ol className="space-y-2 text-xs sm:text-sm text-white">
-                    <li>{t('booking.mTicketPoint1')}</li>
-                    <li>{t('booking.mTicketPoint2')}</li>
-                    <li>{t('booking.mTicketPoint3')}</li>
-                  </ol>
-                </div>
+                )}
               </Card>
+            ))}
+          </div>
+        </Card>
+
+        {/* Summary */}
+        <Card className="p-6">
+          <h3 className="text-xl font-semibold mb-4">Booking Summary</h3>
+          <div className="space-y-2 mb-6">
+            <div className="flex justify-between">
+              <span>Total Seats:</span>
+              <span className="font-medium">{getTotalSeats()}</span>
             </div>
-
-            {/* Right Side - Booking Summary */}
-            <div className="order-1 lg:order-2">
-              <Card className="p-4 sm:p-6 mb-4">
-                <div className="flex justify-between items-start mb-4 gap-3">
-                  <h3 className="font-semibold text-base sm:text-lg flex-1 min-w-0">{t(`event.${event.id}.title`) || event.title}</h3>
-                  <p className="font-bold text-base sm:text-lg flex-shrink-0">₹{totalAmount}.00</p>
-                </div>
-                <p className="text-sm text-muted-foreground mb-4">{totalTickets} {t('booking.tickets')}</p>
-                
-                <div className="border-t pt-4 space-y-2 text-sm">
-                  <p className="font-medium">{t('booking.dateLabel')}, {selectedDate}, 2025</p>
-                  <p>04:00 PM</p>
-                  <p className="font-semibold mt-3">{t('booking.venue')}</p>
-                  <p className="break-words">{t(`location.${selectedVenue}`) || selectedVenue}</p>
-                  <div className="mt-3">
-                    {Object.entries(tickets).map(([typeId, count]) => {
-                      const ticket = ticketTypes.find(t => t.id === Number(typeId))
-                      return ticket ? (
-                        <p key={typeId} className="text-xs sm:text-sm">
-                          {ticket.name.toUpperCase()}(₹{ticket.price}): {count} ticket(s)
-                        </p>
-                      ) : null
-                    })}
-                  </div>
-                </div>
-              </Card>
-
-              <Card className="p-4 sm:p-6 mb-4">
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <span>{t('booking.subTotal')}</span>
-                    <span>₹{totalAmount}.00</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{t('booking.bookingFee')}</span>
-                    <span>₹{Math.round(totalAmount * 0.095)}</span>
-                  </div>
-                  <div className="border-t pt-3 flex justify-between font-bold text-base">
-                    <span>{t('booking.totalAmount')}</span>
-                    <span>₹{totalAmount + Math.round(totalAmount * 0.095)}</span>
-                  </div>
-                </div>
-              </Card>
-
-              <div className="mb-4">
-                <label className="text-sm font-medium mb-2 block">{t('booking.selectState')}</label>
-                <select className="w-full p-3 border rounded-lg bg-background text-sm sm:text-base">
-                  <option>Gujarat</option>
-                  <option>Maharashtra</option>
-                  <option>Rajasthan</option>
-                </select>
-              </div>
-
-              <div className="flex items-start gap-2 mb-4 text-xs sm:text-sm text-muted-foreground">
-                <span className="text-blue-500 flex-shrink-0">ⓘ</span>
-                <p>{t('booking.consent')}</p>
-              </div>
-
-              <Button asChild className="w-full bg-orange-500 hover:bg-orange-600 text-white h-12 sm:h-14 text-sm sm:text-base rounded-lg font-semibold shadow-lg transition-all duration-200 active:scale-95">
-                <Link href={`/event/${id}/book/payment?amount=${totalAmount}&tickets=${totalTickets}`}>{t('booking.proceedToPay')}</Link>
-              </Button>
+            <div className="flex justify-between text-lg font-bold">
+              <span>Total Amount:</span>
+              <span>₹{getTotalPrice()}</span>
             </div>
           </div>
-        )}
+          
+          <Button
+            onClick={handleProceedToPayment}
+            disabled={getTotalSeats() === 0}
+            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+            size="lg"
+          >
+            Proceed to Payment
+          </Button>
+        </Card>
       </div>
-    </main>
+    </div>
   )
 }
