@@ -24,6 +24,12 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
   bool _showImageViewer = false;
   double _imageScale = 1.0;
   final TransformationController _transformationController = TransformationController();
+  
+  // Ticket configuration mode
+  bool _isSeatWise = true;
+  
+  // Without seat-wise configuration
+  List<Map<String, dynamic>> _generalTickets = [];
 
   @override
   void initState() {
@@ -117,14 +123,64 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
   }
 
   bool get _isFormValid {
-    for (var blockCategories in _blockPricingCategories.values) {
-      for (var category in blockCategories) {
-        if (category['price'].toString().isNotEmpty) {
+    if (_isSeatWise) {
+      for (var blockCategories in _blockPricingCategories.values) {
+        for (var category in blockCategories) {
+          if (category['price'].toString().isNotEmpty) {
+            return true;
+          }
+        }
+      }
+      return false;
+    } else {
+      for (var ticket in _generalTickets) {
+        if (ticket['quantity'].toString().isNotEmpty && 
+            ticket['price'].toString().isNotEmpty) {
           return true;
         }
       }
+      return false;
     }
-    return false;
+  }
+  
+  int _getTotalSeats() {
+    if (_selectedVenueData == null || _selectedVenueData!['seatConfig'] == null) {
+      return 0;
+    }
+    
+    final seatConfig = _selectedVenueData!['seatConfig'];
+    if (seatConfig['blocks'] != null) {
+      int total = 0;
+      for (var block in seatConfig['blocks']) {
+        total += (block['totalSeats'] ?? 0) as int;
+      }
+      return total;
+    }
+    return 0;
+  }
+  
+  void _initializeGeneralTickets() {
+    if (_generalTickets.isEmpty) {
+      setState(() {
+        _generalTickets = [
+          {'name': 'Normal', 'quantity': '', 'price': '', 'priceType': 'Normal', 'customCategory': ''}
+        ];
+      });
+    }
+  }
+  
+  void _addGeneralTicket() {
+    setState(() {
+      _generalTickets.add({'name': 'Normal', 'quantity': '', 'price': '', 'priceType': 'Normal', 'customCategory': ''});
+    });
+  }
+  
+  void _removeGeneralTicket(int index) {
+    if (_generalTickets.length > 1) {
+      setState(() {
+        _generalTickets.removeAt(index);
+      });
+    }
   }
 
   @override
@@ -197,6 +253,33 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                 ),
               ),
               const SizedBox(height: 24),
+            ],
+
+            // Venue Total Seating Info
+            if (_selectedVenueData != null) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF001F3F).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF001F3F).withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.event_seat, color: Color(0xFF001F3F), size: 24),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Total Venue Capacity: ${_getTotalSeats()} seats',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF001F3F),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
 
             // Seating Layout Image Viewer
@@ -300,17 +383,65 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                   ],
                 ),
               ),
-            ],
-            
-            if (_blockPricingCategories.isEmpty) ...[
-              const Text(
-                'No venue blocks found. Please select a venue with seat configuration.',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.red,
+              
+              // Ticket Configuration Mode Toggle
+              Container(
+                margin: const EdgeInsets.only(bottom: 24),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _isSeatWise = true;
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isSeatWise ? const Color(0xFF001F3F) : Colors.grey.shade300,
+                          foregroundColor: _isSeatWise ? Colors.white : Colors.black87,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Seat Wise'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _isSeatWise = false;
+                            _initializeGeneralTickets();
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: !_isSeatWise ? const Color(0xFF001F3F) : Colors.grey.shade300,
+                          foregroundColor: !_isSeatWise ? Colors.white : Colors.black87,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Without Seat Wise'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ] else ...[
+            ],
+            
+            if (_isSeatWise) ...[
+              if (_blockPricingCategories.isEmpty) ...[
+                const Text(
+                  'No venue blocks found. Please select a venue with seat configuration.',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.red,
+                  ),
+                ),
+              ] else ...[
               const Text(
                 'Configure ticket pricing for seat blocks',
                 style: TextStyle(
@@ -598,6 +729,180 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                   ],
                 );
               }).toList(),
+              ],
+            ] else ...[
+              // Without Seat Wise Configuration
+              const Text(
+                'Configure general ticket categories',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              ..._generalTickets.asMap().entries.map((entry) {
+                final index = entry.key;
+                final ticket = entry.value;
+                
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Ticket Category ${index + 1}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          if (_generalTickets.length > 1)
+                            IconButton(
+                              onPressed: () => _removeGeneralTicket(index),
+                              icon: const Icon(Icons.remove_circle, color: Colors.red),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // Price Category Selection
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Price Category', style: TextStyle(fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 8),
+                                DropdownButtonFormField<String>(
+                                  value: ticket['priceType'] ?? 'Normal',
+                                  decoration: InputDecoration(
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  ),
+                                  items: [..._priceTypes, 'Custom'].map((type) {
+                                    return DropdownMenuItem(
+                                      value: type,
+                                      child: Text(type),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _generalTickets[index]['priceType'] = value;
+                                      if (value != 'Custom') {
+                                        _generalTickets[index]['name'] = value;
+                                      }
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          if (ticket['priceType'] == 'Custom')
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Custom Category', style: TextStyle(fontWeight: FontWeight.w600)),
+                                  const SizedBox(height: 8),
+                                  TextField(
+                                    decoration: InputDecoration(
+                                      hintText: 'Enter category name',
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    ),
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _generalTickets[index]['customCategory'] = value;
+                                        _generalTickets[index]['name'] = value;
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Quantity', style: TextStyle(fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  decoration: InputDecoration(
+                                    hintText: 'Enter quantity',
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _generalTickets[index]['quantity'] = value;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Price (₹)', style: TextStyle(fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  decoration: InputDecoration(
+                                    hintText: 'Enter price',
+                                    prefixText: '₹ ',
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _generalTickets[index]['price'] = value;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _addGeneralTicket,
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: const Text('Add Category', style: TextStyle(color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF001F3F),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                ),
+              ),
             ],
             
             const SizedBox(height: 24),
@@ -632,27 +937,47 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                     onPressed: _isFormValid ? () {
                       final tickets = <Map<String, dynamic>>[];
                       
-                      _blockPricingCategories.forEach((blockName, categories) {
-                        for (var category in categories) {
-                          if (category['price'].toString().isNotEmpty) {
-                            final categoryName = category['priceType'] == 'Custom' 
-                                ? category['customCategory'] 
-                                : category['priceType'];
-                            final seatCount = category['endSeat'] - category['startSeat'] + 1;
-                            
+                      if (_isSeatWise) {
+                        _blockPricingCategories.forEach((blockName, categories) {
+                          for (var category in categories) {
+                            if (category['price'].toString().isNotEmpty) {
+                              final categoryName = category['priceType'] == 'Custom' 
+                                  ? category['customCategory'] 
+                                  : category['priceType'];
+                              final seatCount = category['endSeat'] - category['startSeat'] + 1;
+                              
+                              tickets.add({
+                                'name': '$categoryName - Block $blockName',
+                                'quantity': seatCount.toString(),
+                                'price': category['price'],
+                                'currency': 'INR (₹)',
+                                'blockName': blockName,
+                                'startSeat': category['startSeat'],
+                                'endSeat': category['endSeat'],
+                                'priceType': categoryName,
+                                'isSeatWise': true,
+                              });
+                            }
+                          }
+                        });
+                      } else {
+                        for (var ticket in _generalTickets) {
+                          if (ticket['quantity'].toString().isNotEmpty && 
+                              ticket['price'].toString().isNotEmpty) {
+                            final categoryName = ticket['priceType'] == 'Custom' 
+                                ? ticket['customCategory'] 
+                                : ticket['priceType'];
                             tickets.add({
-                              'name': '$categoryName - Block $blockName',
-                              'quantity': seatCount.toString(),
-                              'price': category['price'],
+                              'name': categoryName,
+                              'quantity': ticket['quantity'],
+                              'price': ticket['price'],
                               'currency': 'INR (₹)',
-                              'blockName': blockName,
-                              'startSeat': category['startSeat'],
-                              'endSeat': category['endSeat'],
                               'priceType': categoryName,
+                              'isSeatWise': false,
                             });
                           }
                         }
-                      });
+                      }
                       
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Tickets created successfully!')),

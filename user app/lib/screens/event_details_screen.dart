@@ -240,6 +240,44 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> with TickerProv
           const SizedBox(height: 12),
           _buildTermsSection(),
           
+          if (widget.event['photographyContact'] != null && widget.event['photographyContact'].toString().isNotEmpty) ..[
+            const SizedBox(height: 20),
+            const Text(
+              'Photography & Videography Contact',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF001F3F),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.camera_alt, color: Color(0xFF001F3F), size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.event['photographyContact'],
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ]
+          
           const SizedBox(height: 40),
           
           // Book Now Button

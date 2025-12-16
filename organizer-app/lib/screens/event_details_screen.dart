@@ -13,6 +13,7 @@ class EventDetailsScreen extends StatefulWidget {
 class _EventDetailsScreenState extends State<EventDetailsScreen> {
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _termsController = TextEditingController();
+  final TextEditingController _photographyContactController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   @override
@@ -134,6 +135,47 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                 },
               ),
               
+              const SizedBox(height: 32),
+              
+              const Text(
+                'Photography & Videography Contact',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Contact details for photography and videography services.',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 20),
+              
+              TextFormField(
+                controller: _photographyContactController,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  hintText: 'Enter photography/videography contact details...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFF001F3F)),
+                  ),
+                  contentPadding: const EdgeInsets.all(16),
+                ),
+              ),
+              
               const SizedBox(height: 40),
               
               SizedBox(
@@ -144,6 +186,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                       final updatedEventData = Map<String, dynamic>.from(widget.eventData);
                       updatedEventData['description'] = _descriptionController.text.trim();
                       updatedEventData['terms'] = _termsController.text.trim();
+                      updatedEventData['photographyContact'] = _photographyContactController.text.trim();
                       
                       Navigator.push(
                         context,

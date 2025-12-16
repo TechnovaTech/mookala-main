@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
         : [],
       description: eventData.description || null,
       terms: eventData.terms || null,
+      photographyContact: eventData.photographyContact || null,
       status: eventData.status || 'pending',
       createdAt: new Date(),
       updatedAt: new Date(),
