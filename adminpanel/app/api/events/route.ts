@@ -100,6 +100,9 @@ export async function POST(request: NextRequest) {
         : eventData.language 
         ? [eventData.language] 
         : [],
+      scannerStaff: eventData.scannerStaff && Array.isArray(eventData.scannerStaff)
+        ? eventData.scannerStaff.filter(staff => staff && staff.name && staff.email)
+        : [],
       description: eventData.description || null,
       terms: eventData.terms || null,
       status: eventData.status || 'pending',

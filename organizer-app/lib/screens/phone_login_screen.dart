@@ -4,6 +4,7 @@ import 'otp_verification_screen.dart';
 import 'user_type_selection_screen.dart';
 import 'dashboard_screen.dart';
 import 'artist_dashboard_screen.dart';
+import 'staff_login_screen.dart';
 import '../services/auth_service.dart';
 
 class PhoneLoginScreen extends StatefulWidget {
@@ -203,7 +204,27 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                           ),
                   ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 20),
+                
+                // Staff Member Login Button
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const StaffLoginScreen()),
+                    );
+                  },
+                  child: const Text(
+                    'Staff Member Login',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Color(0xFF001F3F),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(height: 20),
               ],
             ),
           ),

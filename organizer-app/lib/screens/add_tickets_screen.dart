@@ -376,6 +376,7 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
         'endTime': widget.eventData['endTime'] ?? '',
         'organizerPhone': userPhone,
         'organizerRole': userRole,
+        'scannerStaff': widget.eventData['scannerStaff'] ?? [],
         'tickets': _tickets,
         'status': 'pending',
       };

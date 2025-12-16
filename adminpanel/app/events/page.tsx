@@ -32,6 +32,12 @@ interface Event {
     name: string;
     genre: string;
   }>;
+  scannerStaff?: Array<{
+    name: string;
+    email: string;
+    phone: string;
+    password: string;
+  }>;
   media?: {
     bannerImage?: string;
     images?: string[];

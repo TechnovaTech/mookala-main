@@ -4,6 +4,7 @@ import 'jatra_registration_screen.dart';
 import 'qr_scanner_screen.dart';
 import 'event_details_screen.dart';
 import 'profile_screen.dart';
+import 'staff_login_screen.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -46,6 +47,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   List<String> _selectedSubCategories = [];
   List<String> _selectedLanguages = [];
   List<String> _subCategories = [];
+  List<Map<String, dynamic>> _scannerStaff = [];
 
   @override
   void initState() {
@@ -273,6 +275,111 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showAddStaffDialog() {
+    final TextEditingController nameController = TextEditingController();
+    final TextEditingController emailController = TextEditingController();
+    final TextEditingController phoneController = TextEditingController();
+    final TextEditingController passwordController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Scanner Staff'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(
+                  labelText: 'Staff Name *',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: emailController,
+                decoration: InputDecoration(
+                  labelText: 'Staff Email *',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: phoneController,
+                decoration: InputDecoration(
+                  labelText: 'Phone Number *',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                keyboardType: TextInputType.phone,
+                maxLength: 10,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                decoration: InputDecoration(
+                  labelText: 'Staff Password *',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                obscureText: true,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (nameController.text.isNotEmpty && 
+                  emailController.text.isNotEmpty && 
+                  phoneController.text.isNotEmpty &&
+                  passwordController.text.isNotEmpty) {
+                setState(() {
+                  _scannerStaff.add({
+                    'name': nameController.text,
+                    'email': emailController.text,
+                    'phone': phoneController.text,
+                    'password': passwordController.text,
+                  });
+                });
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Staff member added successfully')),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please fill all fields')),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF001F3F),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Add Staff'),
+          ),
+        ],
       ),
     );
   }
@@ -1225,6 +1332,147 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
             
             const SizedBox(height: 32),
             
+            // Scanner Staff Section
+            const Text(
+              'Scanner Staff',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Add staff members who will scan tickets at the event.',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Add Scanner Staff Button
+            GestureDetector(
+              onTap: _showAddStaffDialog,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: const Color(0xFF001F3F),
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                  color: const Color(0xFF001F3F).withOpacity(0.05),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF001F3F).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(
+                        Icons.person_add,
+                        size: 20,
+                        color: Color(0xFF001F3F),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Add Scanner Staff',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            'Add staff members for ticket scanning.',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            
+            // Added Staff List
+            if (_scannerStaff.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              ..._scannerStaff.map((staff) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: const Color(0xFF001F3F).withOpacity(0.1),
+                      child: const Icon(
+                        Icons.person,
+                        color: Color(0xFF001F3F),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            staff['name'] ?? '',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            staff['email'] ?? '',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          Text(
+                            staff['phone'] ?? '',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _scannerStaff.remove(staff);
+                        });
+                      },
+                      icon: const Icon(Icons.close, size: 16),
+                      color: Colors.red,
+                    ),
+                  ],
+                ),
+              )).toList(),
+            ],
+            
+            const SizedBox(height: 32),
+            
             // Save Button
             SizedBox(
               width: double.infinity,
@@ -1857,6 +2105,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
       'languages': _selectedLanguages,
       'locationType': _selectedLocationType,
       'artists': _addedArtists,
+      'scannerStaff': _scannerStaff,
       'startDate': _dateController.text,
       'startTime': _timeController.text,
       'endDate': _endDateController.text,

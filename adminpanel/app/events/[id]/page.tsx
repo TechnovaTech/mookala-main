@@ -51,6 +51,12 @@ interface Event {
     email?: string;
     phone?: string;
   }>;
+  scannerStaff?: Array<{
+    name: string;
+    email: string;
+    phone: string;
+    password: string;
+  }>;
   tickets?: Array<{
     name: string;
     price: string;
@@ -394,6 +400,43 @@ export default function EventDetailsPage() {
               )}
             </div>
           </div>
+
+          {/* Scanner Staff */}
+          {event.scannerStaff && event.scannerStaff.length > 0 && (
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-bold mb-4">Scanner Staff Information</h2>
+              <div className="grid gap-4">
+                {event.scannerStaff.map((staff, index) => (
+                  <div key={index} className="border rounded-lg p-4 bg-gray-50">
+                    <div className="grid md:grid-cols-4 gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Staff Name</p>
+                        <p className="font-semibold">{staff.name}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Email</p>
+                        <div className="flex items-center gap-2">
+                          <Mail className="w-4 h-4 text-gray-500" />
+                          <span className="text-sm">{staff.email}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Phone</p>
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-4 h-4 text-gray-500" />
+                          <span className="text-sm">{staff.phone}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Password</p>
+                        <p className="text-sm font-mono bg-gray-200 px-2 py-1 rounded">••••••••</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Tickets */}
           {event.tickets && event.tickets.length > 0 && (
