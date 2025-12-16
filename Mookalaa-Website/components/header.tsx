@@ -5,7 +5,7 @@ import type React from "react"
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Search, Menu, X } from "lucide-react"
+import { Search, Menu, X, User, LogOut } from "lucide-react"
 import { useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/lib/language-context"
@@ -21,10 +21,19 @@ export function Header() {
   const [searchQuery, setSearchQuery] = useState("")
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [userPhone, setUserPhone] = useState<string | null>(null)
   const { language, setLanguage, t } = useLanguage()
   const router = useRouter()
 
   useEffect(() => {
+    // Check if user is logged in
+    const phone = localStorage.getItem('userPhone')
+    if (phone) {
+      setIsLoggedIn(true)
+      setUserPhone(phone)
+    }
+    
     const addScript = () => {
       if (!document.getElementById('google-translate-script')) {
         const script = document.createElement('script')
@@ -142,6 +151,20 @@ export function Header() {
           {/* Right Actions */}
           <div className="flex items-center gap-2 sm:gap-3" suppressHydrationWarning>
 
+            
+            {/* Login/User Actions */}
+            {isLoggedIn ? (
+              <Button asChild size="sm" className="rounded-lg bg-white text-[#124972] hover:bg-gray-100 text-xs sm:text-sm px-3 sm:px-4">
+                <Link href="/profile">
+                  <User size={16} className="mr-1" />
+                  Profile
+                </Link>
+              </Button>
+            ) : (
+              <Button asChild size="sm" className="rounded-lg bg-white text-[#124972] hover:bg-gray-100 text-xs sm:text-sm px-3 sm:px-4">
+                <Link href="/login">Login</Link>
+              </Button>
+            )}
             
             {/* Explore Button */}
             <Button asChild size="sm" className="rounded-lg bg-accent hover:bg-accent/90 text-xs sm:text-sm px-3 sm:px-4">
