@@ -277,7 +277,12 @@ export default function BannersPage() {
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-bold text-gray-900">{editingBanner ? 'Edit Banner' : 'Add New Banner'}</h3>
-              <button onClick={() => { setShowModal(false); setEditingBanner(null); setFormData({ title: '', image: '', mediaType: 'image', link: '', order: '1' }) }} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button 
+                onClick={() => { setShowModal(false); setEditingBanner(null); setFormData({ title: '', image: '', mediaType: 'image', link: '', order: '1' }) }} 
+                className="p-2 hover:bg-gray-100 rounded-lg"
+                title="Close modal"
+                aria-label="Close modal"
+              >
                 <X size={20} />
               </button>
             </div>
@@ -302,15 +307,38 @@ export default function BannersPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                <input type="text" required value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+                <input 
+                  type="text" 
+                  required 
+                  value={formData.title} 
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })} 
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal"
+                  placeholder="Enter banner title"
+                  title="Banner title"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Link (Optional)</label>
-                <input type="url" value={formData.link} onChange={(e) => setFormData({ ...formData, link: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+                <input 
+                  type="url" 
+                  value={formData.link} 
+                  onChange={(e) => setFormData({ ...formData, link: e.target.value })} 
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal"
+                  placeholder="https://example.com"
+                  title="Banner link URL"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Display Order</label>
-                <input type="number" required value={formData.order} onChange={(e) => setFormData({ ...formData, order: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
+                <input 
+                  type="number" 
+                  required 
+                  value={formData.order} 
+                  onChange={(e) => setFormData({ ...formData, order: e.target.value })} 
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal"
+                  placeholder="1"
+                  title="Display order number"
+                />
               </div>
               <button type="submit" disabled={submitting} className="w-full py-2 bg-emerald text-white rounded-lg hover:bg-emerald/90 disabled:opacity-50">
                 {submitting ? (editingBanner ? 'Updating...' : 'Adding...') : (editingBanner ? 'Update Banner' : 'Add Banner')}
