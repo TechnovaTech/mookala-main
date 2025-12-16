@@ -13,6 +13,7 @@ import { showToast, showConfirmation } from "@/lib/toast"
 export default function BookingsPage() {
   const [bookings, setBookings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [showQRForBooking, setShowQRForBooking] = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -44,7 +45,16 @@ export default function BookingsPage() {
   }
 
   const showQRCode = (booking: any) => {
-    const qrData = JSON.stringify({
+    if (showQRForBooking === booking._id) {
+      setShowQRForBooking(null)
+    } else {
+      setShowQRForBooking(booking._id)
+      showToast('QR Code displayed successfully!', 'success')
+    }
+  }
+
+  const generateQRData = (booking: any) => {
+    return JSON.stringify({
       bookingId: booking._id,
       eventTitle: booking.eventTitle,
       eventDate: booking.eventDate,
@@ -55,38 +65,6 @@ export default function BookingsPage() {
       tickets: booking.tickets,
       status: booking.status,
     })
-
-    // Create QR code display modal
-    const modal = document.createElement('div')
-    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'
-    modal.innerHTML = `
-      <div class="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
-        <div class="text-center">
-          <h3 class="text-xl font-bold mb-4 text-slate-800">QR Code</h3>
-          <p class="text-sm text-slate-600 mb-4">${booking.eventTitle}</p>
-          <div id="qrcode" class="flex justify-center mb-6"></div>
-          <p class="text-xs text-slate-500 mb-6">Show this QR code at the venue for entry</p>
-          <button onclick="this.closest('.fixed').remove()" class="bg-slate-800 text-white px-6 py-3 rounded-lg hover:bg-slate-900 font-medium">
-            Close
-          </button>
-        </div>
-      </div>
-    `
-    document.body.appendChild(modal)
-
-    // Generate actual QR code
-    const qrElement = document.getElementById('qrcode')
-    if (qrElement) {
-      const qrImageUrl = generateQRCode(qrData)
-      qrElement.innerHTML = `
-        <div class="bg-white p-4 rounded-xl border-2 border-slate-200 inline-block">
-          <img src="${qrImageUrl}" alt="QR Code" class="w-32 h-32" />
-        </div>
-        <p class="text-xs text-slate-500 mt-3">ID: ${booking._id.substring(0, 8)}</p>
-      `
-    }
-    
-    showToast('QR Code displayed successfully!', 'success')
   }
 
   const downloadPDF = (booking: any) => {
@@ -229,13 +207,33 @@ export default function BookingsPage() {
                     style={{background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'}}
                   >
                     <QrCode size={16} className="mr-2" />
-                    Show QR
+                    {showQRForBooking === booking._id ? 'Hide QR' : 'Show QR'}
                   </Button>
                 </div>
+
+                {/* QR Code Section */}
+                {showQRForBooking === booking._id && (
+                  <div className="mt-6 pt-6 border-t border-blue-700/30">
+                    <div className="text-center">
+                      <h4 className="text-lg font-bold mb-4 text-white">QR Code</h4>
+                      <div className="bg-white p-4 rounded-xl inline-block mb-4">
+                        <img 
+                          src={generateQRCode(generateQRData(booking))} 
+                          alt="QR Code" 
+                          className="w-32 h-32" 
+                        />
+                      </div>
+                      <p className="text-sm text-blue-200 mb-2">ID: {booking._id.substring(0, 8)}</p>
+                      <p className="text-xs text-blue-300">Show this QR code at the venue for entry</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}
         </div>
+
+
       </div>
     </div>
   )
