@@ -77,7 +77,7 @@ export function EventCard({ event, variant = "grid" }: EventCardProps) {
             <img
               src={event.image || "/placeholder.svg"}
               alt={event.title}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
             {event.featured && (
@@ -87,7 +87,7 @@ export function EventCard({ event, variant = "grid" }: EventCardProps) {
           <div className="p-5">
             <div className="flex items-start justify-between gap-2 mb-3">
               <Badge variant="outline" className="rounded-md" suppressHydrationWarning>
-                {translateCategory(event.category)}
+                {event.category}
               </Badge>
               {event.isFree && (
                 <Badge variant="secondary" className="rounded-md text-xs">
@@ -195,13 +195,13 @@ export function EventCard({ event, variant = "grid" }: EventCardProps) {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <div className="relative overflow-hidden h-40 bg-muted" suppressHydrationWarning>
+        <div className="relative overflow-hidden h-48 bg-muted" suppressHydrationWarning>
           {event.hoverVideo ? (
             <>
               <img
                 src={event.image || "/placeholder.svg"}
                 alt={event.title}
-                className={`w-full h-full object-cover group-hover:scale-110 transition-all duration-300 ${(isHovered || isMobile) ? 'opacity-0' : 'opacity-100'}`}
+                className={`w-full h-full object-cover object-center group-hover:scale-110 transition-all duration-300 ${(isHovered || isMobile) ? 'opacity-0' : 'opacity-100'}`}
               />
               <video
                 ref={videoRef}
@@ -210,21 +210,14 @@ export function EventCard({ event, variant = "grid" }: EventCardProps) {
                 loop
                 autoPlay={isMobile}
                 playsInline
-                className={`absolute inset-0 w-full h-full transition-all duration-300 ${(isHovered || isMobile) ? 'opacity-100' : 'opacity-0'}`}
-                style={{ 
-                  objectFit: 'cover', 
-                  objectPosition: 'center',
-                  width: '100%',
-                  height: '100%',
-                  transform: 'scale(1.8)'
-                }}
+                className={`absolute inset-0 w-full h-full object-cover object-center transition-all duration-300 ${(isHovered || isMobile) ? 'opacity-100' : 'opacity-0'}`}
               />
             </>
           ) : (
             <img
               src={event.image || "/placeholder.svg"}
               alt={event.title}
-              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+              className="w-full h-full object-cover object-center group-hover:scale-110 transition-transform duration-300"
             />
           )}
           <div className="absolute top-2 right-2 flex gap-2" suppressHydrationWarning>
@@ -242,7 +235,7 @@ export function EventCard({ event, variant = "grid" }: EventCardProps) {
         </div>
         <div className="p-4 flex-1 flex flex-col" suppressHydrationWarning>
           <Badge variant="outline" className="w-fit rounded-md text-xs mb-2" suppressHydrationWarning>
-            {translateCategory(event.category)}
+            {event.category}
           </Badge>
           <h3 className="font-bold text-sm mb-2 line-clamp-2 group-hover:text-primary transition flex-1" suppressHydrationWarning>
             {translateEvent(event.id, 'title', event.title)}

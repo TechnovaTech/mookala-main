@@ -14,7 +14,9 @@ interface CategorySectionProps {
 
 export function CategorySection({ category, events }: CategorySectionProps) {
   const { t, translateCategory } = useLanguage()
-  const categoryEvents = events.filter((e) => e.category === category).slice(0, 6)
+  const categoryEvents = events.filter((e) => 
+    e.category?.toLowerCase() === category.toLowerCase()
+  ).slice(0, 6)
 
   if (categoryEvents.length === 0) return null
 
@@ -22,8 +24,8 @@ export function CategorySection({ category, events }: CategorySectionProps) {
     <section className="py-12">
       <div className="flex items-center justify-between mb-8" suppressHydrationWarning>
         <div suppressHydrationWarning>
-          <h2 className="text-3xl font-bold mb-2">{translateCategory(category)}</h2>
-          <p className="text-muted-foreground">{t("category.discover")} {translateCategory(category).toLowerCase()} {t("category.eventsNow")}</p>
+          <h2 className="text-3xl font-bold mb-2">{category}</h2>
+          <p className="text-muted-foreground">{t("category.discover")} {category.toLowerCase()} {t("category.eventsNow")}</p>
         </div>
         <Button asChild variant="outline" className="rounded-lg bg-transparent">
           <Link href={`/events?category=${category}`}>

@@ -5,14 +5,32 @@ import { FeaturedSlider } from "@/components/featured-slider"
 import { CategorySection } from "@/components/category-section"
 import { TrendingCities } from "@/components/trending-cities"
 import { Newsletter } from "@/components/newsletter"
-import { mockEvents, getTranslatedEvents, trendingCities, categories } from "@/lib/mock-data"
+import { trendingCities } from "@/lib/mock-data"
 import { useLanguage } from "@/lib/language-context"
+import { fetchApprovedEvents, fetchCategories } from "@/lib/api"
+import { useEffect, useState } from "react"
 
 export default function Home() {
-  const { t, language } = useLanguage()
-  const excludedCategories = ["Festivals", "Dance", "Workshops", "Custom Orders"]
-  const translatedEvents = getTranslatedEvents(language)
-  const featuredEvents = translatedEvents.filter((e) => e.featured && !excludedCategories.includes(e.category))
+  const { t } = useLanguage()
+  const [events, setEvents] = useState<any[]>([])
+  const [categories, setCategories] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true)
+      const [eventsData, categoriesData] = await Promise.all([
+        fetchApprovedEvents(),
+        fetchCategories()
+      ])
+      setEvents(eventsData)
+      // Get unique categories from events
+      const eventCategories = [...new Set(eventsData.map((e: any) => e.category))]
+      setCategories(eventCategories)
+      setLoading(false)
+    }
+    loadData()
+  }, [])
 
   return (
     <main className="min-h-screen">
@@ -43,26 +61,36 @@ export default function Home() {
       </section>
 
       {/* Featured Events Slider */}
-      <section className="px-4 sm:px-6 lg:px-8 py-12 max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold mb-2">{t("featured.title")}</h2>
-          <p className="text-muted-foreground">{t("featured.subtitle")}</p>
-        </div>
-        <FeaturedSlider events={featuredEvents} />
-      </section>
+      {!loading && events.length > 0 && (
+        <section className="px-4 sm:px-6 lg:px-8 py-12 max-w-7xl mx-auto">
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold mb-2">{t("featured.title")}</h2>
+            <p className="text-muted-foreground">{t("featured.subtitle")}</p>
+          </div>
+          <FeaturedSlider events={events.slice(0, 5)} />
+        </section>
+      )}
 
-      {/* Indian Idol Contestants Section */}
-      <section className="px-4 sm:px-6 lg:px-8 pb-12 max-w-7xl mx-auto">
-        <CategorySection category="Indian idol contestants" events={translatedEvents} />
-      </section>
+      {/* Category Sections */}
+      {!loading && categories.length > 0 && (
+        <section className="px-4 sm:px-6 lg:px-8 pb-12 max-w-7xl mx-auto space-y-4">
+          {categories.map((category) => (
+            <CategorySection key={category} category={category} events={events} />
+          ))}
+        </section>
+      )}
 
-      {/* Categories */}
-      <section className="px-4 sm:px-6 lg:px-8 pb-12 max-w-7xl mx-auto space-y-4">
-        {categories.slice(0, 3).map((category) => (
-          <CategorySection key={category} category={category} events={translatedEvents} />
-        ))}
+      {loading && (
+        <section className="px-4 sm:px-6 lg:px-8 py-12 max-w-7xl mx-auto">
+          <p className="text-center text-muted-foreground">Loading events...</p>
+        </section>
+      )}
 
-      </section>
+      {!loading && events.length === 0 && (
+        <section className="px-4 sm:px-6 lg:px-8 py-12 max-w-7xl mx-auto">
+          <p className="text-center text-muted-foreground">No events available. Create events in the admin panel.</p>
+        </section>
+      )}
 
       {/* Trending Cities */}
       <section className="px-4 sm:px-6 lg:px-8 pb-12 max-w-7xl mx-auto">

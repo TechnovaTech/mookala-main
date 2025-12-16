@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import { EventFilters } from "@/components/event-filters"
 import { EventGrid } from "@/components/event-grid"
-import { mockEvents, getTranslatedEvents } from "@/lib/mock-data"
+import { fetchApprovedEvents } from "@/lib/api"
 import { filterEvents, sortEvents } from "@/lib/utils-events"
 import type { FilterOptions } from "@/lib/types"
 import { Button } from "@/components/ui/button"
@@ -14,9 +14,21 @@ import { useLanguage } from "@/lib/language-context"
 export default function EventsPage() {
   const { t, language } = useLanguage()
   const searchParams = useSearchParams()
+  const [events, setEvents] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [mapView, setMapView] = useState(false)
   const [sortBy, setSortBy] = useState<"popular" | "date" | "recent">("popular")
   const [displayCount, setDisplayCount] = useState(12)
+
+  useEffect(() => {
+    async function loadEvents() {
+      setLoading(true)
+      const eventsData = await fetchApprovedEvents()
+      setEvents(eventsData)
+      setLoading(false)
+    }
+    loadEvents()
+  }, [])
 
   const [filters, setFilters] = useState<FilterOptions>({
     location: searchParams.get("location") || "",
@@ -27,13 +39,10 @@ export default function EventsPage() {
   })
 
   const filteredAndSorted = useMemo(() => {
-    const excludedCategories = ["Festivals", "Dance", "Workshops", "Custom Orders"]
-    const translatedEvents = getTranslatedEvents(language)
-    const eventsToFilter = translatedEvents.filter(event => !excludedCategories.includes(event.category))
-    const filtered = filterEvents(eventsToFilter, filters)
+    const filtered = filterEvents(events, filters)
     const sorted = sortEvents(filtered, sortBy)
     return sorted.slice(0, displayCount)
-  }, [filters, sortBy, displayCount, language])
+  }, [events, filters, sortBy, displayCount])
 
   const handleClearFilters = () => {
     setFilters({
@@ -47,9 +56,7 @@ export default function EventsPage() {
     setDisplayCount(12)
   }
 
-  const excludedCategories = ["Festivals", "Dance", "Workshops", "Custom Orders"]
-  const translatedEventsForCount = getTranslatedEvents(language)
-  const totalFilteredEvents = translatedEventsForCount.filter(event => !excludedCategories.includes(event.category)).filter(event => filterEvents([event], filters).length > 0).length
+  const totalFilteredEvents = events.filter(event => filterEvents([event], filters).length > 0).length
 
   return (
     <main className="min-h-screen py-8" suppressHydrationWarning>
@@ -114,7 +121,7 @@ export default function EventsPage() {
                 events={filteredAndSorted}
                 hasMore={displayCount < totalFilteredEvents}
                 onLoadMore={() => setDisplayCount((prev) => prev + 12)}
-                isLoading={false}
+                isLoading={loading}
               />
             )}
           </div>

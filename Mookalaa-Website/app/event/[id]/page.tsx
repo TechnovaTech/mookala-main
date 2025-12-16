@@ -1,15 +1,15 @@
 "use client"
 
-import { mockEvents, getTranslatedEvents } from "@/lib/mock-data"
 import { EventCard } from "@/components/event-card"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, MapPin, Users, Heart, Share2, Clock, CheckCircle } from "lucide-react"
-import { formatDate, formatTime, addToCalendar, shareEvent, getRelatedEvents } from "@/lib/utils-events"
+import { formatDate, formatTime, addToCalendar, shareEvent } from "@/lib/utils-events"
 import Link from "next/link"
 import { useState, use, useEffect } from "react"
 import { useLanguage } from "@/lib/language-context"
+import { fetchEventById, fetchApprovedEvents } from "@/lib/api"
 
 interface EventDetailProps {
   params: Promise<{ id: string }>
@@ -18,28 +18,55 @@ interface EventDetailProps {
 export default function EventDetailPage({ params }: EventDetailProps) {
   const { t, translateCategory, translateEvent, translateOrganizer, language } = useLanguage()
   const { id } = use(params)
-  const translatedEvents = getTranslatedEvents(language)
-  const event = translatedEvents.find((e) => e.id === id)
+  const [event, setEvent] = useState<any>(null)
+  const [relatedEvents, setRelatedEvents] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [isLiked, setIsLiked] = useState(false)
 
+  useEffect(() => {
+    async function loadEvent() {
+      setLoading(true)
+      const eventData = await fetchEventById(id)
+      setEvent(eventData)
+      
+      if (eventData) {
+        const allEvents = await fetchApprovedEvents()
+        const related = allEvents
+          .filter((e: any) => e.category === eventData.category && e.id !== eventData.id)
+          .slice(0, 4)
+        setRelatedEvents(related)
+      }
+      setLoading(false)
+    }
+    loadEvent()
+  }, [id])
 
 
 
 
-  if (!event) {
+
+  if (loading) {
     return (
       <main className="min-h-screen py-12">
         <div className="max-w-7xl mx-auto text-center">
-          <h1 className="text-2xl font-bold mb-4">{t("eventDetail.notFound")}</h1>
-          <Button asChild>
-            <Link href="/events">{t("eventDetail.backToEvents")}</Link>
-          </Button>
+          <p className="text-muted-foreground">Loading event...</p>
         </div>
       </main>
     )
   }
 
-  const relatedEvents = getRelatedEvents(event, translatedEvents)
+  if (!event) {
+    return (
+      <main className="min-h-screen py-12">
+        <div className="max-w-7xl mx-auto text-center">
+          <h1 className="text-2xl font-bold mb-4">Event not found</h1>
+          <Button asChild>
+            <Link href="/">Back to Home</Link>
+          </Button>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main className="min-h-screen py-8">
@@ -322,7 +349,7 @@ export default function EventDetailPage({ params }: EventDetailProps) {
                       {event.organizer.verified && <CheckCircle size={18} className="text-blue-500" />}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {event.organizer.events} events • {event.organizer.followers.toLocaleString()} followers
+                      {event.organizer.events} events
                     </p>
                   </div>
                 </div>
