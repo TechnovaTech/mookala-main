@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Calendar, MapPin, Download, QrCode } from "lucide-react"
 import Link from "next/link"
+import { generateQRCode } from "@/lib/qr-generator"
+import { downloadTicketHTML } from "@/lib/pdf-generator"
 
 export default function BookingsPage() {
   const [bookings, setBookings] = useState<any[]>([])
@@ -43,12 +45,50 @@ export default function BookingsPage() {
       bookingId: booking._id,
       eventTitle: booking.eventTitle,
       eventDate: booking.eventDate,
+      eventTime: booking.eventTime,
+      venue: booking.venue,
       totalSeats: booking.totalSeats,
       totalPrice: booking.totalPrice,
-      status: booking.status
+      tickets: booking.tickets,
+      status: booking.status,
     })
 
-    alert(`QR Code Data:\n${qrData}`)
+    // Create QR code display modal
+    const modal = document.createElement('div')
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'
+    modal.innerHTML = `
+      <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+        <div class="text-center">
+          <h3 class="text-lg font-bold mb-4">QR Code - ${booking.eventTitle}</h3>
+          <div id="qrcode" class="flex justify-center mb-4"></div>
+          <p class="text-sm text-gray-600 mb-4">Show this QR code at the venue for entry</p>
+          <button onclick="this.closest('.fixed').remove()" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">
+            Close
+          </button>
+        </div>
+      </div>
+    `
+    document.body.appendChild(modal)
+
+    // Generate actual QR code
+    const qrElement = document.getElementById('qrcode')
+    if (qrElement) {
+      const qrImageUrl = generateQRCode(qrData)
+      qrElement.innerHTML = `
+        <img src="${qrImageUrl}" alt="QR Code" class="mx-auto border rounded" />
+        <p class="text-xs text-gray-500 mt-2">Booking ID: ${booking._id.substring(0, 8)}</p>
+      `
+    }
+  }
+
+  const downloadPDF = (booking: any) => {
+    try {
+      downloadTicketHTML(booking)
+      alert('Ticket downloaded successfully! You can print it as PDF from your browser.')
+    } catch (error) {
+      console.error('Download failed:', error)
+      alert('Download failed. Please try again.')
+    }
   }
 
   if (loading) {
@@ -158,7 +198,7 @@ export default function BookingsPage() {
                     Show QR Code
                   </Button>
                   <Button
-                    onClick={() => alert('PDF download feature coming soon!')}
+                    onClick={() => downloadPDF(booking)}
                     variant="outline"
                     className="flex-1"
                   >
