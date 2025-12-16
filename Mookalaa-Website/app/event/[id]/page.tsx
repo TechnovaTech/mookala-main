@@ -383,7 +383,7 @@ export default function EventDetailPage({ params }: EventDetailProps) {
                 {/* Price Info */}
                 <div className="bg-gradient-to-br from-purple-600/10 to-pink-600/10 rounded-lg p-4 mb-6">
                   <p className="text-sm text-muted-foreground mb-1">{t("eventDetail.entryFee")}</p>
-                  <p className="text-3xl font-bold">{event.isFree ? t("card.free") : `₹${event.price}`}</p>
+                  <p className="text-3xl font-bold">{event.isFree ? t("card.free") : (event.priceDisplay || `₹${event.price}`)}</p>
                 </div>
 
                 {/* Event Type Info */}

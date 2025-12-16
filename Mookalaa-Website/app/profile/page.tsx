@@ -76,7 +76,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen" style={{backgroundColor: '#124972'}}>
+    <div className="min-h-screen" style={{backgroundColor: '#f8fafc'}}>
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-12">
@@ -87,7 +87,7 @@ export default function ProfilePage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Profile Card */}
           <div className="lg:col-span-4">
-            <div className="rounded-2xl shadow-xl p-8 text-center border" style={{backgroundColor: '#124972', borderColor: '#1e40af'}}>
+            <div className="rounded-2xl shadow-xl p-8 text-center border bg-white border-gray-200">
               <div className="relative inline-block mb-6">
                 <div className="w-32 h-32 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 flex items-center justify-center overflow-hidden shadow-2xl">
                   {profile.profileImage ? (
@@ -103,13 +103,13 @@ export default function ProfilePage() {
                 <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-green-500 rounded-full border-4 border-white"></div>
               </div>
               
-              <h2 className="text-2xl font-bold text-white mb-2">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 {profile.name || 'Welcome User!'}
               </h2>
-              <p className="text-gray-300 mb-2 text-sm">
+              <p className="text-gray-600 mb-2 text-sm">
                 +91 {profile.phone}
               </p>
-              <p className="text-gray-400 mb-6">
+              <p className="text-gray-500 mb-6">
                 {profile.email || 'Complete your profile'}
               </p>
               
@@ -135,9 +135,9 @@ export default function ProfilePage() {
 
           {/* Profile Details */}
           <div className="lg:col-span-8">
-            <div className="rounded-2xl shadow-xl p-8 border" style={{backgroundColor: '#124972', borderColor: '#1e40af'}}>
+            <div className="rounded-2xl shadow-xl p-8 border bg-white border-gray-200">
               <div className="flex items-center justify-between mb-8">
-                <h3 className="text-2xl font-bold text-white">Account Information</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Account Information</h3>
                 <div className="px-4 py-2 bg-green-500 text-white rounded-full text-sm font-medium">
                   Active Account
                 </div>
@@ -151,12 +151,12 @@ export default function ProfilePage() {
                       <Phone className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                      <label className="text-sm font-semibold text-white">Phone Number</label>
+                      <label className="text-sm font-semibold text-gray-900">Phone Number</label>
                       <p className="text-xs text-green-400">Verified</p>
                     </div>
                   </div>
-                  <div className="bg-white/10 rounded-xl p-4 border-2 border-transparent group-hover:border-blue-400 transition-all duration-300">
-                    <p className="text-white font-semibold text-lg">+91 {profile.phone}</p>
+                  <div className="bg-gray-50 rounded-xl p-4 border-2 border-transparent group-hover:border-blue-400 transition-all duration-300">
+                    <p className="text-gray-900 font-semibold text-lg">+91 {profile.phone}</p>
                   </div>
                 </div>
 
@@ -167,14 +167,14 @@ export default function ProfilePage() {
                       <User className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                      <label className="text-sm font-semibold text-white">Full Name</label>
-                      <p className="text-xs text-gray-300">{profile.name ? 'Completed' : 'Incomplete'}</p>
+                      <label className="text-sm font-semibold text-gray-900">Full Name</label>
+                      <p className="text-xs text-gray-500">{profile.name ? 'Completed' : 'Incomplete'}</p>
                     </div>
                   </div>
-                  <div className="bg-white/10 rounded-xl p-4 border-2 border-transparent group-hover:border-purple-400 transition-all duration-300">
+                  <div className="bg-gray-50 rounded-xl p-4 border-2 border-transparent group-hover:border-purple-400 transition-all duration-300">
                     <p className={`text-lg font-semibold ${
                       profile.name 
-                        ? 'text-white' 
+                        ? 'text-gray-900' 
                         : 'text-gray-400 italic'
                     }`}>
                       {profile.name || 'Add your name'}
@@ -189,14 +189,14 @@ export default function ProfilePage() {
                       <Mail className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                      <label className="text-sm font-semibold text-white">Email Address</label>
-                      <p className="text-xs text-gray-300">{profile.email ? 'Completed' : 'Incomplete'}</p>
+                      <label className="text-sm font-semibold text-gray-900">Email Address</label>
+                      <p className="text-xs text-gray-500">{profile.email ? 'Completed' : 'Incomplete'}</p>
                     </div>
                   </div>
-                  <div className="bg-white/10 rounded-xl p-4 border-2 border-transparent group-hover:border-green-400 transition-all duration-300">
+                  <div className="bg-gray-50 rounded-xl p-4 border-2 border-transparent group-hover:border-green-400 transition-all duration-300">
                     <p className={`text-lg font-semibold ${
                       profile.email 
-                        ? 'text-white' 
+                        ? 'text-gray-900' 
                         : 'text-gray-400 italic'
                     }`}>
                       {profile.email || 'Add your email'}
@@ -211,14 +211,14 @@ export default function ProfilePage() {
                       <MapPin className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                      <label className="text-sm font-semibold text-white">City</label>
-                      <p className="text-xs text-gray-300">{profile.city ? 'Completed' : 'Incomplete'}</p>
+                      <label className="text-sm font-semibold text-gray-900">City</label>
+                      <p className="text-xs text-gray-500">{profile.city ? 'Completed' : 'Incomplete'}</p>
                     </div>
                   </div>
-                  <div className="bg-white/10 rounded-xl p-4 border-2 border-transparent group-hover:border-orange-400 transition-all duration-300">
+                  <div className="bg-gray-50 rounded-xl p-4 border-2 border-transparent group-hover:border-orange-400 transition-all duration-300">
                     <p className={`text-lg font-semibold ${
                       profile.city 
-                        ? 'text-white' 
+                        ? 'text-gray-900' 
                         : 'text-gray-400 italic'
                     }`}>
                       {profile.city || 'Select your city'}
@@ -230,13 +230,13 @@ export default function ProfilePage() {
               {/* Member Since */}
               {profile.createdAt && (
                 <div className="mt-8 pt-8 border-t border-gray-200">
-                  <div className="flex items-center space-x-4 bg-white/5 rounded-xl p-6 border border-white/10">
+                  <div className="flex items-center space-x-4 bg-gray-50 rounded-xl p-6 border border-gray-200">
                     <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center shadow-lg">
                       <div className="w-4 h-4 bg-white rounded-full"></div>
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-gray-300">Member Since</p>
-                      <p className="text-xl font-bold text-white">
+                      <p className="text-sm font-semibold text-gray-600">Member Since</p>
+                      <p className="text-xl font-bold text-gray-900">
                         {new Date(profile.createdAt).toLocaleDateString('en-US', {
                           year: 'numeric',
                           month: 'long',
