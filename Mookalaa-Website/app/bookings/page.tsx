@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Calendar, MapPin, Download, QrCode } from "lucide-react"
 import Link from "next/link"
 import { generateQRCode } from "@/lib/qr-generator"
-import { downloadTicketHTML } from "@/lib/pdf-generator"
+import { printTicketPDF } from "@/lib/pdf-direct"
 
 export default function BookingsPage() {
   const [bookings, setBookings] = useState<any[]>([])
@@ -83,11 +83,10 @@ export default function BookingsPage() {
 
   const downloadPDF = (booking: any) => {
     try {
-      downloadTicketHTML(booking)
-      alert('Ticket downloaded successfully! You can print it as PDF from your browser.')
+      printTicketPDF(booking)
     } catch (error) {
-      console.error('Download failed:', error)
-      alert('Download failed. Please try again.')
+      console.error('PDF generation failed:', error)
+      alert('PDF generation failed. Please try again.')
     }
   }
 
@@ -138,13 +137,13 @@ export default function BookingsPage() {
 
         <div className="space-y-6">
           {bookings.map((booking) => (
-            <Card key={booking._id} className="overflow-hidden">
-              {/* Header */}
-              <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6">
+            <Card key={booking._id} className="overflow-hidden bg-white rounded-xl shadow-lg">
+              {/* Header - Dark Blue Background */}
+              <div className="bg-slate-800 text-white p-6 relative">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className="text-xl font-bold mb-2">{booking.eventTitle}</h3>
-                    <div className="flex items-center gap-4 text-sm opacity-90">
+                    <h3 className="text-2xl font-bold mb-3">{booking.eventTitle.toUpperCase()}</h3>
+                    <div className="space-y-2 text-sm">
                       <div className="flex items-center gap-2">
                         <Calendar size={16} />
                         <span>{booking.eventDate} • {booking.eventTime}</span>
@@ -155,55 +154,60 @@ export default function BookingsPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="bg-green-500 px-3 py-1 rounded-full text-xs font-medium">
+                  <div className="bg-green-500 px-4 py-2 rounded-full text-sm font-bold">
                     CONFIRMED
                   </div>
                 </div>
               </div>
 
-              {/* Details */}
+              {/* Ticket Count */}
+              <div className="bg-gray-50 px-6 py-3 border-b">
+                <div className="flex items-center gap-2">
+                  <span className="text-blue-600">🎫</span>
+                  <span className="font-semibold">{booking.totalSeats} Tickets</span>
+                </div>
+              </div>
+
+              {/* Ticket Details */}
               <div className="p-6">
-                <div className="mb-4">
-                  <h4 className="font-medium mb-3">Ticket Details</h4>
-                  <div className="space-y-2">
-                    {booking.tickets.map((ticket: any, index: number) => (
-                      <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                        <span className="text-sm">
-                          {ticket.category} - Block {ticket.block}: {ticket.block}{ticket.fromSeat}-{ticket.block}{ticket.toSeat}
-                        </span>
-                        <span className="font-medium">₹{ticket.totalPrice}</span>
-                      </div>
-                    ))}
-                  </div>
+                <div className="space-y-3 mb-6">
+                  {booking.tickets.map((ticket: any, index: number) => (
+                    <div key={index} className="flex justify-between items-center">
+                      <span className="text-sm font-medium">
+                        {ticket.category} - Block {ticket.block} - Block {ticket.block}: {ticket.block}{ticket.fromSeat}-{ticket.block}{ticket.toSeat}
+                      </span>
+                      <span className="font-bold">₹{ticket.totalPrice}</span>
+                    </div>
+                  ))}
                 </div>
 
-                <div className="flex justify-between items-center mb-6">
+                {/* Booking ID and Total */}
+                <div className="flex justify-between items-center mb-6 pt-4 border-t">
                   <div>
-                    <p className="text-sm text-gray-600">Booking ID</p>
-                    <p className="font-medium">{booking._id.substring(0, 8)}</p>
+                    <p className="text-sm text-gray-500">Booking ID</p>
+                    <p className="font-bold text-lg">{booking._id.substring(0, 8)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-gray-600">Total Amount</p>
-                    <p className="text-xl font-bold text-purple-600">₹{booking.totalPrice}</p>
+                    <p className="text-sm text-gray-500">Total Amount</p>
+                    <p className="text-2xl font-bold">₹{booking.totalPrice}</p>
                   </div>
                 </div>
 
+                {/* Action Buttons */}
                 <div className="flex gap-3">
                   <Button
-                    onClick={() => showQRCode(booking)}
-                    variant="outline"
-                    className="flex-1"
-                  >
-                    <QrCode size={16} className="mr-2" />
-                    Show QR Code
-                  </Button>
-                  <Button
                     onClick={() => downloadPDF(booking)}
-                    variant="outline"
-                    className="flex-1"
+                    className="flex-1 bg-gray-600 hover:bg-gray-700 text-white"
                   >
                     <Download size={16} className="mr-2" />
                     Download PDF
+                  </Button>
+                  <Button
+                    onClick={() => showQRCode(booking)}
+                    className="flex-1 bg-slate-800 hover:bg-slate-900 text-white"
+                  >
+                    <QrCode size={16} className="mr-2" />
+                    Show QR
                   </Button>
                 </div>
               </div>
