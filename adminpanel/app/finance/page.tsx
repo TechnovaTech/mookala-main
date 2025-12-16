@@ -1,10 +1,61 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
-import { Search, Bell, ChevronDown, LogOut, User, Settings as SettingsIcon, CreditCard, TrendingUp, DollarSign, Receipt, Eye, Download, CheckCircle } from 'lucide-react'
+import { Search, Bell, ChevronDown, LogOut, User, Settings as SettingsIcon, CreditCard, TrendingUp, DollarSign, Receipt, Eye, Download, CheckCircle, ArrowRight } from 'lucide-react'
 
 export default function FinanceManagement() {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [organizers, setOrganizers] = useState([])
+  const [selectedOrganizer, setSelectedOrganizer] = useState(null)
+  const [organizerEvents, setOrganizerEvents] = useState([])
+  const [selectedEvent, setSelectedEvent] = useState(null)
+  const [eventDetails, setEventDetails] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    fetchOrganizers()
+  }, [])
+
+  const fetchOrganizers = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/organizers')
+      const data = await response.json()
+      setOrganizers(data.organizers || [])
+    } catch (error) {
+      console.error('Error fetching organizers:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchOrganizerEvents = async (organizerId) => {
+    setLoading(true)
+    try {
+      const response = await fetch(`/api/events/organizer/${organizerId}`)
+      const data = await response.json()
+      setOrganizerEvents(data.events || [])
+      setSelectedOrganizer(organizerId)
+    } catch (error) {
+      console.error('Error fetching organizer events:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchEventDetails = async (eventId) => {
+    setLoading(true)
+    try {
+      const response = await fetch(`/api/events/${eventId}/payment-details`)
+      const data = await response.json()
+      setEventDetails(data.eventDetails)
+      setSelectedEvent(eventId)
+    } catch (error) {
+      console.error('Error fetching event details:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
   
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -178,50 +229,125 @@ export default function FinanceManagement() {
           <div className="bg-white rounded-xl shadow-lg mb-8">
             <div className="p-8 border-b border-gray-200">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900">Recent Transactions</h2>
-                <button className="flex items-center px-4 py-2 bg-emerald text-white rounded-lg hover:bg-emerald/90">
-                  <Download size={16} className="mr-2" />
-                  Export
-                </button>
+                <h2 className="text-xl font-bold text-gray-900">Payment History by Organizer</h2>
+                {selectedOrganizer && (
+                  <button 
+                    onClick={() => {
+                      setSelectedOrganizer(null)
+                      setSelectedEvent(null)
+                      setEventDetails(null)
+                    }}
+                    className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                  >
+                    Back to Organizers
+                  </button>
+                )}
               </div>
             </div>
             
-            <div className="overflow-x-auto p-4">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Transaction ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {[1,2,3,4,5].map((i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm font-mono text-gray-900">TXN{String(i).padStart(6, '0')}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900">User {i}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">Event Ticket</td>
-                      <td className="px-6 py-4 text-sm font-bold text-gray-900">₹{500 + i * 100}</td>
-                      <td className="px-6 py-4">
+            <div className="p-6">
+              {!selectedOrganizer ? (
+                <div className="grid gap-4">
+                  {loading ? (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald"></div>
+                    </div>
+                  ) : (
+                    organizers.map((organizer) => (
+                      <div 
+                        key={organizer._id} 
+                        onClick={() => window.location.href = `/finance/organizer/${organizer._id}`}
+                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
+                      >
                         <div className="flex items-center">
-                          <CheckCircle className="w-4 h-4 text-emerald mr-1" />
-                          <span className="px-2 py-1 text-xs rounded-full bg-emerald/10 text-emerald">Success</span>
+                          <div className="w-12 h-12 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center">
+                            <span className="text-white font-bold">{organizer.name?.charAt(0) || 'O'}</span>
+                          </div>
+                          <div className="ml-4">
+                            <h3 className="font-semibold">{organizer.name}</h3>
+                            <p className="text-sm text-gray-600">{organizer.email}</p>
+                          </div>
                         </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">Dec {i}, 2023</td>
-                      <td className="px-6 py-4">
-                        <button className="p-1 text-teal hover:bg-teal/10 rounded">
-                          <Eye size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        <ArrowRight className="w-5 h-5 text-gray-400" />
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : !selectedEvent ? (
+                <div className="grid gap-4">
+                  <h3 className="text-lg font-semibold mb-4">Events by Organizer</h3>
+                  {loading ? (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald"></div>
+                    </div>
+                  ) : (
+                    organizerEvents.map((event) => (
+                      <div 
+                        key={event._id}
+                        onClick={() => fetchEventDetails(event._id)}
+                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
+                      >
+                        <div>
+                          <h4 className="font-semibold">{event.name}</h4>
+                          <p className="text-sm text-gray-600">{event.startDate} • {event.status}</p>
+                        </div>
+                        <ArrowRight className="w-5 h-5 text-gray-400" />
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold">Event Payment Details</h3>
+                    <button 
+                      onClick={() => setSelectedEvent(null)}
+                      className="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600"
+                    >
+                      Back to Events
+                    </button>
+                  </div>
+                  {loading ? (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald"></div>
+                    </div>
+                  ) : eventDetails ? (
+                    <div className="space-y-6">
+                      <div className="grid md:grid-cols-3 gap-4">
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <h4 className="font-semibold text-blue-800">Total Tickets</h4>
+                          <p className="text-2xl font-bold text-blue-900">{eventDetails.totalTickets}</p>
+                        </div>
+                        <div className="bg-green-50 p-4 rounded-lg">
+                          <h4 className="font-semibold text-green-800">Tickets Sold</h4>
+                          <p className="text-2xl font-bold text-green-900">{eventDetails.ticketsSold}</p>
+                        </div>
+                        <div className="bg-purple-50 p-4 rounded-lg">
+                          <h4 className="font-semibold text-purple-800">Total Revenue</h4>
+                          <p className="text-2xl font-bold text-purple-900">₹{eventDetails.totalRevenue}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <h4 className="font-semibold mb-3">Ticket Breakdown</h4>
+                        <div className="space-y-2">
+                          {eventDetails.tickets?.map((ticket, index) => (
+                            <div key={index} className="flex justify-between items-center p-2 bg-white rounded">
+                              <span>{ticket.name}</span>
+                              <div className="text-right">
+                                <div className="font-semibold">₹{ticket.price}</div>
+                                <div className="text-sm text-gray-600">{ticket.sold}/{ticket.quantity} sold</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-gray-500">No payment details available</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </main>
