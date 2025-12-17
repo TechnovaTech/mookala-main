@@ -240,7 +240,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> with TickerProv
           const SizedBox(height: 12),
           _buildTermsSection(),
           
-          if (widget.event['photographyContact'] != null && widget.event['photographyContact'].toString().isNotEmpty) ..[
+          if (widget.event['photographyContact'] != null && widget.event['photographyContact'].toString().isNotEmpty) ...[
             const SizedBox(height: 20),
             const Text(
               'Photography & Videography Contact',
@@ -276,7 +276,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> with TickerProv
                 ],
               ),
             ),
-          ]
+          ],
           
           const SizedBox(height: 40),
           
