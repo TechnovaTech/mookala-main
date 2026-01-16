@@ -3,9 +3,7 @@ import 'dart:convert';
 import '../services/api_service.dart';
 import 'my_bookings_screen.dart';
 import 'dart:typed_data';
-import 'dart:html' as html;
 import 'package:http/http.dart' as http;
-import 'dart:js' as js;
 
 class BookingScreen extends StatefulWidget {
   final Map<String, dynamic> event;
@@ -38,14 +36,7 @@ class _BookingScreenState extends State<BookingScreen> {
   }
   
   void _setupRazorpayWeb() {
-    // Setup Razorpay web callback
-    js.context['razorpaySuccessHandler'] = (response) {
-      _handlePaymentSuccess(response['razorpay_payment_id']);
-    };
-    
-    js.context['razorpayErrorHandler'] = (response) {
-      _handlePaymentError(response['error']['description']);
-    };
+    // Razorpay setup not available on mobile
   }
   
   Future<void> _fetchPaymentConfig() async {
@@ -698,38 +689,8 @@ class _BookingScreenState extends State<BookingScreen> {
   }
   
   void _initiatePayment() {
-    if (_razorpayKeyId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payment configuration not loaded. Please try again.')),
-      );
-      return;
-    }
-    
-    // For web, use Razorpay checkout script
-    final options = {
-      'key': _razorpayKeyId,
-      'amount': _getTotalPrice() * 100, // Amount in paise
-      'name': 'Mookala Events',
-      'description': 'Ticket booking for ${widget.event['title']}',
-      'handler': js.allowInterop((response) {
-        js.context.callMethod('razorpaySuccessHandler', [response]);
-      }),
-      'modal': {
-        'ondismiss': js.allowInterop(() {
-          Navigator.pop(context);
-        })
-      },
-      'theme': {
-        'color': '#001F3F'
-      }
-    };
-    
-    try {
-      js.context.callMethod('openRazorpay', [js.JsObject.jsify(options)]);
-    } catch (e) {
-      // Fallback: simulate payment success for testing
-      _handlePaymentSuccess('test_payment_${DateTime.now().millisecondsSinceEpoch}');
-    }
+    // Simulate payment success for mobile (integrate proper payment gateway)
+    _handlePaymentSuccess('test_payment_${DateTime.now().millisecondsSinceEpoch}');
   }
   
   void _handlePaymentSuccess(String paymentId) {
@@ -824,43 +785,9 @@ class _BookingScreenState extends State<BookingScreen> {
   }
   
   Future<void> _downloadSeatingLayout() async {
-    try {
-      if (venueData == null || venueData!['seatingLayoutImage'] == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No seating layout image available')),
-        );
-        return;
-      }
-      
-      // Get image data and decode
-      final imageData = venueData!['seatingLayoutImage'];
-      final bytes = base64Decode(imageData.split(',')[1]);
-      
-      // Create blob and download for web
-      final blob = html.Blob([bytes]);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      final venueName = venueData!['name'] ?? 'venue';
-      final fileName = '${venueName.replaceAll(' ', '_')}_seating_layout.png';
-      
-      // Create download link
-      final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', fileName)
-        ..click();
-      
-      // Clean up
-      html.Url.revokeObjectUrl(url);
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Seating layout downloaded as $fileName'),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Download failed: $e')),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Download feature is not available on mobile')),
+    );
   }
   
   Future<Map<String, String>> _getVenueDetails() async {

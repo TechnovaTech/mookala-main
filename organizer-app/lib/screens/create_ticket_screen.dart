@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
-import 'dart:html' as html;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class CreateTicketScreen extends StatefulWidget {
   final Map<String, dynamic>? venueData;
@@ -1010,42 +1010,8 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
   }
   
   Future<void> _downloadSeatingLayout() async {
-    try {
-      if (_selectedVenueData == null || _selectedVenueData!['seatingLayoutImage'] == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No seating layout image available')),
-        );
-        return;
-      }
-      
-      // Get image data and decode
-      final imageData = _selectedVenueData!['seatingLayoutImage'];
-      final bytes = base64Decode(imageData.split(',')[1]);
-      
-      // Create blob and download for web
-      final blob = html.Blob([bytes]);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      final venueName = _selectedVenueData!['name'] ?? 'venue';
-      final fileName = '${venueName.replaceAll(' ', '_')}_seating_layout.png';
-      
-      // Create download link
-      final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', fileName)
-        ..click();
-      
-      // Clean up
-      html.Url.revokeObjectUrl(url);
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Seating layout downloaded as $fileName'),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Download failed: $e')),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Download feature is not available on mobile')),
+    );
   }
 }

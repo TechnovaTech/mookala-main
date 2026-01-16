@@ -6,7 +6,6 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'dart:html' as html;
 import 'package:http/http.dart' as http;
 
 class MyBookingsScreen extends StatefulWidget {
@@ -846,34 +845,23 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
       final pdf = await _generateTicketPDF(booking);
       final bytes = await pdf.save();
       
-      final blob = html.Blob([bytes]);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      final anchor = html.document.createElement('a') as html.AnchorElement
-        ..href = url
-        ..style.display = 'none'
-        ..download = 'Ticket_${booking['eventTitle']?.replaceAll(' ', '_') ?? 'Event'}.pdf';
-      html.document.body?.children.add(anchor);
-      anchor.click();
-      html.document.body?.children.remove(anchor);
-      html.Url.revokeObjectUrl(url);
-      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
             children: [
-              Icon(Icons.download, color: Colors.white),
+              Icon(Icons.info, color: Colors.white),
               SizedBox(width: 8),
-              Text('PDF Downloaded!'),
+              Text('PDF download not available on mobile'),
             ],
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: Colors.orange,
           duration: Duration(seconds: 2),
         ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Download failed'),
+          content: Text('PDF generation failed'),
           backgroundColor: Colors.red,
         ),
       );
