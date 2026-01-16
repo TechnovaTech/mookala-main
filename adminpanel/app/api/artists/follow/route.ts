@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     } else if (action === 'unfollow') {
       await db.collection('users').updateOne(
         { phone: userPhone },
-        { $pull: { followedArtists: artistObjectId } }
+        { $pull: { followedArtists: artistObjectId } } as any
       );
     }
 

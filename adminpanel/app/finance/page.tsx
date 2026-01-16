@@ -5,11 +5,11 @@ import { Search, Bell, ChevronDown, LogOut, User, Settings as SettingsIcon, Cred
 
 export default function FinanceManagement() {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
-  const [organizers, setOrganizers] = useState([])
-  const [selectedOrganizer, setSelectedOrganizer] = useState(null)
-  const [organizerEvents, setOrganizerEvents] = useState([])
-  const [selectedEvent, setSelectedEvent] = useState(null)
-  const [eventDetails, setEventDetails] = useState(null)
+  const [organizers, setOrganizers] = useState<any[]>([])
+  const [selectedOrganizer, setSelectedOrganizer] = useState<string | null>(null)
+  const [organizerEvents, setOrganizerEvents] = useState<any[]>([])
+  const [selectedEvent, setSelectedEvent] = useState<string | null>(null)
+  const [eventDetails, setEventDetails] = useState<any>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function FinanceManagement() {
     }
   }
 
-  const fetchOrganizerEvents = async (organizerId) => {
+  const fetchOrganizerEvents = async (organizerId: string) => {
     setLoading(true)
     try {
       const response = await fetch(`/api/events/organizer/${organizerId}`)
@@ -43,7 +43,7 @@ export default function FinanceManagement() {
     }
   }
 
-  const fetchEventDetails = async (eventId) => {
+  const fetchEventDetails = async (eventId: string) => {
     setLoading(true)
     try {
       const response = await fetch(`/api/events/${eventId}/payment-details`)
@@ -331,7 +331,7 @@ export default function FinanceManagement() {
                       <div className="bg-gray-50 p-4 rounded-lg">
                         <h4 className="font-semibold mb-3">Ticket Breakdown</h4>
                         <div className="space-y-2">
-                          {eventDetails.tickets?.map((ticket, index) => (
+                          {eventDetails.tickets?.map((ticket: any, index: number) => (
                             <div key={index} className="flex justify-between items-center p-2 bg-white rounded">
                               <span>{ticket.name}</span>
                               <div className="text-right">

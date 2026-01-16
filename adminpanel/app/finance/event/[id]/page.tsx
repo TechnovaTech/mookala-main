@@ -7,8 +7,8 @@ import { ArrowLeft, Calendar, MapPin, Users, DollarSign, TrendingUp, Receipt } f
 export default function EventPaymentDetailsPage() {
   const params = useParams()
   const router = useRouter()
-  const [eventDetails, setEventDetails] = useState(null)
-  const [bookings, setBookings] = useState([])
+  const [eventDetails, setEventDetails] = useState<any>(null)
+  const [bookings, setBookings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

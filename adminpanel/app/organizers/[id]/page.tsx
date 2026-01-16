@@ -19,7 +19,7 @@ interface OrganizerDetail {
     _id: string
     name: string
     date: string
-    location: string
+    location: string | { city: string }
     status: string
   }>
 }

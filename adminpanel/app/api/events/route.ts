@@ -93,15 +93,15 @@ export async function POST(request: NextRequest) {
       ...eventData,
       category: eventData.category || null,
       subCategories: eventData.subCategories && Array.isArray(eventData.subCategories)
-        ? eventData.subCategories.filter(sub => sub && sub.trim() !== '')
+        ? eventData.subCategories.filter((sub: any) => sub && sub.trim() !== '')
         : [],
       languages: eventData.languages && Array.isArray(eventData.languages) 
-        ? eventData.languages.filter(lang => lang && lang.trim() !== '') 
+        ? eventData.languages.filter((lang: any) => lang && lang.trim() !== '') 
         : eventData.language 
         ? [eventData.language] 
         : [],
       scannerStaff: eventData.scannerStaff && Array.isArray(eventData.scannerStaff)
-        ? eventData.scannerStaff.filter(staff => staff && staff.name && staff.email)
+        ? eventData.scannerStaff.filter((staff: any) => staff && staff.name && staff.email)
         : [],
       description: eventData.description || null,
       terms: eventData.terms || null,

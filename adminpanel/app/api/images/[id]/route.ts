@@ -45,7 +45,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       buffer = Buffer.from(imageData, 'base64');
     }
 
-    return new NextResponse(buffer, {
+    return new NextResponse(buffer as any, {
       headers: {
         'Content-Type': mimeType,
         'Cache-Control': 'public, max-age=31536000, immutable',

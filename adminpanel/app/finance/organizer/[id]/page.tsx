@@ -7,8 +7,8 @@ import { ArrowLeft, Calendar, MapPin } from 'lucide-react'
 export default function OrganizerEventsPage() {
   const params = useParams()
   const router = useRouter()
-  const [events, setEvents] = useState([])
-  const [organizer, setOrganizer] = useState(null)
+  const [events, setEvents] = useState<any[]>([])
+  const [organizer, setOrganizer] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
