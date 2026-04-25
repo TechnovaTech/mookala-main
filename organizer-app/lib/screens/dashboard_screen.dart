@@ -55,7 +55,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (phone != null) {
       try {
         final response = await http.get(
-          Uri.parse('http://localhost:3000/api/events/user/$phone'),
+          Uri.parse('https://mookala.vercel.app/api/events/user/$phone'),
           headers: {'Content-Type': 'application/json'},
         );
         

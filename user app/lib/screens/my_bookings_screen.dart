@@ -1004,7 +1004,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with TickerProvider
       final eventTitle = booking['eventTitle'];
       if (eventTitle != null) {
         final response = await http.get(
-          Uri.parse('http://localhost:3000/api/events'),
+          Uri.parse('https://mookala.vercel.app/api/events'),
           headers: {'Content-Type': 'application/json'},
         );
         

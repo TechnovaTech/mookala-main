@@ -42,7 +42,7 @@ class _BookingScreenState extends State<BookingScreen> {
   Future<void> _fetchPaymentConfig() async {
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:3000/api/payment/config'),
+        Uri.parse('https://mookala.vercel.app/api/payment/config'),
         headers: {'Content-Type': 'application/json'},
       );
       

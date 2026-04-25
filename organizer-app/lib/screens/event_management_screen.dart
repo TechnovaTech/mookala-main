@@ -72,7 +72,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   Future<void> _loadVenues() async {
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:3000/api/venues'),
+        Uri.parse('https://mookala.vercel.app/api/venues'),
         headers: {'Content-Type': 'application/json'},
       );
       
@@ -112,7 +112,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   Future<void> _loadArtists() async {
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:3000/api/artists'),
+        Uri.parse('https://mookala.vercel.app/api/artists'),
         headers: {'Content-Type': 'application/json'},
       );
       

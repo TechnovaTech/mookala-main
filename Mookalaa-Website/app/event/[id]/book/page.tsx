@@ -50,7 +50,7 @@ export default function BookingPage({ params }: BookingPageProps) {
   const loadVenueData = async (venueName: string) => {
     if (!venueName) return
     try {
-      const response = await fetch(`http://localhost:3000/api/venues?name=${encodeURIComponent(venueName)}`)
+      const response = await fetch(`https://mookala.vercel.app/api/venues?name=${encodeURIComponent(venueName)}`)
       const data = await response.json()
       if (data.success && data.venues?.length > 0) {
         setVenueData(data.venues[0])
@@ -62,7 +62,7 @@ export default function BookingPage({ params }: BookingPageProps) {
 
   const fetchPaymentConfig = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/payment/config')
+      const response = await fetch('https://mookala.vercel.app/api/payment/config')
       const data = await response.json()
       if (data.success) {
         setRazorpayKeyId(data.razorpayKeyId || '')

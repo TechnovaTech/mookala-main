@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const ADMIN_API_URL = process.env.NEXT_PUBLIC_ADMIN_API_URL || 'http://localhost:3000/api';
+const ADMIN_API_URL = process.env.NEXT_PUBLIC_ADMIN_API_URL || 'https://mookala.vercel.app/api';
 
 export async function GET() {
   try {

@@ -31,7 +31,7 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
     if (widget.eventData['location'] != null && widget.eventData['location']['name'] != null) {
       try {
         final response = await http.get(
-          Uri.parse('http://localhost:3000/api/venues?name=${Uri.encodeComponent(widget.eventData['location']['name'])}'),
+          Uri.parse('https://mookala.vercel.app/api/venues?name=${Uri.encodeComponent(widget.eventData['location']['name'])}'),
         );
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
@@ -398,7 +398,7 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
       print('Sending event data: $completeEventData');
 
       final response = await http.post(
-        Uri.parse('http://localhost:3000/api/events'),
+        Uri.parse('https://mookala.vercel.app/api/events'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(completeEventData),
       );

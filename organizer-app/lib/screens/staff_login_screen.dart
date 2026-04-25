@@ -27,7 +27,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:3000/api/staff/login'),
+        Uri.parse('https://mookala.vercel.app/api/staff/login'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'email': _emailController.text,

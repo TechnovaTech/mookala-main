@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const ADMIN_API_URL = 'http://localhost:3000/api'
+const ADMIN_API_URL = 'https://mookala.vercel.app/api'
 
 export async function POST(request: NextRequest) {
   try {

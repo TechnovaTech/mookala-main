@@ -44,7 +44,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
   Future<void> _loadVenues() async {
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:3000/api/venues'),
+        Uri.parse('https://mookala.vercel.app/api/venues'),
         headers: {'Content-Type': 'application/json'},
       );
       

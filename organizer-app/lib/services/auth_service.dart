@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
-  static const String baseUrl = 'http://localhost:3000/api';
+  static const String baseUrl = 'https://mookala.vercel.app/api';
   
   static Future<Map<String, dynamic>> checkUser(String phone) async {
     try {

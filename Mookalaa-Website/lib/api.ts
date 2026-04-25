@@ -1,4 +1,4 @@
-const ADMIN_API_URL = process.env.NEXT_PUBLIC_ADMIN_API_URL || 'http://localhost:3000/api';
+const ADMIN_API_URL = process.env.NEXT_PUBLIC_ADMIN_API_URL || 'https://mookala.vercel.app/api';
 
 // Generate realistic demo data
 function generateEventData(adminEvent: any) {
@@ -25,9 +25,9 @@ function transformEvent(adminEvent: any) {
       return `data:image/jpeg;base64,${event.media.bannerImage}`;
     }
     // Check for regular image URLs
-    if (event.bannerImage) return event.bannerImage.startsWith('http') ? event.bannerImage : `http://localhost:3000${event.bannerImage}`;
-    if (event.image) return event.image.startsWith('http') ? event.image : `http://localhost:3000${event.image}`;
-    if (event.imageUrl) return event.imageUrl.startsWith('http') ? event.imageUrl : `http://localhost:3000${event.imageUrl}`;
+    if (event.bannerImage) return event.bannerImage.startsWith('http') ? event.bannerImage : `https://mookala.vercel.app${event.bannerImage}`;
+    if (event.image) return event.image.startsWith('http') ? event.image : `https://mookala.vercel.app${event.image}`;
+    if (event.imageUrl) return event.imageUrl.startsWith('http') ? event.imageUrl : `https://mookala.vercel.app${event.imageUrl}`;
     return '/placeholder.svg';
   };
 

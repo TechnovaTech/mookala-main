@@ -34,7 +34,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   Future<void> _loadScanStats() async {
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:3000/api/events/${widget.eventData['_id']}/scan-stats'),
+        Uri.parse('https://mookala.vercel.app/api/events/${widget.eventData['_id']}/scan-stats'),
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);

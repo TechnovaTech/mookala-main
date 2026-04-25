@@ -35,7 +35,7 @@ export default function ProfileSetupPage() {
   
   const fetchProfile = async (phoneNumber: string) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/user/profile?phone=${phoneNumber}`)
+      const response = await fetch(`https://mookala.vercel.app/api/user/profile?phone=${phoneNumber}`)
       const data = await response.json()
       
       if (data.success && data.user) {

@@ -55,7 +55,7 @@ class _CategoryEventsScreenState extends State<CategoryEventsScreen> {
               .toList();
         });
       } else {
-        final response = await http.get(Uri.parse('http://localhost:3000/api/categories'));
+        final response = await http.get(Uri.parse('https://mookala.vercel.app/api/categories'));
         if (response.statusCode == 200) {
           final List<dynamic> categories = json.decode(response.body);
           final category = categories.firstWhere(

@@ -33,7 +33,7 @@ class _EventAnalyticsScreenState extends State<EventAnalyticsScreen> {
       if (userPhone != null) {
         // Fetch bookings for this event
         final response = await http.get(
-          Uri.parse('http://localhost:3000/api/bookings?organizerPhone=$userPhone&eventTitle=${Uri.encodeComponent(widget.eventTitle)}'),
+          Uri.parse('https://mookala.vercel.app/api/bookings?organizerPhone=$userPhone&eventTitle=${Uri.encodeComponent(widget.eventTitle)}'),
           headers: {'Content-Type': 'application/json'},
         );
         

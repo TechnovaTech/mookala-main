@@ -132,7 +132,7 @@ static Future<Map<String, dynamic>> createEvent({
 ## Testing
 
 1. **Admin Panel:**
-   - Go to http://localhost:3000/categories
+   - Go to https://mookala.vercel.app/categories
    - Add categories (e.g., "Music Concert", "Theatre", "Dance")
 
 2. **Organizer App:**
