@@ -54,7 +54,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   try {
     const { db } = await connectToDatabase();
     const eventId = params.id;
-    const { status } = await request.json();
+    const { status, tickets } = await request.json();
 
     if (!ObjectId.isValid(eventId)) {
       return NextResponse.json({ error: 'Invalid event ID' }, { status: 400 });
@@ -62,26 +62,40 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
     // Get the event to check if it has artists
     const event = await db.collection('events').findOne({ _id: new ObjectId(eventId) });
-    
+
     if (!event) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
-    let updateData: any = { 
-      status,
-      updatedAt: new Date()
-    };
+    let updateData: any = { updatedAt: new Date() };
 
-    // If admin is approving the event
-    if (status === 'approved') {
-      // Check if event has no artists selected
-      const hasArtists = event.artists && Array.isArray(event.artists) && event.artists.length > 0;
-      
-      if (!hasArtists) {
-        // No artists selected - directly set as accepted (organized)
-        updateData.artistResponse = 'accepted';
+    // Organizer updating the ticket list on an existing event
+    if (tickets !== undefined) {
+      if (!Array.isArray(tickets)) {
+        return NextResponse.json({ error: 'tickets must be an array' }, { status: 400 });
       }
-      // If artists are selected, keep current flow (wait for artist acceptance)
+      updateData.tickets = tickets;
+    }
+
+    if (status !== undefined) {
+      updateData.status = status;
+
+      // If admin is approving the event
+      if (status === 'approved') {
+        // Check if event has no artists selected
+        const hasArtists = event.artists && Array.isArray(event.artists) && event.artists.length > 0;
+
+        if (!hasArtists) {
+          // No artists selected - directly set as accepted (organized)
+          updateData.artistResponse = 'accepted';
+        }
+        // If artists are selected, keep current flow (wait for artist acceptance)
+      }
+    }
+
+    // Nothing but the timestamp — reject rather than silently touching the event
+    if (Object.keys(updateData).length === 1) {
+      return NextResponse.json({ error: 'No updatable fields provided' }, { status: 400 });
     }
 
     const result = await db.collection('events').updateOne(
@@ -93,15 +107,17 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
-    const message = status === 'approved' && !updateData.artistResponse 
+    const message = status === 'approved' && !updateData.artistResponse
       ? 'Event approved successfully. Waiting for artist acceptance.'
       : status === 'approved' && updateData.artistResponse === 'accepted'
       ? 'Event approved and organized successfully (no artist required).'
-      : 'Event status updated successfully';
+      : status !== undefined
+      ? 'Event status updated successfully'
+      : 'Tickets updated successfully';
 
-    return NextResponse.json({ message });
+    return NextResponse.json({ success: true, message });
   } catch (error) {
-    console.error('Error updating event status:', error);
-    return NextResponse.json({ error: 'Failed to update event status' }, { status: 500 });
+    console.error('Error updating event:', error);
+    return NextResponse.json({ error: 'Failed to update event' }, { status: 500 });
   }
 }

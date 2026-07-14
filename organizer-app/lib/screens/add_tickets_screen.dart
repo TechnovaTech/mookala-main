@@ -21,17 +21,41 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
   Map<String, dynamic>? _venueData;
   bool _loadingVenue = true;
 
+  /// Non-null when we were opened for an event that already exists in the DB
+  /// (from the dashboard), rather than as the last step of the create wizard.
+  String? get _existingEventId {
+    final id = widget.eventData['_id'];
+    if (id == null) return null;
+    final value = id.toString().trim();
+    return value.isEmpty ? null : value;
+  }
+
+  bool get _isExistingEvent => _existingEventId != null;
+
   @override
   void initState() {
     super.initState();
+    // Start from the tickets the event already has, so saving doesn't wipe them.
+    final existing = widget.eventData['tickets'];
+    if (existing is List) {
+      _tickets = existing
+          .whereType<Map>()
+          .map((ticket) => Map<String, dynamic>.from(ticket))
+          .toList();
+    }
     _fetchVenueDetails();
   }
 
   Future<void> _fetchVenueDetails() async {
-    if (widget.eventData['location'] != null && widget.eventData['location']['name'] != null) {
+    // location is a map on a real event, but older callers passed a bare city
+    // string — indexing that with 'name' throws, so check the type first.
+    final location = widget.eventData['location'];
+    final venueName = location is Map ? location['name'] : null;
+
+    if (venueName != null && venueName.toString().trim().isNotEmpty) {
       try {
         final response = await http.get(
-          Uri.parse('https://mookala.vercel.app/api/venues?name=${Uri.encodeComponent(widget.eventData['location']['name'])}'),
+          Uri.parse('https://mookala.vercel.app/api/venues?name=${Uri.encodeComponent(venueName.toString())}'),
         );
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
@@ -89,15 +113,19 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const DashboardScreen()),
-            );
+            if (_isExistingEvent) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const DashboardScreen()),
+              );
+            }
           },
         ),
-        title: const Text(
-          'Add Tickets',
-          style: TextStyle(
+        title: Text(
+          _isExistingEvent ? 'Manage Tickets' : 'Add Tickets',
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -109,9 +137,9 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Add Tickets',
-              style: TextStyle(
+            Text(
+              _isExistingEvent ? 'Manage Tickets' : 'Add Tickets',
+              style: const TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
@@ -119,7 +147,9 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Adding tickets to your event increases its visibility in AllEvents marketing campaigns.',
+              _isExistingEvent
+                  ? 'Add or update ticket categories for "${widget.eventData['name'] ?? 'this event'}". Saving updates this event — it will not create a new one.'
+                  : 'Adding tickets to your event increases its visibility in AllEvents marketing campaigns.',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey.shade600,
@@ -277,11 +307,14 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
             
             const SizedBox(height: 40),
             
-            // Create Event Button
+            // Saves tickets onto an existing event, or creates a new one when
+            // this is the final step of the create-event wizard.
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _isLoading ? null : _createCompleteEvent,
+                onPressed: _isLoading
+                    ? null
+                    : (_isExistingEvent ? _saveTicketsToExistingEvent : _createCompleteEvent),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF001F3F),
                   foregroundColor: Colors.white,
@@ -290,9 +323,9 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
                 ),
                 child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        'Create Event',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    : Text(
+                        _isExistingEvent ? 'Save Tickets' : 'Create Event',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                       ),
               ),
             ),
@@ -335,6 +368,44 @@ class _AddTicketsScreenState extends State<AddTicketsScreen> {
         ),
       ],
     );
+  }
+
+  /// Save tickets onto an event that already exists. Must never POST /api/events,
+  /// or managing tickets would create a duplicate event.
+  Future<void> _saveTicketsToExistingEvent() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final response = await http.patch(
+        Uri.parse('https://mookala.vercel.app/api/events/$_existingEventId'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'tickets': _tickets}),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tickets saved successfully!')),
+        );
+        Navigator.pop(context, true);
+      } else {
+        throw Exception('Server returned ${response.statusCode}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error saving tickets: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _createCompleteEvent() async {

@@ -582,17 +582,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     );
                   }),
-                  _buildActionButton(Icons.confirmation_number, 'Issue Ticket', () {
-                  Navigator.push(
+                  _buildActionButton(Icons.confirmation_number, 'Issue Ticket', () async {
+                  // Pass the real event (with _id and the location object) so the
+                  // ticket screen updates this event instead of creating a new one.
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => AddTicketsScreen(
-                      eventData: {
-                        'name': title,
-                        'dateTime': dateTime,
-                        'location': location,
-                      },
+                      eventData: eventData,
                     )),
                   );
+                  _fetchUserEvents();
                 }),
                   _buildActionButton(Icons.edit, 'Edit', () async {
                     final result = await Navigator.push(
