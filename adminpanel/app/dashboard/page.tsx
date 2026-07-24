@@ -3,7 +3,8 @@ import { useState } from 'react'
 import Sidebar from '../../components/Sidebar'
 import DashboardCards from '../../components/DashboardCards'
 import RecentActivity from '../../components/RecentActivity'
-import { Bell, Search, Filter, ChevronDown, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
+import RevenueChart from '../../components/RevenueChart'
+import { Bell, Search, ChevronDown, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
 
 export default function Dashboard() {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -32,9 +33,6 @@ export default function Dashboard() {
               
               <button className="relative p-2 text-slate-gray hover:text-deep-blue hover:bg-teal/10 rounded-lg transition-all">
                 <Bell size={20} />
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald text-white text-xs rounded-full flex items-center justify-center animate-pulse">
-                  3
-                </span>
               </button>
               
               <div className="relative">
@@ -82,27 +80,9 @@ export default function Dashboard() {
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
             <div className="lg:col-span-2">
-              <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-gray-900">Revenue Analytics</h2>
-                  <button className="flex items-center px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
-                    <Filter size={14} className="mr-1" />
-                    Filter
-                  </button>
-                </div>
-                
-                <div className="h-64 bg-gradient-to-br from-teal/10 to-emerald/10 rounded-lg flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-emerald/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <div className="w-8 h-8 bg-emerald rounded-full"></div>
-                    </div>
-                    <p className="text-gray-600 font-medium">Chart Component</p>
-                    <p className="text-gray-500 text-sm">Revenue trends will appear here</p>
-                  </div>
-                </div>
-              </div>
+              <RevenueChart />
             </div>
-            
+
             <div className="lg:col-span-1">
               <RecentActivity />
             </div>
