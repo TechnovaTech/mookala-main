@@ -266,7 +266,20 @@ class AuthService {
         Uri.parse('$baseUrl/artist/events?phone=$phone'),
         headers: {'Content-Type': 'application/json'},
       );
-      
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'error': 'Network error: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getArtistFollowers(String phone) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/artist/followers?phone=$phone'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
       return jsonDecode(response.body);
     } catch (e) {
       return {'error': 'Network error: $e'};

@@ -263,6 +263,73 @@ class ApiService {
     }
   }
 
+  // Real artist list (used by jatra registration + event creation)
+  static Future<List<Map<String, dynamic>>> getArtistsList() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/artists'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['artists'] != null) {
+          return List<Map<String, dynamic>>.from(data['artists']);
+        }
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // Register a Jatra to the backend
+  static Future<Map<String, dynamic>> registerJatra({
+    required String name,
+    required String venue,
+    required String date,
+    required String time,
+    String? description,
+    List<String>? artists,
+    List<String>? committeeMembers,
+  }) async {
+    try {
+      final phone = await getUserPhone();
+      if (phone == null) {
+        return {'success': false, 'error': 'User not logged in'};
+      }
+      final response = await http.post(
+        Uri.parse('$baseUrl/jatra'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': name,
+          'venue': venue,
+          'date': date,
+          'time': time,
+          'description': description ?? '',
+          'artists': artists ?? [],
+          'committeeMembers': committeeMembers ?? [],
+          'organizerPhone': phone,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  // Delete an event
+  static Future<Map<String, dynamic>> deleteEvent(String eventId) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/events/$eventId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
   // ===== Ticket QR verification (real backend check-in for gate staff) =====
   static Future<Map<String, dynamic>> verifyTicket({
     String? bookingId,

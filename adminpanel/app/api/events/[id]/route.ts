@@ -50,6 +50,28 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const { db } = await connectToDatabase();
+    const eventId = params.id;
+
+    if (!ObjectId.isValid(eventId)) {
+      return NextResponse.json({ error: 'Invalid event ID' }, { status: 400 });
+    }
+
+    const result = await db.collection('events').deleteOne({ _id: new ObjectId(eventId) });
+
+    if (result.deletedCount === 0) {
+      return NextResponse.json({ success: false, error: 'Event not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, message: 'Event deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting event:', error);
+    return NextResponse.json({ success: false, error: 'Failed to delete event' }, { status: 500 });
+  }
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const { db } = await connectToDatabase();

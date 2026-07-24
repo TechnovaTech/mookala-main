@@ -72,8 +72,10 @@ class _EventAnalyticsScreenState extends State<EventAnalyticsScreen> {
           totalRevenue += ((booking['totalPrice'] as num? ?? 0).toDouble());
         }
         
-        // Count check-ins (assuming checked-in status exists)
-        if (booking['status'] == 'checked-in') {
+        // Count check-ins (set by the gate QR scanner: checkedIn=true, status='attended')
+        if (booking['checkedIn'] == true ||
+            booking['status'] == 'attended' ||
+            booking['status'] == 'checked-in') {
           checkIns++;
         }
       }

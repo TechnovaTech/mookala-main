@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'qr_scanner_screen.dart';
 import 'event_management_screen.dart';
+import '../services/api_service.dart';
 
 class JatraRegistrationScreen extends StatefulWidget {
   const JatraRegistrationScreen({super.key});
@@ -21,21 +22,55 @@ class _JatraRegistrationScreenState extends State<JatraRegistrationScreen> {
   List<String> _selectedArtists = [];
   List<String> _selectedCommitteeMembers = [];
   
-  final List<String> _availableArtists = [
-    'Rajesh Kumar - Singer',
-    'Priya Sharma - Dancer',
-    'Amit Patel - Musician',
-    'Kavita Singh - Folk Artist',
-    'Ravi Gupta - Instrumentalist'
-  ];
-  
-  final List<String> _availableCommitteeMembers = [
-    'Suresh Mehta - President',
-    'Anjali Desai - Secretary',
-    'Vikram Shah - Treasurer',
-    'Meera Joshi - Cultural Head',
-    'Kiran Patel - Event Coordinator'
-  ];
+  List<String> _availableArtists = [];
+  bool _loadingArtists = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadArtists();
+  }
+
+  Future<void> _loadArtists() async {
+    final artists = await ApiService.getArtistsList();
+    if (!mounted) return;
+    setState(() {
+      _availableArtists = artists
+          .map((a) => (a['name'] ?? '').toString())
+          .where((n) => n.isNotEmpty)
+          .toList();
+      _loadingArtists = false;
+    });
+  }
+
+  void _addCommitteeMemberDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Committee Member'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Name - Role (e.g. Suresh - President)',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              final text = controller.text.trim();
+              if (text.isNotEmpty) {
+                setState(() => _selectedCommitteeMembers.add(text));
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _selectDate() async {
     final date = await showDatePicker(
@@ -99,39 +134,62 @@ class _JatraRegistrationScreenState extends State<JatraRegistrationScreen> {
     );
   }
 
-  void _submitRegistration() {
-    if (_formKey.currentState!.validate()) {
-      if (_selectedArtists.isEmpty || _selectedCommitteeMembers.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select artists and committee members')),
-        );
-        return;
-      }
-      
-      // Show success dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          icon: const Icon(Icons.check_circle, color: Colors.green, size: 48),
-          title: const Text('Success!'),
-          content: const Text('Jatra registered successfully!\nYou will be notified about approval status.'),
-          actions: [
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context); // Close dialog
-                Navigator.pop(context); // Go back to previous screen
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF001F3F),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
+  Future<void> _submitRegistration() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedArtists.isEmpty || _selectedCommitteeMembers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select artists and add committee members')),
       );
+      return;
     }
+
+    // Loading spinner
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final result = await ApiService.registerJatra(
+      name: _jatraNameController.text.trim(),
+      venue: _venueController.text.trim(),
+      date: _dateController.text.trim(),
+      time: _timeController.text.trim(),
+      description: _descriptionController.text.trim(),
+      artists: _selectedArtists,
+      committeeMembers: _selectedCommitteeMembers,
+    );
+
+    if (!mounted) return;
+    Navigator.pop(context); // close loading spinner
+    final ok = result['success'] == true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        icon: Icon(ok ? Icons.check_circle : Icons.error,
+            color: ok ? Colors.green : Colors.red, size: 48),
+        title: Text(ok ? 'Success!' : 'Failed'),
+        content: Text(ok
+            ? (result['message']?.toString() ??
+                'Jatra registered successfully!\nYou will be notified about approval status.')
+            : (result['error']?.toString() ?? 'Could not register jatra')),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context); // close result dialog
+              if (ok) Navigator.pop(context); // go back
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF001F3F),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -232,7 +290,9 @@ class _JatraRegistrationScreenState extends State<JatraRegistrationScreen> {
               ),
               const SizedBox(height: 8),
               GestureDetector(
-                onTap: () => _showSelectionDialog('Artists', _availableArtists, _selectedArtists),
+                onTap: _loadingArtists
+                    ? null
+                    : () => _showSelectionDialog('Artists', _availableArtists, _selectedArtists),
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -242,9 +302,11 @@ class _JatraRegistrationScreenState extends State<JatraRegistrationScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    _selectedArtists.isEmpty 
-                        ? 'Tap to select artists' 
-                        : '${_selectedArtists.length} artists selected',
+                    _loadingArtists
+                        ? 'Loading artists...'
+                        : _selectedArtists.isEmpty
+                            ? 'Tap to select artists'
+                            : '${_selectedArtists.length} artists selected',
                     style: TextStyle(
                       color: _selectedArtists.isEmpty ? Colors.grey.shade600 : Colors.black,
                     ),
@@ -270,7 +332,7 @@ class _JatraRegistrationScreenState extends State<JatraRegistrationScreen> {
               ),
               const SizedBox(height: 8),
               GestureDetector(
-                onTap: () => _showSelectionDialog('Committee Members', _availableCommitteeMembers, _selectedCommitteeMembers),
+                onTap: _addCommitteeMemberDialog,
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -280,8 +342,8 @@ class _JatraRegistrationScreenState extends State<JatraRegistrationScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    _selectedCommitteeMembers.isEmpty 
-                        ? 'Tap to select committee members' 
+                    _selectedCommitteeMembers.isEmpty
+                        ? 'Tap to add committee members'
                         : '${_selectedCommitteeMembers.length} members selected',
                     style: TextStyle(
                       color: _selectedCommitteeMembers.isEmpty ? Colors.grey.shade600 : Colors.black,

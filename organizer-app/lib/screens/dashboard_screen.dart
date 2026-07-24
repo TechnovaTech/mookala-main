@@ -9,6 +9,7 @@ import 'add_tickets_screen.dart';
 import 'user_profile_screen.dart';
 import 'kyc_verification_screen.dart';
 import '../services/auth_service.dart';
+import '../services/api_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
@@ -697,11 +698,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              _fetchUserEvents();
+            onPressed: () async {
+              final events = _getFilteredEvents();
+              final id = (index >= 0 && index < events.length)
+                  ? events[index]['_id']?.toString()
+                  : null;
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Event deleted successfully')),
+              if (id == null || id.isEmpty) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  const SnackBar(content: Text('Cannot delete: missing event id')),
+                );
+                return;
+              }
+              final result = await ApiService.deleteEvent(id);
+              if (!mounted) return;
+              final ok = result['success'] == true;
+              if (ok) await _fetchUserEvents();
+              if (!mounted) return;
+              ScaffoldMessenger.of(this.context).showSnackBar(
+                SnackBar(
+                  content: Text(ok
+                      ? 'Event deleted successfully'
+                      : (result['error']?.toString() ?? 'Failed to delete event')),
+                  backgroundColor: ok ? Colors.green : Colors.red,
+                ),
               );
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
