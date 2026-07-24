@@ -262,4 +262,26 @@ class ApiService {
       return {'success': false, 'error': 'Network error'};
     }
   }
+
+  // ===== Ticket QR verification (real backend check-in for gate staff) =====
+  static Future<Map<String, dynamic>> verifyTicket({
+    String? bookingId,
+    String? qrData,
+    bool checkOnly = false,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/bookings/verify'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          if (bookingId != null) 'bookingId': bookingId,
+          if (qrData != null) 'qrData': qrData,
+          'checkOnly': checkOnly,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
 }
