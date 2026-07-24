@@ -552,22 +552,27 @@ class _UserProfileMenuScreenState extends State<UserProfileMenuScreen> {
   }
 
   void _logout() {
+    final screenContext = context; // stable context for the screen (not the dialog)
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Logout'),
         content: const Text('Are you sure you want to logout?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
+            onPressed: () async {
+              Navigator.pop(dialogContext); // close dialog
+              await ApiService.clearUserData(); // clear saved session
+              if (!mounted) return;
+              ScaffoldMessenger.of(screenContext).showSnackBar(
                 const SnackBar(content: Text('Logged out successfully')),
               );
+              // Return to login and clear the whole navigation stack
+              Navigator.of(screenContext).pushNamedAndRemoveUntil('/login', (route) => false);
             },
             child: const Text('Logout'),
           ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'dart:convert';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import '../services/api_service.dart';
 
 class QRScannerScreen extends StatefulWidget {
   const QRScannerScreen({super.key});
@@ -9,37 +10,56 @@ class QRScannerScreen extends StatefulWidget {
 }
 
 class _QRScannerScreenState extends State<QRScannerScreen> {
-  final TextEditingController _qrController = TextEditingController();
-  Map<String, dynamic>? scannedTicket;
-  bool isValidTicket = false;
+  static const navy = Color(0xFF001F3F);
 
-  void _processQRCode(String qrData) {
-    try {
-      final ticketData = jsonDecode(qrData);
-      setState(() {
-        scannedTicket = ticketData;
-        isValidTicket = _validateTicket(ticketData);
-      });
-    } catch (e) {
-      setState(() {
-        scannedTicket = null;
-        isValidTicket = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invalid QR Code format'),
-          backgroundColor: Colors.red,
-        ),
-      );
+  final TextEditingController _qrController = TextEditingController();
+  final MobileScannerController _scannerController = MobileScannerController();
+
+  bool _processing = false;
+  bool _cameraActive = true;
+  Map<String, dynamic>? _result; // backend verify response
+
+  bool get _isValid => _result != null && _result!['valid'] == true;
+
+  Future<void> _handleRaw(String raw) async {
+    if (_processing) return;
+    setState(() => _processing = true);
+    await _scannerController.stop();
+
+    final trimmed = raw.trim();
+    final Map<String, dynamic> response;
+    if (trimmed.startsWith('{')) {
+      response = await ApiService.verifyTicket(qrData: trimmed);
+    } else {
+      response = await ApiService.verifyTicket(bookingId: trimmed);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _result = response;
+      _cameraActive = false;
+      _processing = false;
+    });
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_processing) return;
+    for (final barcode in capture.barcodes) {
+      final raw = barcode.rawValue;
+      if (raw != null && raw.isNotEmpty) {
+        _handleRaw(raw);
+        break;
+      }
     }
   }
 
-  bool _validateTicket(Map<String, dynamic> ticketData) {
-    // Basic validation - check required fields
-    return ticketData.containsKey('bookingId') &&
-           ticketData.containsKey('eventTitle') &&
-           ticketData.containsKey('status') &&
-           ticketData['status'] == 'confirmed';
+  Future<void> _scanAgain() async {
+    setState(() {
+      _result = null;
+      _cameraActive = true;
+      _qrController.clear();
+    });
+    await _scannerController.start();
   }
 
   @override
@@ -47,230 +67,118 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
+        backgroundColor: navy,
+        foregroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'QR Scanner',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
+        title: const Text('QR Scanner', style: TextStyle(fontWeight: FontWeight.bold)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.flash_on),
+            onPressed: () => _scannerController.toggleTorch(),
           ),
-        ),
+          IconButton(
+            icon: const Icon(Icons.cameraswitch),
+            onPressed: () => _scannerController.switchCamera(),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Scanner Section
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  const Icon(
-                    Icons.qr_code_scanner,
-                    size: 80,
-                    color: Color(0xFF001F3F),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Scan Ticket QR Code',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF001F3F),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Paste the QR code data below to verify ticket',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: _qrController,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      labelText: 'QR Code Data',
-                      hintText: 'Paste QR code data here...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFF001F3F)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        if (_qrController.text.isNotEmpty) {
-                          _processQRCode(_qrController.text);
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF001F3F),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+            // Camera scanner
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                height: 280,
+                width: double.infinity,
+                color: Colors.black,
+                child: _cameraActive
+                    ? Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          MobileScanner(
+                            controller: _scannerController,
+                            onDetect: _onDetect,
+                          ),
+                          // Scan frame overlay
+                          Container(
+                            width: 200,
+                            height: 200,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.white, width: 3),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          if (_processing)
+                            const CircularProgressIndicator(color: Colors.white),
+                        ],
+                      )
+                    : Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.qr_code_2, color: Colors.white54, size: 60),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: _scanAgain,
+                              icon: const Icon(Icons.refresh, color: Colors.white),
+                              label: const Text('Scan Next Ticket',
+                                  style: TextStyle(color: Colors.white)),
+                            ),
+                          ],
                         ),
                       ),
-                      child: const Text(
-                        'Verify Ticket',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Point the camera at the ticket QR code',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+            ),
 
-            if (scannedTicket != null) ...[
+            // Result
+            if (_result != null) ...[
               const SizedBox(height: 20),
-              // Ticket Details
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: isValidTicket ? Colors.green.shade50 : Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isValidTicket ? Colors.green : Colors.red,
-                    width: 2,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          isValidTicket ? Icons.check_circle : Icons.error,
-                          color: isValidTicket ? Colors.green : Colors.red,
-                          size: 24,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          isValidTicket ? 'VALID TICKET' : 'INVALID TICKET',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: isValidTicket ? Colors.green : Colors.red,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildDetailRow('Event', scannedTicket!['eventTitle'] ?? 'N/A'),
-                    _buildDetailRow('Date', scannedTicket!['eventDate'] ?? 'N/A'),
-                    _buildDetailRow('Time', scannedTicket!['eventTime'] ?? 'N/A'),
-                    _buildDetailRow('Venue', scannedTicket!['venue'] ?? 'N/A'),
-                    _buildDetailRow('Booking ID', scannedTicket!['bookingId']?.toString().substring(0, 8) ?? 'N/A'),
-                    _buildDetailRow('Total Seats', scannedTicket!['totalSeats']?.toString() ?? 'N/A'),
-                    _buildDetailRow('Total Price', '₹${scannedTicket!['totalPrice'] ?? 'N/A'}'),
-                    _buildDetailRow('Status', scannedTicket!['status']?.toString().toUpperCase() ?? 'N/A'),
-                    
-                    if (scannedTicket!['tickets'] != null) ...[
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Ticket Details:',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...((scannedTicket!['tickets'] as List?) ?? []).map<Widget>((ticket) {
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade300),
-                          ),
-                          child: Text(
-                            '${ticket['category']} - Block ${ticket['block']}: ${ticket['block']}${ticket['fromSeat']}-${ticket['block']}${ticket['toSeat']} (${ticket['quantity']} seats) - ₹${ticket['totalPrice']}',
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        );
-                      }).toList(),
-                    ],
-                  ],
-                ),
-              ),
+              _buildResultCard(),
             ],
 
             const SizedBox(height: 20),
-            // Instructions
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.blue.shade200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'How to use:',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF001F3F),
+            // Manual fallback
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('Enter code manually',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: navy)),
+              children: [
+                TextField(
+                  controller: _qrController,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText: 'Paste QR data or booking ID...',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      if (_qrController.text.trim().isNotEmpty) {
+                        _handleRaw(_qrController.text);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: navy,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
+                    child: const Text('Verify Ticket',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '1. Ask the customer to show their ticket QR code',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '2. Copy the QR data from their ticket',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '3. Paste it in the field above and verify',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '4. Check if the ticket shows as VALID',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ),
@@ -278,7 +186,77 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
+  Widget _buildResultCard() {
+    final valid = _isValid;
+    final reason = _result?['reason']?.toString() ?? '';
+    final message = _result?['message']?.toString() ??
+        (valid ? 'Ticket verified' : 'Invalid ticket');
+    final booking = _result?['booking'] as Map<String, dynamic>?;
+
+    final Color color = valid ? Colors.green : Colors.red;
+    final String heading = valid
+        ? 'VALID TICKET'
+        : (reason == 'already_used'
+            ? 'ALREADY USED'
+            : reason == 'not_found'
+                ? 'NOT FOUND'
+                : reason == 'cancelled'
+                    ? 'CANCELLED'
+                    : 'INVALID TICKET');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: valid ? Colors.green.shade50 : Colors.red.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(valid ? Icons.check_circle : Icons.cancel, color: color, size: 26),
+              const SizedBox(width: 8),
+              Text(heading,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(message, style: TextStyle(fontSize: 14, color: Colors.grey.shade800)),
+          if (booking != null) ...[
+            const SizedBox(height: 16),
+            _row('Event', booking['eventTitle']?.toString() ?? 'N/A'),
+            _row('Date', booking['eventDate']?.toString() ?? 'N/A'),
+            _row('Time', booking['eventTime']?.toString() ?? 'N/A'),
+            _row('Venue', booking['venue']?.toString() ?? 'N/A'),
+            _row('Seats', booking['totalSeats']?.toString() ?? 'N/A'),
+            _row('Amount', '₹${booking['totalPrice'] ?? 'N/A'}'),
+            _row('Status', booking['status']?.toString().toUpperCase() ?? 'N/A'),
+            if (booking['checkedInAt'] != null)
+              _row('Checked in', booking['checkedInAt'].toString()),
+          ],
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _scanAgain,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Scan Next Ticket'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: navy,
+                side: const BorderSide(color: navy),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -286,20 +264,10 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
         children: [
           SizedBox(
             width: 100,
-            child: Text(
-              '$label:',
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
+            child: Text('$label:',
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 14),
-            ),
-          ),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 14))),
         ],
       ),
     );
@@ -308,6 +276,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   @override
   void dispose() {
     _qrController.dispose();
+    _scannerController.dispose();
     super.dispose();
   }
 }

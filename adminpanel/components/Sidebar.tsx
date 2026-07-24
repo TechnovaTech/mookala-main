@@ -17,7 +17,9 @@ import {
   ChevronUp,
   Building2,
   Image,
-  Tag
+  Tag,
+  Camera,
+  ClipboardList
 } from 'lucide-react'
 
 const menuItems = [
@@ -49,6 +51,16 @@ const menuItems = [
     ]
   },
   { icon: Tag, label: 'Category Manager', href: '/categories' },
+  {
+    icon: Camera,
+    label: 'Hire Manager',
+    href: '/professionals',
+    hasDropdown: true,
+    subItems: [
+      { icon: Camera, label: 'Professionals', href: '/professionals' },
+      { icon: ClipboardList, label: 'Hire Requests', href: '/hire-requests' }
+    ]
+  },
   { icon: Settings, label: 'Settings', href: '/settings' },
 ]
 
@@ -88,6 +100,14 @@ export default function Sidebar() {
     }
     else if (path === '/categories') setActiveItem('Category Manager')
     else if (path === '/venues' || path.startsWith('/venues/')) setActiveItem('Venue Manager')
+    else if (path === '/professionals') {
+      setActiveItem('Professionals')
+      setOpenDropdown('Hire Manager')
+    }
+    else if (path === '/hire-requests') {
+      setActiveItem('Hire Requests')
+      setOpenDropdown('Hire Manager')
+    }
     else if (path === '/settings') setActiveItem('Settings')
   }, [])
 

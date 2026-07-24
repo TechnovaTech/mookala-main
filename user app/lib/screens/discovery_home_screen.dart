@@ -6,9 +6,9 @@ import 'category_events_screen.dart';
 import 'organized_event_details_screen.dart';
 import 'artist_detail_screen.dart';
 import 'my_bookings_screen.dart';
+import 'hire_professionals_screen.dart';
 import '../services/api_service.dart';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -693,6 +693,323 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
   List<Map<String, dynamic>> artists = [];
   bool _isLoadingArtists = false;
 
+  // Scroll + quick-access support (NEW)
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _artistsSectionKey = GlobalKey();
+
+  final List<Map<String, dynamic>> _quickAccess = [
+    {'label': 'Discover Artists', 'icon': Icons.people_alt_outlined},
+    {'label': 'Bhakti', 'icon': Icons.self_improvement},
+    {'label': 'Customized Wishes/Greetings', 'icon': Icons.card_giftcard},
+    {'label': 'E-Learning', 'icon': Icons.school_outlined},
+  ];
+
+  // Featured event = first organized event, else first nearby event
+  Map<String, dynamic>? get _featuredEvent {
+    if (_organizedEvents.isNotEmpty) return _organizedEvents.first;
+    if (filteredEvents.isNotEmpty) return filteredEvents.first;
+    return null;
+  }
+
+  void _onQuickTap(String label) {
+    switch (label) {
+      case 'Discover Artists':
+        final ctx = _artistsSectionKey.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOut,
+          );
+        }
+        break;
+      case 'Bhakti':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CategoryEventsScreen(
+              categoryName: 'Bhakti',
+              categoryImage: 'assets/images/concert.jpg',
+              subcategories: null,
+            ),
+          ),
+        );
+        break;
+      default:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$label — coming soon'), duration: const Duration(seconds: 2)),
+        );
+    }
+  }
+
+  Widget _eventImage(String image) {
+    if (image.startsWith('http')) {
+      return Image.network(image, fit: BoxFit.cover,
+          errorBuilder: (c, e, s) => Image.asset('assets/images/concert.jpg', fit: BoxFit.cover));
+    } else if (image.startsWith('data:image')) {
+      return Image.memory(base64Decode(image.split(',')[1]), fit: BoxFit.cover,
+          errorBuilder: (c, e, s) => Image.asset('assets/images/concert.jpg', fit: BoxFit.cover));
+    }
+    return Image.asset(image.isNotEmpty ? image : 'assets/images/concert.jpg', fit: BoxFit.cover,
+        errorBuilder: (c, e, s) => Image.asset('assets/images/concert.jpg', fit: BoxFit.cover));
+  }
+
+  void _openEvent(Map<String, dynamic> event) {
+    if (_organizedEvents.contains(event)) {
+      Navigator.push(context, MaterialPageRoute(builder: (context) => OrganizedEventDetailsScreen(event: event)));
+    } else {
+      Navigator.push(context, MaterialPageRoute(builder: (context) => EventDetailsScreen(event: event)));
+    }
+  }
+
+  Widget _buildQuickAccessChips() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: SizedBox(
+        height: 44,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: _quickAccess.length,
+          itemBuilder: (context, index) {
+            final item = _quickAccess[index];
+            return Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: ActionChip(
+                avatar: Icon(item['icon'] as IconData, size: 18, color: const Color(0xFF001F3F)),
+                label: Text(item['label'] as String),
+                labelStyle: const TextStyle(color: Color(0xFF001F3F), fontWeight: FontWeight.w600, fontSize: 13),
+                backgroundColor: Colors.white,
+                side: BorderSide(color: Colors.grey.shade300),
+                onPressed: () => _onQuickTap(item['label'] as String),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeaturedSection() {
+    final event = _featuredEvent;
+    if (event == null) return const SizedBox.shrink();
+    final image = (event['image'] ?? '').toString();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      child: GestureDetector(
+        onTap: () => _openEvent(event),
+        child: Container(
+          height: 180,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: const Color(0xFF001F3F).withOpacity(0.25), blurRadius: 12, offset: const Offset(0, 6))],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _eventImage(image),
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Colors.black.withOpacity(0.75)],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(color: const Color(0xFFF5A623), borderRadius: BorderRadius.circular(20)),
+                    child: const Text('FEATURED', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 14,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        (event['title'] ?? 'Featured Event').toString(),
+                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.calendar_today, color: Colors.white70, size: 13),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              (event['date'] ?? 'TBA').toString(),
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text((event['price'] ?? '').toString(),
+                              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrendingSection() {
+    final List<Map<String, dynamic>> trending =
+        _organizedEvents.isNotEmpty ? _organizedEvents : filteredEvents;
+    if (trending.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 0, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.local_fire_department, color: Color(0xFFFF5722), size: 24),
+              SizedBox(width: 6),
+              Text('Trending Now', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 170,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: trending.length,
+              itemBuilder: (context, index) {
+                final event = trending[index];
+                final image = (event['image'] ?? '').toString();
+                return GestureDetector(
+                  onTap: () => _openEvent(event),
+                  child: Container(
+                    width: 250,
+                    margin: const EdgeInsets.only(right: 14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _eventImage(image),
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 12,
+                            right: 12,
+                            bottom: 10,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  (event['title'] ?? 'Event').toString(),
+                                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text((event['price'] ?? '').toString(),
+                                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHireSection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF001F3F), Color(0xFF01346B)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Hire a Professional',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            const Text('Book photographers & videographers for your event',
+                style: TextStyle(color: Colors.white70, fontSize: 13)),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(child: _hireButton(Icons.camera_alt, 'Photographer')),
+                const SizedBox(width: 12),
+                Expanded(child: _hireButton(Icons.videocam, 'Videographer')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _hireButton(IconData icon, String label) {
+    return ElevatedButton.icon(
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => HireProfessionalsScreen(
+              type: label == 'Videographer' ? 'videographer' : 'photographer',
+            ),
+          ),
+        );
+      },
+      icon: Icon(icon, size: 18),
+      label: Text(label, style: const TextStyle(fontSize: 13)),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF001F3F),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        elevation: 0,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -705,13 +1022,17 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Discovery & Home', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
             Row(
-              children: [
-                Icon(Icons.location_on, color: Colors.white70, size: 14),
-                const SizedBox(width: 4),
-                const Text('Mumbai, India', style: TextStyle(color: Colors.white70, fontSize: 14)),
+              children: const [
+                Icon(Icons.location_on, color: Color(0xFF2ECC71), size: 18),
+                SizedBox(width: 4),
+                Text('Location', style: TextStyle(color: Color(0xFF2ECC71), fontSize: 18, fontWeight: FontWeight.bold)),
               ],
+            ),
+            const SizedBox(height: 2),
+            const Padding(
+              padding: EdgeInsets.only(left: 22),
+              child: Text('Mumbai, India', style: TextStyle(color: Colors.white70, fontSize: 13)),
             ),
           ],
         ),
@@ -787,11 +1108,18 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
           // Scrollable Content
           Expanded(
             child: SingleChildScrollView(
+              controller: _scrollController,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
             
-            // Banner Carousel
+            // Quick Access Chips (NEW - Discover Artists / Bhakti / Wishes / E-Learning)
+            _buildQuickAccessChips(),
+
+            // Featured Event hero card (NEW)
+            _buildFeaturedSection(),
+
+            // Banner Carousel (Home screen banner)
             if (_banners.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 20),
@@ -974,13 +1302,23 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
               ),
             ),
             
-            // Ads Section
+            // Trending Now (NEW)
+            _buildTrendingSection(),
+
+            // Hire Photographer / Videographer (NEW)
+            _buildHireSection(),
+
+            // Ads Section (Video / Sponsored Ads)
             if (_ads.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Text('Sponsored', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+                    ),
                     _isLoadingAds
                       ? const Center(child: CircularProgressIndicator())
                       : SizedBox(
@@ -1100,6 +1438,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
             
             // Artists
             Padding(
+              key: _artistsSectionKey,
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1857,6 +2196,7 @@ class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
     _bannerController.dispose();
     _categoryController.dispose();
     _adsController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 }

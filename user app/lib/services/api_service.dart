@@ -454,4 +454,83 @@ class ApiService {
       return {'hasConflict': false};
     }
   }
+
+  // ===== Hire Photographer / Videographer =====
+
+  static Future<List<Map<String, dynamic>>> getProfessionals({String? type}) async {
+    try {
+      String url = '$baseUrl/professionals';
+      if (type != null && type.isNotEmpty) {
+        url += '?type=$type';
+      }
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['professionals'] != null) {
+          return List<Map<String, dynamic>>.from(data['professionals']);
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching professionals: $e');
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>> createHireRequest({
+    required String professionalId,
+    required String professionalName,
+    required String type,
+    required String userPhone,
+    String? userName,
+    String? eventDate,
+    String? city,
+    String? message,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/hire-requests'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'professionalId': professionalId,
+          'professionalName': professionalName,
+          'type': type,
+          'userPhone': userPhone,
+          'userName': userName ?? '',
+          'eventDate': eventDate ?? '',
+          'city': city ?? '',
+          'message': message ?? '',
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  // ===== Ticket QR verification (real backend check-in) =====
+
+  static Future<Map<String, dynamic>> verifyTicket({
+    String? bookingId,
+    String? qrData,
+    bool checkOnly = false,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/bookings/verify'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          if (bookingId != null) 'bookingId': bookingId,
+          if (qrData != null) 'qrData': qrData,
+          'checkOnly': checkOnly,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
 }
