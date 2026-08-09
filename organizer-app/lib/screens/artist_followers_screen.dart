@@ -51,6 +51,19 @@ class _ArtistFollowersScreenState extends State<ArtistFollowersScreen> {
     final verifiedCount = _followers.where((f) => f['isVerified'] == true).length;
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
+      appBar: AppBar(
+        backgroundColor: navy,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text(
+          'Followers',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
       body: RefreshIndicator(
         onRefresh: _loadFollowers,
         child: _loading

@@ -4,6 +4,7 @@ import { EventCard } from "@/components/event-card"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { BackButton } from "@/components/back-button"
 import { Calendar, MapPin, Users, Heart, Share2, Clock, CheckCircle } from "lucide-react"
 import { formatDate, formatTime, addToCalendar, shareEvent } from "@/lib/utils-events"
 import Link from "next/link"
@@ -174,6 +175,7 @@ export default function EventDetailPage({ params }: EventDetailProps) {
             <div className="lg:col-span-2">
               {/* Title & Meta */}
               <div className="mb-8">
+                <BackButton variant="onDark" fallbackHref="/events" className="mb-4" />
                 <div className="flex flex-wrap gap-2 mb-4">
                   <Badge className="rounded-md" suppressHydrationWarning>{event.category}</Badge>
                   {event.isFree && (

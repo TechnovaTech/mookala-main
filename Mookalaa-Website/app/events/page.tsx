@@ -9,6 +9,7 @@ import { filterEvents, sortEvents } from "@/lib/utils-events"
 import type { FilterOptions } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { LayoutGrid, Map } from "lucide-react"
+import { BackButton } from "@/components/back-button"
 import { useLanguage } from "@/lib/language-context"
 
 export default function EventsPage() {
@@ -63,6 +64,7 @@ export default function EventsPage() {
       <div className="px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto" suppressHydrationWarning>
         {/* Header */}
         <div className="mb-8" suppressHydrationWarning>
+          <BackButton className="mb-4" />
           <h1 className="text-4xl font-bold mb-2" suppressHydrationWarning>{t("eventsPage.title")}</h1>
           <p className="text-muted-foreground" suppressHydrationWarning>{t("eventsPage.found")} {filteredAndSorted.length} {t("eventsPage.events")}</p>
         </div>

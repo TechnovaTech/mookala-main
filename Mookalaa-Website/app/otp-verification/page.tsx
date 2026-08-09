@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { Shield, ArrowRight } from "lucide-react"
+import { BackButton } from "@/components/back-button"
 import { useRouter, useSearchParams } from "next/navigation"
 
 export default function OTPVerificationPage() {
@@ -103,6 +104,7 @@ export default function OTPVerificationPage() {
   return (
     <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#f8fafc'}}>
       <div className="w-full max-w-md p-4">
+        <BackButton fallbackHref="/login" label="Change number" className="mb-4" />
         <Card className="p-8 shadow-xl border-0">
           <div className="text-center space-y-4 mb-8">
             <div className="w-24 h-24 mx-auto">

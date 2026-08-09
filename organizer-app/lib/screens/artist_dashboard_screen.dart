@@ -9,6 +9,32 @@ import 'kyc_verification_screen.dart';
 import 'user_profile_screen.dart';
 import '../services/auth_service.dart';
 
+/// These screens double as dashboard tabs (where the dashboard supplies the
+/// Scaffold) and as full pages opened from the dashboard. When opened as a
+/// page they carry no Scaffold of their own, so wrap them in one here to give
+/// the route a title bar with a working back button.
+Route<void> _pageRoute(String title, Widget child) {
+  return MaterialPageRoute(
+    builder: (context) => Scaffold(
+      backgroundColor: Colors.grey.shade50,
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF001F3F),
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      body: child,
+    ),
+  );
+}
+
 class ArtistDashboardScreen extends StatefulWidget {
   const ArtistDashboardScreen({super.key});
 
@@ -388,7 +414,7 @@ class DashboardHomeScreen extends StatelessWidget {
           GestureDetector(
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (context) => const ArtistTiersScreen()),
+              _pageRoute('Tiers', const ArtistTiersScreen()),
             ),
             child: Container(
               width: double.infinity,
@@ -448,12 +474,12 @@ class DashboardHomeScreen extends StatelessWidget {
         } else if (title == 'Booking Requests') {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const ArtistBookingsScreen()),
+            _pageRoute('Booking Requests', const ArtistBookingsScreen()),
           );
         } else if (title == 'Upcoming Events') {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const ArtistCalendarScreen()),
+            _pageRoute('Upcoming Events', const ArtistCalendarScreen()),
           );
         }
         onRefresh();

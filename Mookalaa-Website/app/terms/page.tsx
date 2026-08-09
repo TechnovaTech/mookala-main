@@ -1,11 +1,15 @@
 "use client"
 
 import { useLanguage } from "@/lib/language-context"
+import { BackButton } from "@/components/back-button"
 
 export default function TermsPage() {
   const { t } = useLanguage()
   return (
     <main className="min-h-screen pt-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <BackButton />
+      </div>
       {/* Hero Section */}
       <section className="bg-gradient-to-br from-amber-500/10 to-amber-600/10 border-b border-amber-500/20 py-20">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
