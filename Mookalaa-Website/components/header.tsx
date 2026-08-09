@@ -48,7 +48,7 @@ export function Header() {
       new window.google.translate.TranslateElement(
         {
           pageLanguage: 'en',
-          includedLanguages: 'bn,brx,doi,gu,hi,kn,ks,gom,mai,ml,mni,mr,ne,or,pa,sa,sat,sd,ta,te,ur',
+          includedLanguages: 'en,bn,brx,doi,gu,hi,kn,ks,gom,mai,ml,mni,mr,ne,or,pa,sa,sat,sd,ta,te,ur',
           layout: window.google.translate.TranslateElement.InlineLayout.DROPDOWN,
           multilanguagePage: true,
           autoDisplay: false
@@ -75,11 +75,25 @@ export function Header() {
             defaultOption.selected = true
             selectElement.insertBefore(defaultOption, selectElement.firstChild)
           }
-          
+
+          // Google omits the page language from the dropdown, so English never
+          // showed up alongside the Indian languages. Add it ourselves, right
+          // after the placeholder, if the widget did not provide it.
+          if (selectElement && !selectElement.querySelector('option[value="en"]')) {
+            const englishOption = document.createElement('option')
+            englishOption.value = 'en'
+            englishOption.text = 'English'
+            const placeholder = selectElement.querySelector('option[value=""]')
+            selectElement.insertBefore(englishOption, placeholder ? placeholder.nextSibling : selectElement.firstChild)
+          }
+
           combo.addEventListener('change', function() {
             const selectedValue = (this as HTMLSelectElement).value
-            if (selectedValue === '') {
-              // Reset to English if "Select Language" is chosen
+            if (selectedValue === '' || selectedValue === 'en') {
+              // Both mean "show the original page" — drop the saved
+              // translation first so the reload comes back untranslated.
+              localStorage.removeItem('googtrans')
+              document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
               window.location.reload()
             } else {
               setTimeout(() => {
