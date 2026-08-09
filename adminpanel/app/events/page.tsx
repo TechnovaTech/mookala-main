@@ -27,6 +27,12 @@ interface Event {
     name: string;
     email: string;
   };
+  // Events created by an artist populate `artist` instead of `organizer`.
+  artist?: {
+    name: string;
+    email: string;
+  };
+  creatorRole?: 'organizer' | 'artist';
   artistDetails: Array<{
     _id: string;
     name: string;
@@ -382,10 +388,12 @@ export default function EventsPage() {
 
                 {/* Organizer Info */}
                 <div>
-                  <h3 className="font-semibold mb-3">Organizer Details</h3>
+                  <h3 className="font-semibold mb-3">
+                    {selectedEvent.organizer ? 'Organizer Details' : selectedEvent.artist ? 'Artist Details' : 'Creator Details'}
+                  </h3>
                   <div className="grid md:grid-cols-2 gap-4 text-sm">
-                    <p><strong>Name:</strong> {selectedEvent.organizer?.name || 'N/A'}</p>
-                    <p><strong>Email:</strong> {selectedEvent.organizer?.email || 'N/A'}</p>
+                    <p><strong>Name:</strong> {selectedEvent.organizer?.name || selectedEvent.artist?.name || 'N/A'}</p>
+                    <p><strong>Email:</strong> {selectedEvent.organizer?.email || selectedEvent.artist?.email || 'N/A'}</p>
                   </div>
                 </div>
 

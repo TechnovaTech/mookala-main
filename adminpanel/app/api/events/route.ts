@@ -69,13 +69,29 @@ export async function POST(request: NextRequest) {
     const eventData = await request.json();
     console.log('Received event data:', eventData);
     
-    // Find organizer by phone if organizerPhone is provided
+    // Find the creator by phone if organizerPhone is provided.
+    // Events can be created by an organizer or by an artist, so look in the
+    // collection matching the sent role first, then fall back to the other.
     if (eventData.organizerPhone) {
-      const organizer = await db.collection('organizers').findOne({ phone: eventData.organizerPhone });
-      if (!organizer) {
+      const collections = eventData.organizerRole === 'artist'
+        ? ['artists', 'organizers']
+        : ['organizers', 'artists'];
+
+      let creator = null;
+      let creatorRole = null;
+      for (const collection of collections) {
+        creator = await db.collection(collection).findOne({ phone: eventData.organizerPhone });
+        if (creator) {
+          creatorRole = collection === 'artists' ? 'artist' : 'organizer';
+          break;
+        }
+      }
+
+      if (!creator) {
         return NextResponse.json({ error: 'Organizer not found' }, { status: 404 });
       }
-      eventData.organizerId = organizer._id;
+      eventData.organizerId = creator._id;
+      eventData.creatorRole = creatorRole;
       delete eventData.organizerPhone;
       delete eventData.organizerRole;
     }

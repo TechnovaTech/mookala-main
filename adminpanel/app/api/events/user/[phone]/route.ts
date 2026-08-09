@@ -6,16 +6,24 @@ export async function GET(request: NextRequest, { params }: { params: { phone: s
     const { db } = await connectToDatabase();
     const userPhone = params.phone;
 
-    // Find organizer by phone
-    const organizer = await db.collection('organizers').findOne({ phone: userPhone });
-    
-    if (!organizer) {
+    // Find the creator by phone. Events can be created by an organizer or an
+    // artist, so collect every matching account and look up events for all of them.
+    const [organizer, artist] = await Promise.all([
+      db.collection('organizers').findOne({ phone: userPhone }),
+      db.collection('artists').findOne({ phone: userPhone }),
+    ]);
+
+    const creatorIds = [];
+    if (organizer) creatorIds.push(organizer._id);
+    if (artist) creatorIds.push(artist._id);
+
+    if (creatorIds.length === 0) {
       return NextResponse.json({ events: [] });
     }
 
-    // Find events created by this organizer
-    const events = await db.collection('events').find({ 
-      organizerId: organizer._id 
+    // Find events created by this organizer/artist
+    const events = await db.collection('events').find({
+      organizerId: { $in: creatorIds }
     }).sort({ createdAt: -1 }).toArray();
 
     // Add booking status for each event
