@@ -1,167 +1,224 @@
-"use client"
+import type { Metadata } from "next"
+import { LegalPage, LegalSection, LegalSubheading, LegalList } from "@/components/legal"
 
-import { useLanguage } from "@/lib/language-context"
-import { BackButton } from "@/components/back-button"
+export const metadata: Metadata = {
+  title: "Privacy Policy | MOOKALAA",
+  description:
+    "How MOOKALAA collects, uses, discloses and safeguards your information when you use our application and related services.",
+}
 
 export default function PrivacyPage() {
-  const { t } = useLanguage()
   return (
-    <main className="min-h-screen pt-8">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <BackButton />
-      </div>
-      {/* Hero Section */}
-      <section className="bg-gradient-to-br from-amber-500/10 to-amber-600/10 border-b border-amber-500/20 py-20">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-amber-500 to-amber-600 bg-clip-text text-transparent">
-            {t("privacy.title")}
-          </h1>
-          <p className="text-lg text-muted-foreground">{t("privacy.subtitle")}</p>
-          <p className="text-sm text-muted-foreground mt-2">{t("privacy.updated")}</p>
+    <LegalPage
+      title="Privacy Policy"
+      intro="We respect your privacy and are committed to protecting your personal information. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application and related services."
+      updated="Last updated: 9 August 2026"
+    >
+      <LegalSection heading="Information We Collect">
+        <p>We may collect the following information:</p>
+
+        <LegalSubheading>A. Personal Information</LegalSubheading>
+        <LegalList
+          items={[
+            "Full Name",
+            "Email Address",
+            "Mobile Number",
+            "Address",
+            "Date of Birth",
+            "Profile Photo",
+            "Government Identification (if required)",
+            "Payment Information (processed through secure payment gateways)",
+          ]}
+        />
+
+        <LegalSubheading>B. Device Information</LegalSubheading>
+        <LegalList
+          items={[
+            "Device ID",
+            "Operating System",
+            "App Version",
+            "IP Address",
+            "Browser Information",
+            "Language Preference",
+          ]}
+        />
+
+        <LegalSubheading>C. Usage Information</LegalSubheading>
+        <LegalList
+          items={[
+            "Login Details",
+            "Features Used",
+            "Time Spent",
+            "Crash Reports",
+            "Diagnostic Information",
+          ]}
+        />
+
+        <LegalSubheading>D. Location Information</LegalSubheading>
+        <p>If permission is granted, we may collect:</p>
+        <LegalList items={["GPS Location", "Approximate Location"]} />
+        <p>Location services can be disabled from your device settings.</p>
+      </LegalSection>
+
+      <LegalSection heading="How We Use Your Information">
+        <p>We use your information to:</p>
+        <LegalList
+          items={[
+            "Create your account",
+            "Provide our services",
+            "Process transactions",
+            "Improve app performance",
+            "Personalize user experience",
+            "Send notifications",
+            "Respond to customer support requests",
+            "Detect fraud",
+            "Comply with legal obligations",
+          ]}
+        />
+      </LegalSection>
+
+      <LegalSection heading="Permissions Required">
+        <p>Depending on app functionality, we may request:</p>
+        <LegalList
+          items={[
+            "Camera",
+            "Microphone",
+            "Storage",
+            "Contacts",
+            "SMS",
+            "Phone",
+            "Location",
+            "Notifications",
+          ]}
+        />
+        <p>Permissions are requested only when required.</p>
+      </LegalSection>
+
+      <LegalSection heading="Sharing of Information">
+        <p>We do not sell your personal information.</p>
+        <p>Information may be shared with:</p>
+        <LegalList
+          items={[
+            "Payment Gateway Providers",
+            "Cloud Service Providers",
+            "Analytics Providers",
+            "Government Authorities (when legally required)",
+            "Business Partners (only with consent)",
+          ]}
+        />
+      </LegalSection>
+
+      <LegalSection heading="Data Security">
+        <p>
+          We implement appropriate technical and organizational security measures including:
+        </p>
+        <LegalList
+          items={[
+            "SSL Encryption",
+            "Secure Servers",
+            "Access Controls",
+            "Password Protection",
+            "Regular Security Updates",
+          ]}
+        />
+        <p>However, no system is completely secure.</p>
+      </LegalSection>
+
+      <LegalSection heading="Data Retention">
+        <p>We retain your information:</p>
+        <LegalList
+          items={[
+            "As long as your account remains active.",
+            "As required by law.",
+            "For dispute resolution.",
+            "For audit purposes.",
+          ]}
+        />
+      </LegalSection>
+
+      <LegalSection heading="Cookies & Tracking Technologies">
+        <p>Our App may use:</p>
+        <LegalList items={["Cookies", "SDKs", "Analytics Tools", "Advertising Identifiers"]} />
+        <p>These help improve user experience and app performance.</p>
+      </LegalSection>
+
+      <LegalSection heading="Third-Party Services">
+        <p>Our App may integrate with:</p>
+        <LegalList
+          items={[
+            "Google Play Services",
+            "Apple App Store",
+            "Firebase",
+            "Google Analytics",
+            "Razorpay",
+            "Stripe",
+            "Paytm",
+            "UPI Services",
+          ]}
+        />
+        <p>These providers have their own privacy policies.</p>
+      </LegalSection>
+
+      <LegalSection heading="Your Rights">
+        <p>Depending on applicable law, you may have the right to:</p>
+        <LegalList
+          items={[
+            "Access your information",
+            "Correct inaccurate information",
+            "Delete your account",
+            "Withdraw consent",
+            "Restrict processing",
+            "Data portability",
+            "Lodge complaints with authorities",
+          ]}
+        />
+      </LegalSection>
+
+      <LegalSection heading="International Data Transfers">
+        <p>
+          If data is transferred outside your country, appropriate safeguards will be implemented.
+        </p>
+      </LegalSection>
+
+      <LegalSection heading="Changes to this Privacy Policy">
+        <p>We may update this Privacy Policy periodically.</p>
+        <p>Changes become effective upon publication.</p>
+      </LegalSection>
+
+      <LegalSection heading="Contact Us" highlight>
+        <div className="space-y-2">
+          <p>
+            <span className="font-semibold text-foreground">Company Name:</span> VENOOTIC
+            ENTERPRISES OPC PVT LTD
+          </p>
+          <p>
+            <span className="font-semibold text-foreground">Address:</span> Plot No.
+            1180/6456/16042, Satyavihar, Rasulgarh, Bhubaneswar, Khordha – 751010, Odisha, India
+          </p>
+          <p>
+            <span className="font-semibold text-foreground">Email:</span>{" "}
+            <a href="mailto:support@mookalaa.com" className="text-amber-600 hover:underline">
+              support@mookalaa.com
+            </a>
+          </p>
+          <p>
+            <span className="font-semibold text-foreground">Phone:</span>{" "}
+            <a href="tel:+919583023002" className="text-amber-600 hover:underline">
+              +91-9583023002
+            </a>
+          </p>
+          <p>
+            <span className="font-semibold text-foreground">Website:</span>{" "}
+            <a
+              href="https://www.mookalaa.com"
+              className="text-amber-600 hover:underline"
+              rel="noopener noreferrer"
+            >
+              www.mookalaa.com
+            </a>
+          </p>
         </div>
-      </section>
-
-      {/* Content Section */}
-      <section className="px-4 sm:px-6 lg:px-8 py-12 max-w-4xl mx-auto">
-        <div className="space-y-8">
-
-          <div className="bg-card border border-border rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-amber-600">{t("privacy.section1")}</h2>
-            <p className="text-muted-foreground mb-4">
-              {t("privacy.section1.text")}
-            </p>
-            <ul className="space-y-2 text-muted-foreground">
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet1.1")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet1.2")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet1.3")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet1.4")}
-              </li>
-            </ul>
-          </div>
-
-          <div className="bg-card border border-border rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-amber-600">{t("privacy.section2")}</h2>
-            <p className="text-muted-foreground mb-4">{t("privacy.section2.text")}</p>
-            <ul className="space-y-2 text-muted-foreground">
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet2.1")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet2.2")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet2.3")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet2.4")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet2.5")}
-              </li>
-            </ul>
-          </div>
-
-          <div className="bg-card border border-border rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-amber-600">{t("privacy.section3")}</h2>
-            <p className="text-muted-foreground mb-4">
-              {t("privacy.section3.text1")}
-            </p>
-            <p className="text-muted-foreground mb-4">{t("privacy.section3.text2")}</p>
-            <ul className="space-y-2 text-muted-foreground">
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet3.1")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet3.2")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet3.3")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet3.4")}
-              </li>
-            </ul>
-          </div>
-
-          <div className="bg-card border border-border rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-amber-600">{t("privacy.section4")}</h2>
-            <p className="text-muted-foreground">
-              {t("privacy.section4.text")}
-            </p>
-          </div>
-
-          <div className="bg-card border border-border rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-amber-600">{t("privacy.section5")}</h2>
-            <p className="text-muted-foreground mb-4">{t("privacy.section5.text")}</p>
-            <ul className="space-y-2 text-muted-foreground">
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet5.1")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet5.2")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet5.3")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet5.4")}
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
-                {t("privacy.bullet5.5")}
-              </li>
-            </ul>
-          </div>
-
-          <div className="bg-card border border-border rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-amber-600">{t("privacy.section6")}</h2>
-            <p className="text-muted-foreground">
-              {t("privacy.section6.text")}
-            </p>
-          </div>
-
-          <div className="bg-gradient-to-br from-amber-500/10 to-amber-600/10 border border-amber-500/20 rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-amber-600">{t("privacy.section7")}</h2>
-            <p className="text-muted-foreground mb-4">
-              {t("privacy.section7.text")}
-            </p>
-            <div className="space-y-2 text-muted-foreground">
-              <p className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
-                Email: privacy@mookalaa.com
-              </p>
-              <p className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
-                Address: MOOKALAA Privacy Team
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
+      </LegalSection>
+    </LegalPage>
   )
 }
