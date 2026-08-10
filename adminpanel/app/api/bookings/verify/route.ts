@@ -48,6 +48,13 @@ export async function POST(request: NextRequest) {
       booking = await db.collection('bookings').findOne({ _id: new ObjectId(bookingId) });
     }
     if (!booking) {
+      // The mobile app generates its own `_id` (a millisecond timestamp) and
+      // sends it with the booking, so most tickets are stored under a plain
+      // string _id rather than an ObjectId. Without this lookup every one of
+      // those QR codes reported "ticket not found" at the gate.
+      booking = await db.collection('bookings').findOne({ _id: bookingId as any });
+    }
+    if (!booking) {
       // Fallback: some tickets carry a string bookingId/ticketId field.
       booking = await db.collection('bookings').findOne({
         $or: [{ bookingId: bookingId }, { ticketId: bookingId }],
