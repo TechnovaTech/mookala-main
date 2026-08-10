@@ -11,10 +11,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ success: false, error: 'Artist not found' }, { status: 404 });
     }
 
-    // Fetch events where this artist was accepted
+    // Events carry the artist in `artists` with the reply in `artistResponse`;
+    // the `acceptedArtists` field this used to query is never written, so the
+    // admin panel showed no events for artists who clearly had them.
     const events = await db.collection('events')
-      .find({ 
-        'acceptedArtists': new ObjectId(params.id)
+      .find({
+        artists: new ObjectId(params.id),
+        artistResponse: 'accepted'
       })
       .toArray();
 
@@ -39,7 +42,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         events: events.map(e => ({
           id: e._id.toString(),
           name: e.name,
-          date: e.date
+          // Events store the day in `startDate`; `date` does not exist, so
+          // every row rendered with an empty date.
+          date: e.startDate || e.date || null
         })),
         followersCount: artist.followersCount || (artist.followers ? artist.followers.length : 0),
         followers: artist.followers || []

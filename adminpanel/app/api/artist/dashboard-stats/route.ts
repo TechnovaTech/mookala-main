@@ -58,10 +58,16 @@ export async function GET(request: NextRequest) {
       });
 
     // Get upcoming events count
+    // `acceptedArtists` is never written anywhere — an accepted booking sets
+    // `artistResponse` on the event instead, and the artist sits in `artists`.
+    // Querying the phantom field made this count permanently zero. The date
+    // also lives in `startDate` as a "YYYY-MM-DD" string, not a `date` Date.
+    const today = new Date().toISOString().slice(0, 10);
     const upcomingEventsCount = await db.collection('events')
-      .countDocuments({ 
-        'acceptedArtists': artist._id,
-        'date': { $gte: new Date() }
+      .countDocuments({
+        artists: artist._id,
+        artistResponse: 'accepted',
+        startDate: { $gte: today }
       });
 
     // Get basic stats
