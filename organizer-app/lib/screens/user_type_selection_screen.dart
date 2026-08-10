@@ -28,58 +28,60 @@ class _UserTypeSelectionScreenState extends State<UserTypeSelectionScreen> {
       _isLoading = true;
     });
 
-    if (widget.isExistingUser) {
-      // For existing users, navigate to profile completion
+    // Register for the chosen role either way. An existing account only
+    // exists in one collection, so someone who already signed up as an
+    // organizer still needs an artist record created before the admin panel
+    // can see them — skipping this was why those requests never arrived.
+    // The backend re-issues the OTP for a half-finished signup instead of
+    // rejecting it, so this is safe to call on every path.
+    final result = await AuthService.registerUser(widget.phoneNumber, role);
+
+    if (result['success'] == true) {
+      final verifyResult = await AuthService.verifyOTP(widget.phoneNumber, '1234', role);
+
       setState(() {
         _isLoading = false;
       });
-      
-      if (role == 'artist') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const ArtistFillProfileScreen()),
-        );
-      } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const ProfileScreen()),
-        );
-      }
-    } else {
-      // Register new user
-      final result = await AuthService.registerUser(widget.phoneNumber, role);
-      
-      setState(() {
-        _isLoading = false;
-      });
-      
-      if (result['success'] == true) {
-        // After registration, verify OTP and navigate to profile
-        final verifyResult = await AuthService.verifyOTP(widget.phoneNumber, '1234', role);
-        
-        if (verifyResult['success'] == true) {
-          if (role == 'artist') {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const ArtistFillProfileScreen()),
-            );
-          } else {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const ProfileScreen()),
-            );
-          }
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(verifyResult['error'] ?? 'Verification failed')),
-          );
-        }
+
+      if (!mounted) return;
+
+      if (verifyResult['success'] == true) {
+        _goToProfile(role);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['error'] ?? 'Registration failed')),
+          SnackBar(content: Text(verifyResult['error'] ?? 'Verification failed')),
         );
       }
+      return;
     }
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (!mounted) return;
+
+    // "Already registered" means the role is fully set up — that is not an
+    // error here, just carry on to the profile.
+    final error = (result['error'] ?? '').toString();
+    if (error.toLowerCase().contains('already registered')) {
+      _goToProfile(role);
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error.isEmpty ? 'Registration failed' : error)),
+    );
+  }
+
+  void _goToProfile(String role) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            role == 'artist' ? const ArtistFillProfileScreen() : const ProfileScreen(),
+      ),
+    );
   }
 
   void _navigateToDashboard(String role) {

@@ -15,35 +15,42 @@ export async function POST(request: NextRequest) {
 
     const { db } = await connectToDatabase();
     
-    // Check for verified users in both collections
-    const artist = await db.collection('artists').findOne({ 
-      phone, 
-      status: { $in: ['verified', 'completed', 'profile_completed'] }
-    });
-    const organizer = await db.collection('organizers').findOne({ 
-      phone, 
-      status: { $in: ['verified', 'completed', 'profile_completed'] }
-    });
-    
+    // Match on the phone alone, whatever the status. Filtering to finished
+    // profiles here used to strand anyone who started signing up and stopped
+    // before completing: check-user said "new", registration then rejected the
+    // number as already taken, and the phone could never get past this screen.
+    // The caller decides what to do with an unfinished profile via `status`.
+    const artist = await db.collection('artists').findOne({ phone });
+    const organizer = await db.collection('organizers').findOne({ phone });
+
+    // A phone may hold both roles — they live in separate collections — so
+    // report every role found, not just the first match.
+    const roles = [
+      ...(artist ? ['artist'] : []),
+      ...(organizer ? ['organizer'] : []),
+    ];
+
     if (artist) {
-      return NextResponse.json({ 
-        exists: true, 
+      return NextResponse.json({
+        exists: true,
         role: 'artist',
-        user: { 
-          phone: artist.phone, 
+        roles,
+        user: {
+          phone: artist.phone,
           _id: artist._id,
           status: artist.status,
           name: artist.name || null
         }
       });
     }
-    
+
     if (organizer) {
-      return NextResponse.json({ 
-        exists: true, 
+      return NextResponse.json({
+        exists: true,
         role: 'organizer',
-        user: { 
-          phone: organizer.phone, 
+        roles,
+        user: {
+          phone: organizer.phone,
           _id: organizer._id,
           status: organizer.status,
           name: organizer.name || null
@@ -51,7 +58,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ exists: false });
+    return NextResponse.json({ exists: false, roles: [] });
   } catch (error) {
     return NextResponse.json({ error: 'Check user failed' }, { status: 500 });
   }

@@ -16,9 +16,26 @@ export async function POST(request: NextRequest) {
     const { db } = await connectToDatabase();
     
     const existingUser = await db.collection('organizers').findOne({ phone });
-    
+
     if (existingUser) {
-      return NextResponse.json({ error: 'Phone number already registered' }, { status: 400 });
+      const finished = ['verified', 'completed', 'profile_completed'].includes(existingUser.status);
+
+      // Only a finished profile is a genuine duplicate — see artist/register.
+      if (finished) {
+        return NextResponse.json({ error: 'Phone number already registered' }, { status: 400 });
+      }
+
+      await db.collection('organizers').updateOne(
+        { phone },
+        { $set: { otp: '1234', updatedAt: new Date() } }
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: 'OTP sent successfully',
+        otp: '1234',
+        resumed: true
+      });
     }
 
     await db.collection('organizers').insertOne({
