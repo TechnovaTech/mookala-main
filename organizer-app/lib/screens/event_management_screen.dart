@@ -1962,26 +1962,37 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
 
   Future<void> _searchPlaces(String query) async {
     if (_googleApiKey == 'YOUR_GOOGLE_PLACES_API_KEY') {
-      // Mock data for demonstration
+      // No Places key configured. Suggest the venues the admin panel already
+      // knows about instead of the three hardcoded Rajkot addresses that used
+      // to appear here — those stamped every event with the wrong city.
+      final query_ = query.trim().toLowerCase();
+      final matches = _availableVenues.where((venue) {
+        final name = (venue['name'] ?? '').toString().toLowerCase();
+        final location = venue['location'] as Map<String, dynamic>?;
+        final city = (location?['city'] ?? '').toString().toLowerCase();
+        final address = (location?['address'] ?? '').toString().toLowerCase();
+        return query_.isEmpty ||
+            name.contains(query_) ||
+            city.contains(query_) ||
+            address.contains(query_);
+      }).map((venue) {
+        final location = venue['location'] as Map<String, dynamic>?;
+        final parts = [
+          location?['address'],
+          location?['city'],
+          location?['state'],
+        ].where((part) => part != null && part.toString().isNotEmpty).join(', ');
+        return {
+          'place_id': (venue['_id'] ?? '').toString(),
+          'main_text': (venue['name'] ?? '').toString(),
+          'secondary_text': parts,
+          'city': (location?['city'] ?? '').toString(),
+        };
+      }).toList();
+
       setState(() {
-        _locationSuggestions = [
-          {
-            'place_id': '1',
-            'main_text': 'Hemu Gadhvi Hall Road',
-            'secondary_text': 'Rama Krishan Nagar, Rajkot, Gujarat, India',
-          },
-          {
-            'place_id': '2',
-            'main_text': 'Hemu Gadhavi Auditorium',
-            'secondary_text': 'Tagore Road, Rama Krishan Nagar, Rajkot, Gujarat',
-          },
-          {
-            'place_id': '3',
-            'main_text': 'Hemu Raj Gautam',
-            'secondary_text': 'Minaura, Uttar Pradesh, India',
-          },
-        ];
-        _showSuggestions = true;
+        _locationSuggestions = matches;
+        _showSuggestions = matches.isNotEmpty;
       });
       return;
     }
@@ -2018,9 +2029,10 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     });
 
     if (_googleApiKey == 'YOUR_GOOGLE_PLACES_API_KEY') {
-      // Mock data for demonstration
-      _addressController.text = place['secondary_text'];
-      _cityController.text = 'Rajkot';
+      // Suggestions come from the admin panel's venues, so use that venue's
+      // own city rather than the hardcoded "Rajkot" this used to write.
+      _addressController.text = place['secondary_text'] ?? '';
+      _cityController.text = (place['city'] ?? '').toString();
       return;
     }
 
