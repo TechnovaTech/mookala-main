@@ -28,7 +28,9 @@ export default function ArtistsPage() {
   const fetchArtists = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/artists');
+      // ?all=true: the panel needs pending artists too, so they can be reviewed.
+      // Public callers get only approved ones.
+      const response = await fetch('/api/artists?all=true');
       const data = await response.json();
       if (data.success) {
         setArtists(data.artists);
