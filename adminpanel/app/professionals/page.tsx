@@ -1,12 +1,14 @@
 'use client'
-import { useState, useEffect } from 'react'
-import Sidebar from '../../components/Sidebar'
-import { Bell, Search, ChevronDown, LogOut, User, Settings as SettingsIcon, Camera, Plus, X, Upload, Trash2, Edit } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Edit2, ExternalLink, Plus, Power, Trash2 } from 'lucide-react'
+import AdminShell, { useCan } from '@/components/AdminShell'
+import { Badge, Button, Card, ConfirmDialog, EmptyState, Modal, NoticeBar, Spinner, api, inputClass, type Notice } from '@/components/ui'
+import { Field, MediaUpload, SearchInput, TabLinks, matches } from '@/components/catalogue/shared'
 
 interface Professional {
   _id: string
   name: string
-  type: string // photographer | videographer
+  type: 'photographer' | 'videographer'
   phone: string
   city: string
   price: string
@@ -18,331 +20,333 @@ interface Professional {
   createdAt: string
 }
 
-const EMPTY_FORM = {
-  name: '',
-  type: 'photographer',
-  phone: '',
-  city: '',
-  price: '',
-  image: '',
-  bio: '',
-  portfolio: '',
-  experience: '',
-}
+const TABS = [
+  { href: '/professionals', label: 'Professionals' },
+  { href: '/hire-requests', label: 'Hire requests' },
+]
 
-export default function ProfessionalsPage() {
-  const [professionals, setProfessionals] = useState<Professional[]>([])
+const EMPTY = { name: '', type: 'photographer', phone: '', city: '', price: '', image: '', bio: '', portfolio: '', experience: '' }
+
+type Pending = { item: Professional; kind: 'delete' | 'activate' | 'deactivate' }
+
+function ProfessionalList() {
+  const canManage = useCan('hire:manage')
+  const [items, setItems] = useState<Professional[]>([])
   const [loading, setLoading] = useState(true)
-  const [isProfileOpen, setIsProfileOpen] = useState(false)
-  const [showModal, setShowModal] = useState(false)
-  const [formData, setFormData] = useState({ ...EMPTY_FORM })
-  const [submitting, setSubmitting] = useState(false)
+  const [notice, setNotice] = useState<Notice>(null)
+  const [search, setSearch] = useState('')
+  const [type, setType] = useState('')
+  const [status, setStatus] = useState('')
+
+  const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Professional | null>(null)
-  const [filterType, setFilterType] = useState('all')
+  const [form, setForm] = useState(EMPTY)
+  const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    fetchProfessionals()
-  }, [])
+  const [pending, setPending] = useState<Pending | null>(null)
+  const [busy, setBusy] = useState(false)
 
-  const fetchProfessionals = async () => {
-    setLoading(true)
+  const load = useCallback(async () => {
     try {
-      const response = await fetch('/api/professionals')
-      const data = await response.json()
-      if (data.success) setProfessionals(data.professionals)
-    } catch (error) {
-      console.error('Error fetching professionals:', error)
+      const data = await api<{ professionals: Professional[] }>('/api/professionals')
+      setItems(data.professionals || [])
+    } catch (error: any) {
+      setNotice({ type: 'error', text: error.message || 'Could not load professionals.' })
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const visible = useMemo(
+    () =>
+      items.filter(
+        (p) => (!type || p.type === type) && (!status || p.status === status) && matches(search, p.name, p.city, p.phone, p.bio)
+      ),
+    [items, search, type, status]
+  )
+
+  const openForm = (item: Professional | null) => {
+    setEditing(item)
+    setForm(
+      item
+        ? {
+            name: item.name || '',
+            type: item.type || 'photographer',
+            phone: item.phone || '',
+            city: item.city || '',
+            price: item.price || '',
+            image: item.image || '',
+            bio: item.bio || '',
+            portfolio: item.portfolio || '',
+            experience: item.experience || '',
+          }
+        : EMPTY
+    )
+    setFormError('')
+    setShowForm(true)
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => setFormData({ ...formData, image: reader.result as string })
-      reader.readAsDataURL(file)
+  const save = async () => {
+    if (!form.name.trim()) return setFormError('Enter the name.')
+    if (form.portfolio.trim() && !/^https?:\/\//i.test(form.portfolio.trim())) return setFormError('The portfolio link must start with http:// or https://')
+
+    const body: Record<string, any> = {
+      name: form.name.trim(),
+      type: form.type,
+      phone: form.phone.trim(),
+      city: form.city.trim(),
+      price: form.price.trim(),
+      bio: form.bio.trim(),
+      portfolio: form.portfolio.trim(),
+      experience: form.experience.trim(),
     }
-  }
+    // An unchanged photo is not uploaded again.
+    if (!editing || form.image !== (editing.image || '')) body.image = form.image
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSubmitting(true)
+    setSaving(true)
+    setFormError('')
     try {
-      const url = editing ? `/api/professionals/${editing._id}` : '/api/professionals'
-      const method = editing ? 'PUT' : 'POST'
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      })
-      const data = await response.json()
-      if (data.success) {
-        alert(editing ? 'Professional updated!' : 'Professional added!')
-        setShowModal(false)
-        setFormData({ ...EMPTY_FORM })
-        setEditing(null)
-        fetchProfessionals()
-      } else {
-        alert(data.error || 'Failed to save professional')
-      }
-    } catch (error) {
-      console.error('Error saving professional:', error)
-      alert('Failed to save professional')
+      await api(editing ? `/api/professionals/${editing._id}` : '/api/professionals', { method: editing ? 'PUT' : 'POST', body })
+      setNotice({ type: 'success', text: `"${body.name}" was ${editing ? 'updated' : 'added'}.` })
+      setShowForm(false)
+      await load()
+    } catch (error: any) {
+      setFormError(error.message || 'Could not save the professional.')
     } finally {
-      setSubmitting(false)
+      setSaving(false)
     }
   }
 
-  const handleEdit = (p: Professional) => {
-    setEditing(p)
-    setFormData({
-      name: p.name,
-      type: p.type || 'photographer',
-      phone: p.phone || '',
-      city: p.city || '',
-      price: p.price || '',
-      image: p.image || '',
-      bio: p.bio || '',
-      portfolio: p.portfolio || '',
-      experience: p.experience || '',
-    })
-    setShowModal(true)
-  }
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this professional?')) return
+  const confirm = async (reason: string) => {
+    if (!pending) return
+    const { item, kind } = pending
+    setBusy(true)
     try {
-      const response = await fetch(`/api/professionals/${id}`, { method: 'DELETE' })
-      const data = await response.json()
-      if (data.success) {
-        alert('Professional deleted!')
-        fetchProfessionals()
+      if (kind === 'delete') {
+        const data = await api<{ openHireRequests?: number }>(`/api/professionals/${item._id}`, { method: 'DELETE', body: { reason } })
+        const open = data.openHireRequests || 0
+        setNotice({
+          type: 'success',
+          text: `"${item.name}" was deleted.${open ? ` ${open} open hire request${open === 1 ? ' still refers' : 's still refer'} to this professional.` : ''}`,
+        })
+      } else {
+        await api(`/api/professionals/${item._id}`, { method: 'PUT', body: { status: kind === 'activate' ? 'active' : 'inactive', reason } })
+        setNotice({ type: 'success', text: `"${item.name}" is now ${kind === 'activate' ? 'listed in' : 'hidden from'} the app.` })
       }
-    } catch (error) {
-      console.error('Error deleting professional:', error)
+      setPending(null)
+      await load()
+    } catch (error: any) {
+      setNotice({ type: 'error', text: `"${item.name}" was not changed. ${error.message || ''}` })
+      setPending(null)
+    } finally {
+      setBusy(false)
     }
   }
-
-  const visible = professionals.filter((p) => filterType === 'all' || p.type === filterType)
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
+    <>
+      <TabLinks tabs={TABS} current="/professionals" />
+      <NoticeBar notice={notice} onClose={() => setNotice(null)} />
 
-      <div className="flex-1 ml-64 transition-all duration-300 min-h-screen">
-        <header className="bg-white shadow-lg border-b border-gray-200 px-6 py-4 fixed top-0 right-0 left-64 z-40">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-deep-blue">Hire Professionals</h1>
-              <p className="text-slate-gray text-sm">Manage photographers & videographers</p>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-gray w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none transition-all"
-                />
-              </div>
-
-              <button className="relative p-2 text-slate-gray hover:text-deep-blue hover:bg-teal/10 rounded-lg transition-all">
-                <Bell size={20} />
-              </button>
-
-              <div className="relative">
-                <button
-                  onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className="flex items-center space-x-3 bg-gray-50 rounded-lg px-3 py-2 hover:bg-teal/10 transition-all cursor-pointer"
-                >
-                  <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-md">
-                    <span className="text-white text-sm font-bold">A</span>
-                  </div>
-                  <div className="hidden md:block text-left">
-                    <p className="text-sm font-medium text-deep-blue">Admin User</p>
-                    <p className="text-xs text-slate-gray">Super Admin</p>
-                  </div>
-                  <ChevronDown size={16} className={`text-slate-gray transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                {isProfileOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <User size={16} className="mr-3 text-slate-gray" />
-                      Profile Settings
-                    </button>
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <SettingsIcon size={16} className="mr-3 text-slate-gray" />
-                      Account Settings
-                    </button>
-                    <hr className="my-2 border-gray-200" />
-                    <button
-                      onClick={() => (window.location.href = '/login')}
-                      className="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      <LogOut size={16} className="mr-3" />
-                      Logout
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="p-10 mt-24">
-          <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center">
-                <Camera className="text-emerald mr-3" size={24} />
-                <h2 className="text-xl font-bold text-gray-900">Professionals ({visible.length})</h2>
-              </div>
-              <div className="flex items-center space-x-3">
-                <select
-                  value={filterType}
-                  onChange={(e) => setFilterType(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal outline-none"
-                >
-                  <option value="all">All</option>
-                  <option value="photographer">Photographers</option>
-                  <option value="videographer">Videographers</option>
-                </select>
-                <button
-                  onClick={() => { setEditing(null); setFormData({ ...EMPTY_FORM }); setShowModal(true) }}
-                  className="flex items-center px-4 py-2 bg-emerald text-white rounded-lg hover:bg-emerald/90 transition-all"
-                >
-                  <Plus size={16} className="mr-2" />
-                  Add Professional
-                </button>
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="flex justify-center items-center py-20">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald"></div>
-              </div>
-            ) : (
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {visible.map((p) => (
-                  <div key={p._id} className="bg-gradient-to-br from-gray-50 to-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-lg transition-all">
-                    {p.image ? (
-                      <img src={p.image} alt={p.name} className="w-full h-48 object-cover" />
-                    ) : (
-                      <div className="w-full h-48 flex items-center justify-center bg-gray-100">
-                        <Camera className="text-gray-400" size={40} />
-                      </div>
-                    )}
-                    <div className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-lg font-bold text-deep-blue">{p.name}</h3>
-                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-teal/10 text-teal border border-teal/20 capitalize">
-                          {p.type}
-                        </span>
-                      </div>
-                      {p.city && <p className="text-sm text-slate-gray mb-1">City: {p.city}</p>}
-                      {p.phone && <p className="text-sm text-slate-gray mb-1">Phone: {p.phone}</p>}
-                      {p.price && <p className="text-sm text-slate-gray mb-1">Price: {p.price}</p>}
-                      {p.experience && <p className="text-sm text-slate-gray mb-3">Experience: {p.experience}</p>}
-                      <div className="flex space-x-3">
-                        <button onClick={() => handleEdit(p)} className="flex items-center text-blue-600 hover:text-blue-800 text-sm">
-                          <Edit size={14} className="mr-1" />
-                          Edit
-                        </button>
-                        <button onClick={() => handleDelete(p._id)} className="flex items-center text-red-600 hover:text-red-800 text-sm">
-                          <Trash2 size={14} className="mr-1" />
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {!loading && visible.length === 0 && (
-              <div className="text-center py-20">
-                <Camera className="mx-auto text-gray-400 mb-4" size={48} />
-                <p className="text-gray-500 text-lg font-medium">No professionals found</p>
-                <p className="text-gray-400 text-sm">Add photographers or videographers to display in the app</p>
-              </div>
-            )}
-          </div>
-        </main>
-      </div>
-
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-900">{editing ? 'Edit Professional' : 'Add Professional'}</h3>
-              <button onClick={() => { setShowModal(false); setEditing(null); setFormData({ ...EMPTY_FORM }) }} className="p-2 hover:bg-gray-100 rounded-lg">
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Photo</label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                  {formData.image ? (
-                    <img src={formData.image} alt="Preview" className="w-full h-32 object-cover rounded-lg mb-2" />
-                  ) : (
-                    <Upload className="mx-auto text-gray-400 mb-2" size={32} />
-                  )}
-                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" id="pro-upload" />
-                  <label htmlFor="pro-upload" className="cursor-pointer text-sm text-teal hover:text-teal/80">
-                    {formData.image ? 'Change Photo' : 'Upload Photo'}
-                  </label>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
-                <input type="text" required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal">
-                  <option value="photographer">Photographer</option>
-                  <option value="videographer">Videographer</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
-                  <input type="text" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
-                  <input type="text" value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Price (e.g. ₹5000/day)</label>
-                  <input type="text" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Experience</label>
-                  <input type="text" value={formData.experience} onChange={(e) => setFormData({ ...formData, experience: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" placeholder="e.g. 5 years" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Portfolio Link (Optional)</label>
-                <input type="url" value={formData.portfolio} onChange={(e) => setFormData({ ...formData, portfolio: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Bio (Optional)</label>
-                <textarea value={formData.bio} onChange={(e) => setFormData({ ...formData, bio: e.target.value })} rows={3} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal" />
-              </div>
-              <button type="submit" disabled={submitting} className="w-full py-2 bg-emerald text-white rounded-lg hover:bg-emerald/90 disabled:opacity-50">
-                {submitting ? 'Saving...' : editing ? 'Update Professional' : 'Add Professional'}
-              </button>
-            </form>
-          </div>
+      <Card>
+        <div className="p-4 border-b border-gray-200 flex flex-wrap gap-3">
+          <SearchInput id="professional-search" value={search} onChange={setSearch} placeholder="Search by name, city, phone or bio..." />
+          <select aria-label="Filter by type" value={type} onChange={(e) => setType(e.target.value)} className={inputClass + ' w-auto'}>
+            <option value="">Type: all</option>
+            <option value="photographer">Photographers</option>
+            <option value="videographer">Videographers</option>
+          </select>
+          <select aria-label="Filter by status" value={status} onChange={(e) => setStatus(e.target.value)} className={inputClass + ' w-auto'}>
+            <option value="">Status: all</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          {canManage && (
+            <Button onClick={() => openForm(null)}>
+              <Plus size={16} />
+              Add professional
+            </Button>
+          )}
         </div>
-      )}
-    </div>
+
+        {loading ? (
+          <Spinner />
+        ) : visible.length === 0 ? (
+          <EmptyState
+            title={items.length === 0 ? 'No professionals yet' : 'No professionals match these filters'}
+            hint={items.length === 0 ? 'Add photographers and videographers here. Customers see them in the user app and can send a hire request.' : undefined}
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Professional</th>
+                  <th className="px-4 py-3 font-medium">Type</th>
+                  <th className="px-4 py-3 font-medium">Contact</th>
+                  <th className="px-4 py-3 font-medium">Price</th>
+                  <th className="px-4 py-3 font-medium">Experience</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  {canManage && <th className="px-4 py-3 font-medium text-right">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {visible.map((item) => (
+                  <tr key={item._id} className="align-top hover:bg-gray-50">
+                    <td className="px-4 py-3 max-w-xs">
+                      <div className="flex items-center gap-3">
+                        {item.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={item.image} alt="" className="h-10 w-10 rounded-full object-cover bg-gray-100" />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-gray-100" aria-hidden="true" />
+                        )}
+                        <div>
+                          <p className="font-medium text-deep-blue">{item.name}</p>
+                          {item.portfolio && (
+                            <a href={item.portfolio} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:underline">
+                              <ExternalLink size={12} />
+                              Portfolio
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      {item.bio && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.bio}</p>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone={item.type === 'photographer' ? 'blue' : 'purple'}>{item.type === 'photographer' ? 'Photographer' : 'Videographer'}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      {item.phone || '—'}
+                      <span className="block text-gray-500">{item.city}</span>
+                    </td>
+                    <td className="px-4 py-3">{item.price || '—'}</td>
+                    <td className="px-4 py-3">{item.experience || '—'}</td>
+                    <td className="px-4 py-3">
+                      <Badge tone={item.status === 'active' ? 'green' : 'gray'}>{item.status === 'active' ? 'Active' : 'Inactive'}</Badge>
+                    </td>
+                    {canManage && (
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                          <button
+                            onClick={() => setPending({ item, kind: item.status === 'active' ? 'deactivate' : 'activate' })}
+                            aria-label={`${item.status === 'active' ? 'Deactivate' : 'Activate'} ${item.name}`}
+                            title={item.status === 'active' ? 'Deactivate' : 'Activate'}
+                            className="p-2 rounded-lg text-gray-600 hover:bg-gray-100"
+                          >
+                            <Power size={16} />
+                          </button>
+                          <button onClick={() => openForm(item)} aria-label={`Edit ${item.name}`} title="Edit" className="p-2 rounded-lg text-gray-600 hover:bg-gray-100">
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => setPending({ item, kind: 'delete' })}
+                            aria-label={`Delete ${item.name}`}
+                            title="Delete"
+                            className="p-2 rounded-lg text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Modal
+        open={showForm}
+        title={editing ? `Edit ${editing.name}` : 'Add professional'}
+        onClose={() => setShowForm(false)}
+        wide
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowForm(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={save} loading={saving}>
+              {editing ? 'Save changes' : 'Add professional'}
+            </Button>
+          </>
+        }
+      >
+        {formError && <NoticeBar notice={{ type: 'error', text: formError }} />}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Name" htmlFor="pro-name" required>
+              <input id="pro-name" type="text" value={form.name} maxLength={200} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} />
+            </Field>
+            <Field label="Type" htmlFor="pro-type" required>
+              <select id="pro-type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className={inputClass}>
+                <option value="photographer">Photographer</option>
+                <option value="videographer">Videographer</option>
+              </select>
+            </Field>
+            <Field label="Phone" htmlFor="pro-phone">
+              <input id="pro-phone" type="tel" value={form.phone} maxLength={30} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputClass} />
+            </Field>
+            <Field label="City" htmlFor="pro-city">
+              <input id="pro-city" type="text" value={form.city} maxLength={100} onChange={(e) => setForm({ ...form, city: e.target.value })} className={inputClass} />
+            </Field>
+            <Field label="Price" htmlFor="pro-price" help="Shown to customers as typed, for example ₹15,000 per day.">
+              <input id="pro-price" type="text" value={form.price} maxLength={100} onChange={(e) => setForm({ ...form, price: e.target.value })} className={inputClass} />
+            </Field>
+            <Field label="Experience" htmlFor="pro-experience">
+              <input
+                id="pro-experience"
+                type="text"
+                value={form.experience}
+                maxLength={100}
+                placeholder="5 years"
+                onChange={(e) => setForm({ ...form, experience: e.target.value })}
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <Field label="Portfolio link" htmlFor="pro-portfolio">
+            <input id="pro-portfolio" type="url" value={form.portfolio} placeholder="https://" onChange={(e) => setForm({ ...form, portfolio: e.target.value })} className={inputClass} />
+          </Field>
+          <Field label="Bio" htmlFor="pro-bio">
+            <textarea id="pro-bio" rows={3} value={form.bio} maxLength={5000} onChange={(e) => setForm({ ...form, bio: e.target.value })} className={inputClass} />
+          </Field>
+          <MediaUpload id="pro-image" label="Photo" value={form.image} onChange={(image) => setForm({ ...form, image })} onError={setFormError} />
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(pending)}
+        title={pending ? `${pending.kind === 'delete' ? 'Delete' : pending.kind === 'activate' ? 'Activate' : 'Deactivate'} ${pending.item.name}` : ''}
+        message={
+          pending?.kind === 'delete'
+            ? 'This permanently removes the professional from the list. Hire requests already sent to them are kept.'
+            : pending?.kind === 'deactivate'
+            ? 'The professional is hidden from the user app until activated again.'
+            : 'The professional is listed in the user app again.'
+        }
+        confirmLabel={pending?.kind === 'delete' ? 'Delete' : pending?.kind === 'activate' ? 'Activate' : 'Deactivate'}
+        danger={pending?.kind === 'delete'}
+        askReason
+        busy={busy}
+        onConfirm={confirm}
+        onClose={() => setPending(null)}
+      />
+    </>
+  )
+}
+
+export default function ProfessionalsPage() {
+  return (
+    <AdminShell title="Hire Professionals" subtitle="Photographers and videographers customers can hire through the app">
+      <ProfessionalList />
+    </AdminShell>
   )
 }

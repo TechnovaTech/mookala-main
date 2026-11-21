@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
-import 'event_management_screen.dart';
-import 'jatra_registration_screen.dart' as jatra;
-import 'qr_scanner_screen.dart';
-import 'event_analytics_screen.dart';
-import 'edit_event_screen.dart';
-import 'view_event_screen.dart';
-import 'add_tickets_screen.dart';
-import 'user_profile_screen.dart';
-import 'kyc_verification_screen.dart';
-import '../services/auth_service.dart';
-import '../services/api_service.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
 
+import '../app_flow.dart';
+import '../logic/event_logic.dart';
+import '../logic/ticket_logic.dart';
+import '../services/api.dart';
+import '../services/api_client.dart';
+import '../widgets/common.dart';
+import 'add_tickets_screen.dart';
+import 'create_event_screen.dart';
+import 'event_analytics_screen.dart';
+import 'jatra_list_screen.dart';
+import 'kyc_verification_screen.dart';
+import 'ticket_scanner_screen.dart';
+import 'user_profile_screen.dart';
+import 'view_event_screen.dart';
+
+/// The organiser's home: KYC gate, then My events / Jatra / Scan.
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -23,875 +24,480 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  int _selectedIndex = 0;
-  int _selectedTab = 0; // 0 for Live, 1 for Upcoming, 2 for Past, 3 for All
-  String _kycStatus = 'pending';
+  // KYC
+  bool _kycLoading = true;
+  String? _kycError;
+  String _kycStatus = 'not_submitted';
   String _rejectionNotes = '';
-  String _userPhone = '';
-  bool _isLoading = true;
-  List<Map<String, dynamic>> _allEvents = [];
 
-  final List<String> _menuItems = ['Home', 'Events', 'Jatra', 'Scan'];
-  final List<IconData> _menuIcons = [Icons.home, Icons.event, Icons.festival, Icons.qr_code_scanner];
-  
-  final List<String> _eventImages = [
-    'assets/images/concert.jpg',
-    'assets/images/theatre.jpg', 
-    'assets/images/folk.jpg',
-  ];
-  
+  // Events
+  bool _eventsLoading = false;
+  String? _eventsError;
+  List<Map<String, dynamic>> _events = [];
+  String _filter = 'all';
+  String _query = '';
+  final _searchController = TextEditingController();
 
+  int _tab = 0;
+
+  static const _filters = {
+    'all': 'All',
+    'pending': 'Waiting',
+    'approved': 'Approved',
+    'rejected': 'Rejected',
+    'past': 'Past',
+  };
 
   @override
   void initState() {
     super.initState();
-    _checkKYCStatus();
-    _fetchUserEvents();
+    _loadKyc();
   }
 
-  Future<void> _fetchUserEvents() async {
-    final userData = await AuthService.getUserData();
-    final phone = userData['phone'];
-    
-    if (phone != null) {
-      try {
-        final response = await http.get(
-          Uri.parse('https://mookala.vercel.app/api/events/user/$phone'),
-          headers: {'Content-Type': 'application/json'},
-        );
-        
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          setState(() {
-            _allEvents = List<Map<String, dynamic>>.from(data['events'] ?? []);
-          });
-        }
-      } catch (e) {
-        print('Error fetching user events: $e');
-      }
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadKyc() async {
+    setState(() {
+      _kycLoading = true;
+      _kycError = null;
+    });
+    try {
+      final data = await Api.kycStatus('organizer');
+      if (!mounted) return;
+      setState(() {
+        _kycStatus = (data['kycStatus'] ?? 'not_submitted').toString();
+        _rejectionNotes = (data['rejectionNotes'] ?? '').toString().trim();
+      });
+      if (_kycStatus == 'approved') _loadEvents();
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _kycError = e.message);
+    } finally {
+      if (mounted) setState(() => _kycLoading = false);
     }
   }
 
-  Future<void> _checkKYCStatus() async {
-    final userData = await AuthService.getUserData();
-    final phone = userData['phone'];
-    
-    if (phone != null) {
-      setState(() {
-        _userPhone = phone;
-      });
-      
-      final result = await AuthService.getKYCStatus(phone);
-      
-      if (result['success'] == true) {
-        setState(() {
-          _kycStatus = result['kycStatus'] ?? 'pending';
-          _rejectionNotes = result['rejectionNotes'] ?? '';
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    } else {
-      setState(() {
-        _isLoading = false;
-      });
+  Future<void> _loadEvents() async {
+    setState(() {
+      _eventsLoading = _events.isEmpty;
+      _eventsError = null;
+    });
+    try {
+      final events = await Api.myEvents();
+      if (!mounted) return;
+      setState(() => _events = events);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _eventsError = e.message);
+    } finally {
+      if (mounted) setState(() => _eventsLoading = false);
     }
+  }
+
+  List<Map<String, dynamic>> get _visibleEvents {
+    return _events.where((e) {
+      final status = EventLogic.statusOf(e);
+      final past = status == 'approved' && EventLogic.isPast(e);
+      final matchesFilter = switch (_filter) {
+        'pending' => status == 'pending',
+        'approved' => status == 'approved' && !past,
+        'rejected' => status == 'rejected',
+        'past' => past,
+        _ => true,
+      };
+      return matchesFilter && EventLogic.matchesSearch(e, _query);
+    }).toList();
+  }
+
+  Future<void> _open(Widget screen) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+    if (mounted && _kycStatus == 'approved') _loadEvents();
+  }
+
+  Future<void> _openKyc() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const KYCVerificationScreen()));
+    if (mounted) _loadKyc();
+  }
+
+  Future<void> _delete(Map<String, dynamic> event) async {
+    final id = (event['_id'] ?? '').toString();
+    final ok = await confirm(
+      context,
+      title: 'Delete event',
+      message: 'Delete "${event['name']}"? This cannot be undone. An event with confirmed bookings cannot be deleted.',
+      yes: 'Delete',
+      danger: true,
+    );
+    if (!ok || !mounted) return;
+    try {
+      await Api.deleteEvent(id);
+      if (!mounted) return;
+      showMessage(context, 'Event deleted');
+      setState(() => _events.removeWhere((e) => e['_id'] == id));
+    } on ApiException catch (e) {
+      if (mounted) showMessage(context, e.message, error: true); // 409 carries the server's explanation
+    }
+  }
+
+  // ---- KYC gate -----------------------------------------------------------
+
+  Widget _kycGate() {
+    final IconData icon;
+    final String title;
+    final String message;
+    String? action;
+    switch (_kycStatus) {
+      case 'rejected':
+        icon = Icons.cancel_outlined;
+        title = 'KYC rejected';
+        message = _rejectionNotes.isEmpty
+            ? 'Your documents were rejected. Please submit them again.'
+            : 'Your documents were rejected.\n\nReviewer\'s note: $_rejectionNotes';
+        action = 'Resubmit KYC';
+      case 'pending':
+        icon = Icons.hourglass_top;
+        title = 'KYC under review';
+        message = 'Your documents are with the Mookalaa team. You can create events once they are approved. '
+            'Pull down to check again.';
+      default:
+        icon = Icons.assignment_ind_outlined;
+        title = 'Complete your KYC';
+        message = 'Submit your Aadhaar and PAN so Mookalaa can verify you. You can create events after approval.';
+        action = 'Submit KYC';
+    }
+    return RefreshIndicator(
+      onRefresh: _loadKyc,
+      child: StateView(
+        icon: icon,
+        title: title,
+        message: message,
+        actionLabel: action ?? 'Check again',
+        onAction: action == null ? _loadKyc : _openKyc,
+        color: _kycStatus == 'rejected' ? Colors.red : Colors.orange,
+      ),
+    );
+  }
+
+  // ---- Events tab ---------------------------------------------------------
+
+  Color _statusColor(Map<String, dynamic> event) {
+    switch (EventLogic.statusOf(event)) {
+      case 'approved':
+        return Colors.green.shade700;
+      case 'rejected':
+        return Colors.red.shade700;
+      default:
+        return Colors.orange.shade800;
+    }
+  }
+
+  Widget _eventCard(Map<String, dynamic> event) {
+    final media = event['media'];
+    final banner = media is Map ? media['bannerImage'] : null;
+    final status = EventLogic.statusOf(event);
+    final sold = TicketLogic.totalSold(event['tickets']);
+    final total = TicketLogic.totalQuantity(event['tickets']);
+    final reason = (event['rejectionReason'] ?? '').toString().trim();
+    final id = (event['_id'] ?? '').toString();
+    final name = (event['name'] ?? 'Untitled event').toString();
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: () => _open(ViewEventScreen(eventId: id)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 130,
+              width: double.infinity,
+              child: StoredImage(banner, placeholderIcon: Icons.event),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 4, 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.navy)),
+                        const SizedBox(height: 4),
+                        Text(EventLogic.displaySchedule(event), style: const TextStyle(color: Colors.black54)),
+                        Text(EventLogic.placeOf(event),
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.black54)),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'view':
+                          _open(ViewEventScreen(eventId: id));
+                        case 'tickets':
+                          _open(AddTicketsScreen(eventData: event));
+                        case 'analytics':
+                          _open(EventAnalyticsScreen(eventId: id, eventName: name));
+                        case 'scan':
+                          _open(TicketScannerScreen(eventId: id, eventName: name));
+                        case 'delete':
+                          _delete(event);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(value: 'view', child: Text('View event')),
+                      const PopupMenuItem(value: 'tickets', child: Text('Edit tickets')),
+                      const PopupMenuItem(value: 'analytics', child: Text('Sales & check-ins')),
+                      if (status == 'approved') const PopupMenuItem(value: 'scan', child: Text('Scan tickets')),
+                      const PopupMenuItem(value: 'delete', child: Text('Delete event', style: TextStyle(color: Colors.red))),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _statusColor(event).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(EventLogic.statusLabel(event),
+                            style: TextStyle(color: _statusColor(event), fontWeight: FontWeight.w600, fontSize: 12)),
+                      ),
+                      const Spacer(),
+                      Text(total == 0 ? 'No tickets' : '$sold of $total sold',
+                          style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                    ],
+                  ),
+                  if (status == 'rejected' && reason.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text('Reason: $reason', style: TextStyle(color: Colors.red.shade700, fontSize: 13)),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _eventsTab() {
+    if (_eventsLoading) return const LoadingView(label: 'Loading your events…');
+    if (_eventsError != null && _events.isEmpty) {
+      return RefreshIndicator(onRefresh: _loadEvents, child: StateView.error(_eventsError!, onRetry: _loadEvents));
+    }
+    if (_events.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadEvents,
+        child: StateView(
+          icon: Icons.event_available,
+          title: 'No events yet',
+          message: 'Create your first event. It is reviewed by Mookalaa before it goes on sale.',
+          actionLabel: 'Create event',
+          onAction: () => _open(const CreateEventScreen()),
+        ),
+      );
+    }
+    final visible = _visibleEvents;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+          child: TextField(
+            controller: _searchController,
+            onChanged: (v) => setState(() => _query = v),
+            decoration: InputDecoration(
+              hintText: 'Search your events',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _query = '');
+                      },
+                    ),
+              filled: true,
+              fillColor: Colors.white,
+              isDense: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 46,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            children: [
+              for (final entry in _filters.entries)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: ChoiceChip(
+                    label: Text(entry.value),
+                    selected: _filter == entry.key,
+                    onSelected: (_) => setState(() => _filter = entry.key),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (_eventsError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: InfoBanner('Could not refresh: $_eventsError', color: Colors.red),
+          ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadEvents,
+            child: visible.isEmpty
+                ? StateView(
+                    icon: Icons.search_off,
+                    title: 'Nothing matches',
+                    message: _query.isNotEmpty
+                        ? 'No event matches "$_query" in "${_filters[_filter]}".'
+                        : 'You have no events under "${_filters[_filter]}".',
+                    actionLabel: 'Show all events',
+                    onAction: () {
+                      _searchController.clear();
+                      setState(() {
+                        _filter = 'all';
+                        _query = '';
+                      });
+                    },
+                  )
+                : ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 90),
+                    itemCount: visible.length,
+                    itemBuilder: (_, i) => _eventCard(visible[i]),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---- Scan tab -----------------------------------------------------------
+
+  Widget _scanTab() {
+    if (_eventsLoading) return const LoadingView();
+    final approved = _events.where((e) => EventLogic.statusOf(e) == 'approved').toList();
+    if (_eventsError != null && _events.isEmpty) {
+      return StateView.error(_eventsError!, onRetry: _loadEvents);
+    }
+    if (approved.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadEvents,
+        child: const StateView(
+          icon: Icons.qr_code_scanner,
+          title: 'No event to scan for',
+          message: 'Tickets can be scanned for events that Mookalaa has approved.',
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _loadEvents,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(14),
+        children: [
+          const Text('Choose the event you are scanning tickets for:',
+              style: TextStyle(color: Colors.black54, height: 1.4)),
+          const SizedBox(height: 10),
+          for (final event in approved)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.qr_code_scanner, color: AppColors.navy),
+                title: Text((event['name'] ?? '').toString(), style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('${EventLogic.displaySchedule(event)}\n${EventLogic.placeOf(event)}'),
+                isThreeLine: true,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _open(TicketScannerScreen(
+                  eventId: (event['_id'] ?? '').toString(),
+                  eventName: (event['name'] ?? '').toString(),
+                )),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final approved = !_kycLoading && _kycError == null && _kycStatus == 'approved';
+    Widget body;
+    if (_kycLoading) {
+      body = const LoadingView();
+    } else if (_kycError != null) {
+      body = StateView.error(_kycError!, onRetry: _loadKyc);
+    } else if (!approved) {
+      body = _kycGate();
+    } else {
+      body = IndexedStack(
+        index: _tab,
+        children: [_eventsTab(), const JatraListScreen(embedded: true), _scanTab()],
+      );
+    }
+
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        title: Text(
-          _menuItems[_selectedIndex],
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+      appBar: appBar(
+        const ['My events', 'Jatra', 'Scan tickets'][approved ? _tab : 0],
+        showBack: false,
         actions: [
           IconButton(
-            icon: const Icon(Icons.person, color: Colors.white),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const UserProfileScreen()),
-              );
+            tooltip: 'Account',
+            icon: const Icon(Icons.account_circle_outlined),
+            onPressed: () async {
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => const UserProfileScreen()));
+              if (mounted && !approved) _loadKyc();
             },
           ),
+          if (!approved)
+            IconButton(tooltip: 'Sign out', icon: const Icon(Icons.logout), onPressed: () => AppFlow.signOut()),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _kycStatus != 'approved'
-              ? _buildKYCStatusWidget()
-              : Column(
-                  children: [
-                    // Search Box
-                    Container(
-                      margin: const EdgeInsets.all(16),
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Search events...',
-                          prefixIcon: const Icon(Icons.search),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(25),
-                            borderSide: BorderSide.none,
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey.shade100,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                        ),
-                      ),
-                    ),
-          
-                    // Tab Bar
-                    Container(
-                      margin: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          _buildTabButton('Live', 0, _getLiveEvents().length),
-                          _buildTabButton('Upcoming', 1, _getUpcomingEvents().length),
-                          _buildTabButton('Past', 2, _getPastEvents().length),
-                          _buildTabButton('All', 3, _allEvents.length),
-                        ],
-                      ),
-                    ),
-          
-                    // Events List
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: _getFilteredEvents().asMap().entries.map((entry) {
-                          int index = entry.key;
-                          var event = entry.value;
-                          return Column(
-                            children: [
-                              _buildEventCard(
-                                event['name'] ?? event['title'] ?? 'Untitled Event',
-                                '${event['startDate'] ?? ''} at ${event['startTime'] ?? ''}',
-                                event['location']?['city'] ?? event['location'] ?? 'Unknown Location',
-                                _getEventStatus(event),
-                                _eventImages[index % _eventImages.length],
-                                index,
-                                event,
-                              ),
-                              if (index < _getFilteredEvents().length - 1) const SizedBox(height: 16),
-                            ],
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ],
-                ),
-      bottomNavigationBar: _kycStatus == 'approved'
+      body: SafeArea(child: body),
+      floatingActionButton: approved && _tab == 0 && _events.isNotEmpty
+          ? FloatingActionButton.extended(
+              onPressed: () => _open(const CreateEventScreen()),
+              backgroundColor: AppColors.navy,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text('Create event'),
+            )
+          : null,
+      bottomNavigationBar: approved
           ? BottomNavigationBar(
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: Colors.white,
-              selectedItemColor: const Color(0xFF001F3F),
-              unselectedItemColor: Colors.grey.shade600,
-              currentIndex: _selectedIndex,
-              onTap: (index) {
-                if (index == 1) { // Events tab
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const EventManagementScreen()),
-                  ).then((_) {
-                    setState(() {
-                      _selectedIndex = 0; // Reset to Home when returning
-                    });
-                  });
-                } else if (index == 2) { // Jatra tab
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const jatra.JatraRegistrationScreen()),
-                  ).then((_) {
-                    setState(() {
-                      _selectedIndex = 0; // Reset to Home when returning
-                    });
-                  });
-                } else if (index == 3) { // Scan tab
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const QRScannerScreen()),
-                  ).then((_) {
-                    setState(() {
-                      _selectedIndex = 0; // Reset to Home when returning
-                    });
-                  });
-                } else {
-                  setState(() {
-                    _selectedIndex = index;
-                  });
-                }
-              },
+              currentIndex: _tab,
+              selectedItemColor: AppColors.navy,
+              onTap: (i) => setState(() => _tab = i),
               items: const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.home),
-                  label: 'Home',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.event),
-                  label: 'Events',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.festival),
-                  label: 'Jatra',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.qr_code_scanner),
-                  label: 'Scan',
-                ),
+                BottomNavigationBarItem(icon: Icon(Icons.event), label: 'Events'),
+                BottomNavigationBarItem(icon: Icon(Icons.festival), label: 'Jatra'),
+                BottomNavigationBarItem(icon: Icon(Icons.qr_code_scanner), label: 'Scan'),
               ],
             )
           : null,
-    );
-  }
-
-  Widget _buildTabButton(String title, int tabIndex, int count) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _selectedTab = tabIndex;
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: _selectedTab == tabIndex ? const Color(0xFF001F3F) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            '$title ($count)',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _selectedTab == tabIndex ? Colors.white : Colors.grey.shade600,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  List<Map<String, dynamic>> _getFilteredEvents() {
-    switch (_selectedTab) {
-      case 0: return _getLiveEvents();
-      case 1: return _getUpcomingEvents();
-      case 2: return _getPastEvents();
-      case 3: return _allEvents;
-      default: return [];
-    }
-  }
-
-  List<Map<String, dynamic>> _getLiveEvents() {
-    final now = DateTime.now();
-    return _allEvents.where((event) {
-      if (event['status'] != 'approved') return false;
-      final eventDate = DateTime.tryParse(event['startDate'] ?? '');
-      if (eventDate == null) return false;
-      final today = DateTime(now.year, now.month, now.day);
-      final eventDay = DateTime(eventDate.year, eventDate.month, eventDate.day);
-      return eventDay.isAtSameMomentAs(today);
-    }).toList();
-  }
-
-  List<Map<String, dynamic>> _getUpcomingEvents() {
-    final now = DateTime.now();
-    return _allEvents.where((event) {
-      if (event['status'] != 'approved') return false;
-      final eventDate = DateTime.tryParse(event['startDate'] ?? '');
-      if (eventDate == null) return false;
-      return eventDate.isAfter(now);
-    }).toList();
-  }
-
-  List<Map<String, dynamic>> _getPastEvents() {
-    final now = DateTime.now();
-    return _allEvents.where((event) {
-      if (event['status'] != 'approved') return false;
-      final eventDate = DateTime.tryParse(event['startDate'] ?? '');
-      if (eventDate == null) return false;
-      return eventDate.isBefore(now) && !_isToday(eventDate);
-    }).toList();
-  }
-
-  bool _isToday(DateTime date) {
-    final now = DateTime.now();
-    return date.year == now.year && date.month == now.month && date.day == now.day;
-  }
-
-  String _getEventStatus(Map<String, dynamic> event) {
-    final status = event['status'] ?? 'pending';
-    final bookingStatus = event['bookingStatus'] ?? 'pending';
-    
-    if (status == 'pending') return 'Pending Approval';
-    if (status == 'rejected') return 'Rejected';
-    
-    // Show booking status for approved events
-    if (status == 'approved') {
-      if (bookingStatus == 'artist_pending') return 'Artist Pending';
-      if (bookingStatus == 'artist_declined') return 'Artist Declined';
-      if (bookingStatus == 'confirmed') {
-        final eventDate = DateTime.tryParse(event['startDate'] ?? '');
-        if (eventDate != null) {
-          final now = DateTime.now();
-          if (_isToday(eventDate)) return 'Live';
-          if (eventDate.isAfter(now)) return 'Upcoming';
-          return 'Completed';
-        }
-        return 'Confirmed';
-      }
-    }
-    
-    return 'Approved';
-  }
-
-  IconData _getStatusIcon(String status) {
-    switch (status) {
-      case 'Live': return Icons.live_tv;
-      case 'Upcoming': return Icons.schedule;
-      case 'Completed': return Icons.check_circle;
-      case 'Confirmed': return Icons.check_circle;
-      case 'Pending Approval': return Icons.pending;
-      case 'Artist Pending': return Icons.person_search;
-      case 'Artist Declined': return Icons.person_off;
-      case 'Approved': return Icons.verified;
-      case 'Rejected': return Icons.cancel;
-      default: return Icons.help;
-    }
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'Live': return Colors.red;
-      case 'Upcoming': return Colors.blue;
-      case 'Completed': return Colors.green;
-      case 'Confirmed': return Colors.green;
-      case 'Pending Approval': return Colors.orange;
-      case 'Artist Pending': return Colors.amber;
-      case 'Artist Declined': return Colors.red;
-      case 'Approved': return Colors.blue;
-      case 'Rejected': return Colors.red;
-      default: return Colors.grey;
-    }
-  }
-
-  Widget _buildEventCard(String title, String dateTime, String location, String status, String imagePath, int index, Map<String, dynamic> eventData) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ViewEventScreen(
-              eventTitle: title,
-              eventDate: dateTime,
-              eventLocation: location,
-              eventStatus: status,
-              eventImage: imagePath,
-            ),
-          ),
-        );
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
-              spreadRadius: 1,
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            // Event Image with overlay
-            Container(
-              height: 150,
-              decoration: BoxDecoration(
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(12),
-                  topRight: Radius.circular(12),
-                ),
-                image: eventData['media']?['bannerImage'] != null
-                    ? DecorationImage(
-                        image: MemoryImage(
-                          base64Decode(eventData['media']['bannerImage']),
-                        ),
-                        fit: BoxFit.cover,
-                      )
-                    : DecorationImage(
-                        image: AssetImage(imagePath),
-                        fit: BoxFit.cover,
-                      ),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(12),
-                    topRight: Radius.circular(12),
-                  ),
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withOpacity(0.3),
-                      Colors.black.withOpacity(0.7),
-                    ],
-                  ),
-                ),
-                child: Stack(
-                  children: [
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _getStatusIcon(status),
-                                  size: 16,
-                                  color: _getStatusColor(status),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  status,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: _getStatusColor(status),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Icon(Icons.share, size: 16),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Positioned(
-                      bottom: 12,
-                      left: 12,
-                      right: 12,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                dateTime,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              Text(
-                                location,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            
-            // Enable Ticketing
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Enable Ticketing',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Colors.grey.shade600,
-                  ),
-                ],
-              ),
-            ),
-            
-            const Divider(height: 1),
-            
-            // Action buttons
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildActionButton(Icons.analytics, 'Analytics', () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EventAnalyticsScreen(eventTitle: title),
-                      ),
-                    );
-                  }),
-                  _buildActionButton(Icons.confirmation_number, 'Issue Ticket', () async {
-                  // Pass the real event (with _id and the location object) so the
-                  // ticket screen updates this event instead of creating a new one.
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => AddTicketsScreen(
-                      eventData: eventData,
-                    )),
-                  );
-                  _fetchUserEvents();
-                }),
-                  _buildActionButton(Icons.edit, 'Edit', () async {
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EditEventScreen(
-                          eventTitle: title,
-                          eventDate: dateTime,
-                          eventLocation: location,
-                        ),
-                      ),
-                    );
-                    
-                    if (result != null) {
-                      _fetchUserEvents();
-                    }
-                  }),
-                  _buildActionButton(Icons.visibility, 'More', () {
-                    _showMoreOptions(context, title, dateTime, location, status, imagePath, index);
-                  }),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildActionButton(IconData icon, String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Icon(
-            icon,
-            size: 24,
-            color: Colors.grey.shade600,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showMoreOptions(BuildContext context, String title, String dateTime, String location, String status, String imagePath, int index) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Event Options'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.visibility, color: Color(0xFF001F3F)),
-              title: const Text('View Event'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ViewEventScreen(
-                      eventTitle: title,
-                      eventDate: dateTime,
-                      eventLocation: location,
-                      eventStatus: status,
-                      eventImage: imagePath,
-                    ),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text('Delete Event'),
-              onTap: () {
-                Navigator.pop(context);
-                _deleteEvent(index);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _deleteEvent(int index) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Event'),
-        content: const Text('Are you sure you want to delete this event?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final events = _getFilteredEvents();
-              final id = (index >= 0 && index < events.length)
-                  ? events[index]['_id']?.toString()
-                  : null;
-              Navigator.pop(context);
-              if (id == null || id.isEmpty) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  const SnackBar(content: Text('Cannot delete: missing event id')),
-                );
-                return;
-              }
-              final result = await ApiService.deleteEvent(id);
-              if (!mounted) return;
-              final ok = result['success'] == true;
-              if (ok) await _fetchUserEvents();
-              if (!mounted) return;
-              ScaffoldMessenger.of(this.context).showSnackBar(
-                SnackBar(
-                  content: Text(ok
-                      ? 'Event deleted successfully'
-                      : (result['error']?.toString() ?? 'Failed to delete event')),
-                  backgroundColor: ok ? Colors.green : Colors.red,
-                ),
-              );
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildKYCStatusWidget() {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            _kycStatus == 'rejected' ? Icons.cancel : Icons.pending,
-            size: 80,
-            color: _kycStatus == 'rejected' ? Colors.red : Colors.orange,
-          ),
-          const SizedBox(height: 24),
-          Text(
-            _kycStatus == 'rejected' ? 'KYC Rejected' : 'KYC Pending',
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _kycStatus == 'rejected'
-                ? 'Your KYC documents have been rejected. Please resubmit with correct information.'
-                : 'Your KYC documents are under review. You will be able to access all features once approved.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey.shade600,
-            ),
-          ),
-          if (_kycStatus == 'rejected' && _rejectionNotes.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.shade200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Rejection Reason:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _rejectionNotes,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 32),
-          if (_kycStatus == 'rejected')
-            ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => KYCVerificationScreen(
-                      phone: _userPhone, 
-                      isResubmission: true,
-                    ),
-                  ),
-                ).then((_) {
-                  _checkKYCStatus();
-                });
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF001F3F),
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              ),
-              child: const Text(
-                'Resubmit KYC Documents',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          const SizedBox(height: 16),
-          TextButton(
-            onPressed: () {
-              _checkKYCStatus();
-            },
-            child: const Text(
-              'Refresh Status',
-              style: TextStyle(color: Color(0xFF001F3F)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildKPITile(String title, String value, IconData icon, Color color) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      elevation: 2,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          // Handle KPI tile tap for deeper insights
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Viewing $title details')),
-          );
-        },
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      icon,
-                      color: color,
-                      size: 24,
-                    ),
-                  ),
-                  const Spacer(),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Colors.grey.shade400,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

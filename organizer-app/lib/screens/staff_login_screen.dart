@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+
+import '../services/api.dart';
+import '../services/api_client.dart';
+import '../services/session.dart';
+import '../widgets/common.dart';
 import 'staff_dashboard_screen.dart';
 
+/// Gate staff sign in with the email and password the organiser gave them.
 class StaffLoginScreen extends StatefulWidget {
   const StaffLoginScreen({super.key});
 
@@ -11,119 +15,107 @@ class StaffLoginScreen extends StatefulWidget {
 }
 
 class _StaffLoginScreenState extends State<StaffLoginScreen> {
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  bool _isLoading = false;
+  final _formKey = GlobalKey<FormState>();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _hidePassword = true;
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
 
   Future<void> _login() async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
+    if (!_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final response = await http.post(
-        Uri.parse('https://mookala.vercel.app/api/staff/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'email': _emailController.text,
-          'password': _passwordController.text,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => StaffDashboardScreen(
-              eventData: data['event'],
-              staffData: data['staff'],
-            ),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid credentials')),
-        );
+      final data = await Api.staffLogin(_email.text.trim(), _password.text);
+      final event = data['event'];
+      if (event is! Map || (event['_id'] ?? '').toString().isEmpty) {
+        throw ApiException('The server did not return the event for this login. Please try again.');
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+      final eventData = Map<String, dynamic>.from(event);
+      eventData['_id'] = eventData['_id'].toString();
+      final staffData = data['staff'] is Map ? Map<String, dynamic>.from(data['staff'] as Map) : <String, dynamic>{};
+      await Session.saveStaff(eventData, staffData);
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => StaffDashboardScreen(eventData: eventData, staffData: staffData)),
+        (_) => false,
       );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        if (e.statusCode == 401) {
+          _error = 'Wrong email or password. Use the login the event organiser gave you.';
+        } else if (e.isNetwork) {
+          _error = e.message;
+        } else {
+          _error = 'Could not sign in because of a server problem (${e.message}). '
+              'Your email and password were not checked. Please try again.';
+        }
+      });
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        title: const Text('Staff Login', style: TextStyle(color: Colors.white)),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 40),
-            const Text(
-              'Staff Member Login',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Enter your credentials provided by the organizer',
-              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 40),
-            TextField(
-              controller: _emailController,
-              decoration: InputDecoration(
-                labelText: 'Email',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                prefixIcon: const Icon(Icons.email),
+      appBar: appBar('Gate staff login'),
+      body: SafeArea(
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              const SizedBox(height: 12),
+              const Icon(Icons.qr_code_scanner, size: 72, color: AppColors.navy),
+              const SizedBox(height: 12),
+              const Text(
+                'Sign in with the email and password the event organiser created for you.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.black54, height: 1.4),
               ),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _passwordController,
-              decoration: InputDecoration(
-                labelText: 'Password',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                prefixIcon: const Icon(Icons.lock),
+              const SizedBox(height: 24),
+              if (_error != null) ...[InfoBanner(_error!, color: Colors.red, icon: Icons.error_outline), const SizedBox(height: 16)],
+              TextFormField(
+                controller: _email,
+                keyboardType: TextInputType.emailAddress,
+                autocorrect: false,
+                textInputAction: TextInputAction.next,
+                decoration: fieldDecoration('Email', icon: Icons.email),
+                validator: (v) => (v ?? '').trim().isEmpty ? 'Enter your email' : null,
               ),
-              obscureText: true,
-            ),
-            const SizedBox(height: 40),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _login,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF001F3F),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _password,
+                obscureText: _hidePassword,
+                onFieldSubmitted: (_) => _login(),
+                decoration: fieldDecoration(
+                  'Password',
+                  icon: Icons.lock,
+                  suffix: IconButton(
+                    tooltip: _hidePassword ? 'Show password' : 'Hide password',
+                    icon: Icon(_hidePassword ? Icons.visibility : Icons.visibility_off),
+                    onPressed: () => setState(() => _hidePassword = !_hidePassword),
+                  ),
                 ),
-                child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('Login', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                validator: (v) => (v ?? '').isEmpty ? 'Enter your password' : null,
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+              PrimaryButton(label: 'Sign in', loading: _loading, onPressed: _login),
+            ],
+          ),
         ),
       ),
     );

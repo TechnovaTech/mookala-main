@@ -1,0 +1,256 @@
+import type { ResourceDef } from '../resource-types';
+
+/**
+ * Membership plans, subscriptions and payments (requirements section 9).
+ *
+ * The Flutter apps show plan names and prices that are written into the app
+ * code and never read these plans, and no app starts a subscription or takes
+ * a membership payment. These records are entered by the team. The apps can
+ * read the active plans from GET /api/public/memberships/plans and a member's
+ * own status from GET /api/public/memberships/status when they are connected.
+ *
+ * The rules (plan snapshots, what a payment does to its subscription, expiry)
+ * are in memberships.hooks.ts.
+ */
+
+export const membershipsResources: ResourceDef[] = [
+  {
+    name: 'membership-plans',
+    collection: 'membershipPlans',
+    module: 'memberships',
+    title: 'Membership Plans',
+    subtitle: 'Plans offered to users, artists and organisers',
+    singular: 'Plan',
+    labelKey: 'name',
+    fields: [
+      {
+        key: 'name',
+        label: 'Plan name',
+        type: 'text',
+        required: true,
+        list: true,
+        search: true,
+        help: 'The mobile apps currently show plan names and prices written into the app code. They are not connected to the plans on this screen yet, so a change here does not change what the apps show.',
+      },
+      {
+        key: 'audience',
+        label: 'For',
+        type: 'select',
+        required: true,
+        list: true,
+        filter: true,
+        options: [
+          { value: 'user', label: 'Users' },
+          { value: 'artist', label: 'Artists' },
+          { value: 'organiser', label: 'Organisers' },
+        ],
+      },
+      {
+        key: 'price',
+        label: 'Price',
+        type: 'money',
+        required: true,
+        list: true,
+        help: 'Changing the price needs a reason and only applies from now on: subscriptions and payments keep the price they were taken at.',
+      },
+      {
+        key: 'billingPeriod',
+        label: 'Billing period',
+        type: 'select',
+        required: true,
+        list: true,
+        filter: true,
+        options: [
+          { value: 'monthly', label: 'Monthly' },
+          { value: 'quarterly', label: 'Quarterly' },
+          { value: 'yearly', label: 'Yearly' },
+        ],
+      },
+      { key: 'benefits', label: 'Benefits', type: 'tags', list: true, placeholder: 'Separate benefits with commas' },
+      { key: 'description', label: 'Description', type: 'textarea' },
+      { key: 'retiredAt', label: 'Retired at', type: 'datetime', readOnly: true },
+      { key: 'retiredBy', label: 'Retired by', type: 'text', readOnly: true },
+    ],
+    status: {
+      key: 'status',
+      initial: 'active',
+      options: [
+        { value: 'active', label: 'Active', tone: 'green' },
+        { value: 'retired', label: 'Retired', tone: 'gray' },
+      ],
+      reasonRequired: ['retired'],
+    },
+    emptyHint: 'No membership plans yet.',
+  },
+  {
+    name: 'membership-subscriptions',
+    collection: 'membershipSubscriptions',
+    module: 'memberships',
+    title: 'Subscriptions',
+    subtitle: 'Who holds which plan, when it expires and its current state',
+    singular: 'Subscription',
+    labelKey: 'memberName',
+    defaultSort: { key: 'expiresOn', dir: 1 },
+    fields: [
+      { key: 'memberName', label: 'Member name', type: 'text', required: true, list: true, search: true },
+      { key: 'memberPhone', label: 'Member phone', type: 'phone', viewPermission: ['users:view', 'finance:view'], required: true, list: true, search: true },
+      { key: 'memberEmail', label: 'Member email', type: 'email', viewPermission: ['users:view', 'finance:view'], help: 'Only needed if expiry reminders are sent by email.' },
+      {
+        key: 'plan',
+        label: 'Plan',
+        type: 'ref',
+        ref: { resource: 'membership-plans', labelKey: 'name', filter: { status: 'active' } },
+        required: true,
+        list: true,
+        filter: true,
+        help: 'Only active plans can be chosen. Moving an existing subscription to another plan needs a reason.',
+      },
+      { key: 'planPrice', label: 'Plan price when taken', type: 'money', readOnly: true, list: true },
+      { key: 'planBillingPeriod', label: 'Billing period when taken', type: 'text', readOnly: true },
+      { key: 'startedOn', label: 'Started on', type: 'date', required: true, list: true },
+      {
+        key: 'expiresOn',
+        label: 'Expires on',
+        type: 'date',
+        required: true,
+        list: true,
+        help: 'The subscription is valid through this day (India time). Recording a paid payment moves it to the end of the paid period; changing it by hand needs a reason.',
+      },
+      {
+        key: 'autoRenew',
+        label: 'Auto renew',
+        type: 'boolean',
+        list: true,
+        filter: true,
+        help: 'Recorded for the team only. Nothing charges the member automatically.',
+      },
+      { key: 'lastPaymentReference', label: 'Last payment reference', type: 'text', search: true, readOnly: true },
+      { key: 'lastPaymentAt', label: 'Last payment date', type: 'date', readOnly: true },
+      { key: 'lastPaymentAmount', label: 'Last payment amount', type: 'money', readOnly: true },
+      { key: 'lastReminderAt', label: 'Last reminder (accepted by a provider, or made by hand)', type: 'datetime', readOnly: true },
+      { key: 'cancelReason', label: 'Cancellation reason', type: 'text', readOnly: true },
+      { key: 'cancelledAt', label: 'Cancelled at', type: 'datetime', readOnly: true },
+      { key: 'cancelledBy', label: 'Cancelled by', type: 'text', readOnly: true },
+      { key: 'reinstateReason', label: 'Reinstatement reason', type: 'text', readOnly: true },
+      { key: 'reinstatedAt', label: 'Reinstated at', type: 'datetime', readOnly: true },
+      { key: 'reinstatedBy', label: 'Reinstated by', type: 'text', readOnly: true },
+    ],
+    status: {
+      key: 'status',
+      initial: 'active',
+      options: [
+        { value: 'active', label: 'Active', tone: 'green' },
+        { value: 'expired', label: 'Expired', tone: 'gray' },
+        { value: 'cancelled', label: 'Cancelled', tone: 'red' },
+        { value: 'payment_failed', label: 'Payment failed', tone: 'amber' },
+        { value: 'paused', label: 'Paused', tone: 'purple' },
+      ],
+      reasonRequired: ['cancelled', 'paused', 'payment_failed'],
+    },
+    emptyHint: 'No subscriptions yet.',
+    sourceNote:
+      'Buying a membership in the mobile apps is not wired yet, so subscriptions are entered here by the team and do not unlock anything in the apps.',
+  },
+  {
+    name: 'membership-payments',
+    // Payments are recorded by Finance; the module's own team can see them.
+    managePermission: 'finance:manage',
+    collection: 'membershipPayments',
+    module: 'memberships',
+    title: 'Membership Payments',
+    subtitle: 'Payment history for memberships and renewals',
+    singular: 'Payment',
+    labelKey: 'memberName',
+    fields: [
+      {
+        key: 'subscription',
+        label: 'Member',
+        type: 'ref',
+        ref: { resource: 'membership-subscriptions', labelKey: 'memberName' },
+        required: true,
+        list: true,
+        filter: true,
+        help: 'A paid payment starts or renews this subscription. A failed payment marks it "Payment failed" and leaves its expiry date alone.',
+      },
+      { key: 'memberName', label: 'Member name', type: 'text', readOnly: true, search: true },
+      { key: 'memberPhone', label: 'Member phone', type: 'text', viewPermission: ['users:view', 'finance:view'], readOnly: true, search: true },
+      {
+        key: 'plan',
+        label: 'Plan',
+        type: 'ref',
+        ref: { resource: 'membership-plans', labelKey: 'name' },
+        list: true,
+        filter: true,
+        help: "Left empty, the subscription's plan is used. A paid payment for a different plan moves the subscription to that plan.",
+      },
+      { key: 'planName', label: 'Plan name on the day', type: 'text', readOnly: true },
+      { key: 'planPrice', label: 'Plan price on the day', type: 'money', readOnly: true },
+      { key: 'amount', label: 'Amount', type: 'money', required: true, list: true },
+      { key: 'paidOn', label: 'Payment date', type: 'date', required: true, list: true },
+      {
+        key: 'periodFrom',
+        label: 'Period from',
+        type: 'date',
+        list: true,
+        help: 'The period this payment pays for. Left empty on a paid payment, it is worked out from the plan: the first payment covers the dates on the subscription, a renewal starts the day after the current expiry, and a payment for a subscription that has already expired starts today.',
+      },
+      {
+        key: 'periodTo',
+        label: 'Period to',
+        type: 'date',
+        list: true,
+        help: "A paid payment moves the subscription's expiry date to this day.",
+      },
+      {
+        key: 'method',
+        label: 'Payment method',
+        type: 'select',
+        options: [
+          { value: 'upi', label: 'UPI' },
+          { value: 'bank_transfer', label: 'Bank transfer' },
+          { value: 'card', label: 'Card' },
+          { value: 'cash', label: 'Cash' },
+          { value: 'gateway', label: 'Payment gateway' },
+          { value: 'other', label: 'Other' },
+        ],
+      },
+      {
+        key: 'gatewayPaymentId',
+        label: 'Gateway payment ID',
+        type: 'text',
+        search: true,
+        help: 'Only fill this in when the money came through the payment gateway and you have its payment ID. It is not checked with the gateway.',
+      },
+      {
+        key: 'recordAs',
+        label: 'Record as',
+        type: 'select',
+        default: 'paid',
+        options: [
+          { value: 'paid', label: 'Paid' },
+          { value: 'failed', label: 'Failed' },
+        ],
+        help: 'Used only when the payment is first added. Afterwards a paid payment can only be marked refunded, with a reason.',
+      },
+      { key: 'ledgerReference', label: 'Ledger reference', type: 'text', readOnly: true, search: true },
+      { key: 'paidRecordedAt', label: 'Entered in the ledger at', type: 'datetime', readOnly: true },
+      { key: 'refundReason', label: 'Refund reason', type: 'text', readOnly: true },
+      { key: 'refundedAt', label: 'Refunded at', type: 'datetime', readOnly: true },
+      { key: 'refundedBy', label: 'Refunded by', type: 'text', readOnly: true },
+      { key: 'refundLedgerReference', label: 'Refund ledger reference', type: 'text', readOnly: true },
+    ],
+    status: {
+      key: 'status',
+      initial: 'paid',
+      options: [
+        { value: 'paid', label: 'Paid', tone: 'green' },
+        { value: 'failed', label: 'Failed', tone: 'red' },
+        { value: 'refunded', label: 'Refunded', tone: 'purple' },
+      ],
+      reasonRequired: ['refunded'],
+    },
+    emptyHint: 'No membership payments have been recorded yet.',
+    sourceNote:
+      'Membership payments are not connected to the payment gateway. Each payment here is a record entered by the team and written to the finance ledger; "Refunded" records the refund in the ledger and sends no money.',
+  },
+];

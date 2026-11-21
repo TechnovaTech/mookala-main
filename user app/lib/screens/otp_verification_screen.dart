@@ -1,317 +1,219 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import '../services/api_client.dart';
 import '../services/api_service.dart';
-import 'profile_screen.dart';
+import '../services/session.dart';
+import '../widgets/app_theme.dart';
 import 'discovery_home_screen.dart';
+import 'profile_screen.dart';
+
+/// Gap the server enforces between two codes for one phone.
+const int _resendGapSeconds = 30;
 
 class OTPVerificationScreen extends StatefulWidget {
+  const OTPVerificationScreen({super.key, required this.phoneNumber, required this.devMode});
+
   final String phoneNumber;
 
-  const OTPVerificationScreen({
-    super.key,
-    required this.phoneNumber,
-  });
+  /// True only when the send response said `devMode: true`.
+  final bool devMode;
 
   @override
   State<OTPVerificationScreen> createState() => _OTPVerificationScreenState();
 }
 
 class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
-  final List<TextEditingController> _controllers = List.generate(4, (index) => TextEditingController());
-  final List<FocusNode> _focusNodes = List.generate(4, (index) => FocusNode());
-  bool _isLoading = false;
+  final TextEditingController _codeController = TextEditingController();
+  Timer? _timer;
+  bool _isVerifying = false;
   bool _isResending = false;
-  int _resendTimer = 30;
-  bool _canResend = false;
+  bool _mustRequestNewCode = false;
+  late bool _devMode = widget.devMode;
+  int _secondsLeft = _resendGapSeconds;
+  String? _error;
+  String? _info;
 
   @override
   void initState() {
     super.initState();
-    _startResendTimer();
+    _startCooldown(_resendGapSeconds);
   }
 
-  void _startResendTimer() {
+  void _startCooldown(int seconds) {
+    _timer?.cancel();
+    setState(() => _secondsLeft = seconds);
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return timer.cancel();
+      setState(() => _secondsLeft = _secondsLeft > 0 ? _secondsLeft - 1 : 0);
+      if (_secondsLeft == 0) timer.cancel();
+    });
+  }
+
+  bool get _codeLooksComplete => RegExp(r'^\d{4,8}$').hasMatch(_codeController.text.trim());
+
+  Future<void> _verify() async {
+    final code = _codeController.text.trim();
+    if (!_codeLooksComplete) {
+      setState(() => _error = 'Enter the code from the SMS (4 to 8 digits).');
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
     setState(() {
-      _canResend = false;
-      _resendTimer = 30;
+      _isVerifying = true;
+      _error = null;
+      _info = null;
     });
 
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(seconds: 1));
-      if (mounted) {
-        setState(() {
-          _resendTimer--;
-        });
-        if (_resendTimer == 0) {
-          setState(() {
-            _canResend = true;
-          });
-          return false;
-        }
-        return true;
+    try {
+      // 1. Check the code. The session token is stored as soon as this succeeds.
+      if (!Session.isSignedIn || Session.phone != widget.phoneNumber) {
+        await ApiService.verifyOtp(widget.phoneNumber, code);
       }
-      return false;
-    });
-  }
-
-  void _verifyOTP() async {
-    String otp = _controllers.map((controller) => controller.text).join();
-    if (otp.length != 4) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter complete OTP')),
+      // 2. Make sure the customer record exists and learn whether it is complete.
+      final complete = await ApiService.ensureUserProfile();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => complete ? const DiscoveryHomeScreen() : const ProfileScreen()),
+        (route) => false,
       );
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    // Verify OTP with backend
-    final verifyResult = await ApiService.verifyOTP(widget.phoneNumber, otp);
-    
-    setState(() {
-      _isLoading = false;
-    });
-
-    if (verifyResult['success'] != true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(verifyResult['error'] ?? 'Invalid OTP')),
-      );
-      return;
-    }
-
-    // Check if profile is complete
-    bool isProfileComplete = verifyResult['isProfileComplete'] == true;
-
-    if (isProfileComplete) {
-      await ApiService.saveUserPhone(widget.phoneNumber);
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const DiscoveryHomeScreen()),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ProfileScreen(phoneNumber: widget.phoneNumber),
-        ),
-      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      var message = e.message;
+      var needNewCode = false;
+      if (e.statusCode == 400 && e.attemptsLeft != null) {
+        final left = e.attemptsLeft!;
+        message = left > 0
+            ? '${e.message}. $left ${left == 1 ? 'attempt' : 'attempts'} left.'
+            : '${e.message}. Please request a new code.';
+        needNewCode = left <= 0;
+      } else if (e.statusCode == 429) {
+        message = '${e.message} Please request a new code.';
+        needNewCode = true;
+      } else if (e.statusCode == 503) {
+        message = 'Sign-in by SMS is not available right now. Please try again later.';
+      }
+      setState(() {
+        _isVerifying = false;
+        _error = message;
+        _mustRequestNewCode = needNewCode;
+        if (needNewCode) _codeController.clear();
+      });
     }
   }
 
-  void _resendOTP() async {
+  Future<void> _resend() async {
     setState(() {
       _isResending = true;
+      _error = null;
+      _info = null;
     });
+    try {
+      final devMode = await ApiService.sendOtp(widget.phoneNumber);
+      if (!mounted) return;
+      setState(() {
+        _isResending = false;
+        _devMode = devMode;
+        _mustRequestNewCode = false;
+        _info = 'A new code has been sent.';
+        _codeController.clear();
+      });
+      _startCooldown(_resendGapSeconds);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isResending = false;
+        _error = e.statusCode == 503 ? 'Sign-in by SMS is not available right now. Please try again later.' : e.message;
+      });
+      // The server says exactly how long to wait: count that down.
+      final wait = e.retryAfterSeconds;
+      if (e.statusCode == 429 && wait != null && wait > 0) _startCooldown(wait);
+    }
+  }
 
-    await Future.delayed(const Duration(seconds: 1));
-
-    setState(() {
-      _isResending = false;
-    });
-
-    _startResendTimer();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('OTP is 1234')),
-    );
+  String get _resendLabel {
+    if (_secondsLeft <= 0) return 'Resend code';
+    final m = _secondsLeft ~/ 60;
+    final s = _secondsLeft % 60;
+    return m > 0 ? 'Resend code in $m:${s.toString().padLeft(2, '0')}' : 'Resend code in ${s}s';
   }
 
   @override
   Widget build(BuildContext context) {
+    final canResend = _secondsLeft <= 0 && !_isResending && !_isVerifying;
     return Scaffold(
       backgroundColor: Colors.white,
-      resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Verify Code',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        centerTitle: false,
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
+      appBar: navyAppBar('Verify code'),
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 40),
-              // OTP Image
               Center(
                 child: Image.asset(
                   'assets/images/otp.png',
-                  height: 350,
-                  width: 350,
+                  height: 200,
                   fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        color: Colors.purple.shade50,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Icon(
-                        Icons.security,
-                        size: 50,
-                        color: Colors.purple.shade600,
-                      ),
-                    );
-                  },
+                  errorBuilder: (_, __, ___) => const Icon(Icons.sms_outlined, size: 80, color: AppColors.navy),
                 ),
               ),
-              const SizedBox(height: 30),
-              // Title
-              const Text(
-                'Enter code',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
-              ),
+              const SizedBox(height: 24),
+              const Text('Enter the verification code', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              Text(
-                'Please enter the verification code\n(Use: 1234)',
+              Text('Sent by SMS to +91 ${widget.phoneNumber}', style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
+              if (_devMode) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: Colors.amber.shade100, borderRadius: BorderRadius.circular(8)),
+                  child: const Text('Test server: no SMS is sent. Use the code 1234.'),
+                ),
+              ],
+              const SizedBox(height: 24),
+              TextField(
+                controller: _codeController,
+                autofocus: true,
+                enabled: !_isVerifying,
+                keyboardType: TextInputType.number,
+                autofillHints: const [AutofillHints.oneTimeCode],
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey.shade600,
+                style: const TextStyle(fontSize: 26, letterSpacing: 8, fontWeight: FontWeight.w600),
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
+                onChanged: (_) => setState(() {}),
+                onSubmitted: (_) => _isVerifying || _mustRequestNewCode ? null : _verify(),
+                decoration: fieldDecoration('Code', hint: '4 to 8 digits'),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: const TextStyle(color: AppColors.danger)),
+              ],
+              if (_info != null) ...[
+                const SizedBox(height: 12),
+                Text(_info!, style: TextStyle(color: Colors.green.shade800)),
+              ],
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _isVerifying || _mustRequestNewCode || !_codeLooksComplete ? null : _verify,
+                style: primaryButtonStyle(),
+                child: _isVerifying
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('VERIFY'),
+              ),
+              const SizedBox(height: 12),
+              Center(
+                child: TextButton(
+                  onPressed: canResend ? _resend : null,
+                  child: _isResending
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text(_resendLabel),
                 ),
               ),
-              const SizedBox(height: 40),
-              // OTP Input
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: List.generate(4, (index) {
-                  return SizedBox(
-                    width: 60,
-                    height: 60,
-                    child: TextField(
-                      controller: _controllers[index],
-                      focusNode: _focusNodes[index],
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      textAlign: TextAlign.center,
-                      maxLength: 1,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF001F3F),
-                      ),
-                      decoration: InputDecoration(
-                        counterText: '',
-                        border: UnderlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey.shade300, width: 2),
-                        ),
-                        focusedBorder: const UnderlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF001F3F), width: 3),
-                        ),
-                        enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey.shade300, width: 2),
-                        ),
-                      ),
-                      onChanged: (value) {
-                        if (value.isNotEmpty && index < 3) {
-                          _focusNodes[index + 1].requestFocus();
-                        } else if (value.isEmpty && index > 0) {
-                          _focusNodes[index - 1].requestFocus();
-                        }
-                        // Removed auto-navigation
-                      },
-                    ),
-                  );
-                }),
-              ),
-              const SizedBox(height: 50),
-              // Continue Button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _verifyOTP,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF001F3F),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text(
-                              'CONTINUE',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Icon(Icons.arrow_forward, size: 20),
-                          ],
-                        ),
-                ),
-              ),
-              const SizedBox(height: 30),
-              // Resend Text
-              _canResend
-                  ? TextButton(
-                      onPressed: _isResending ? null : _resendOTP,
-                      child: _isResending
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : RichText(
-                              text: TextSpan(
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey.shade600,
-                                ),
-                                children: [
-                                  const TextSpan(text: 'If you didn\'t receive a code! '),
-                                  TextSpan(
-                                    text: 'Resend',
-                                    style: TextStyle(
-                                      color: Colors.purple.shade600,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                    )
-                  : Text(
-                      'If you didn\'t receive a code! Resend in ${_resendTimer}s',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-              const SizedBox(height: 40),
             ],
           ),
         ),
@@ -321,12 +223,8 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
 
   @override
   void dispose() {
-    for (var controller in _controllers) {
-      controller.dispose();
-    }
-    for (var focusNode in _focusNodes) {
-      focusNode.dispose();
-    }
+    _timer?.cancel();
+    _codeController.dispose();
     super.dispose();
   }
 }

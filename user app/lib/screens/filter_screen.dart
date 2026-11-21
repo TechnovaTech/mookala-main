@@ -1,519 +1,211 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
 
+import '../models/event.dart';
+import '../utils/event_filter.dart';
+import '../utils/formats.dart';
+import '../widgets/app_theme.dart';
+
+/// Filters that work on the fields live events really carry. Pops with the new
+/// [EventFilter] (search text and city are kept as they were).
+///
+/// Venue is not a separate filter: it is covered by the search box, which
+/// matches venue names. Artists are matched through the artist ids on each
+/// event, joined with the public artist list for their names.
 class FilterScreen extends StatefulWidget {
-  final Function(Map<String, dynamic>) onFiltersApplied;
-  
-  const FilterScreen({super.key, required this.onFiltersApplied});
+  const FilterScreen({super.key, required this.initial, required this.events, required this.artistNames});
+
+  final EventFilter initial;
+
+  /// The loaded events: choices (categories, languages, artists, price range) come from them.
+  final List<EventModel> events;
+
+  /// Artist id -> name, from `/artists`.
+  final Map<String, String> artistNames;
 
   @override
   State<FilterScreen> createState() => _FilterScreenState();
 }
 
 class _FilterScreenState extends State<FilterScreen> {
-  int selectedCategoryIndex = 0;
-  String searchQuery = '';
-  bool isLoading = false;
-  DateTime? startDate;
-  DateTime? endDate;
-  
-  final List<String> filterCategories = [
-    'Artist Name',
-    'Event Title', 
-    'Venue',
-    'Date',
-    'Price Range'
-  ];
+  late Set<String> _categories = {...widget.initial.categories};
+  late DayRange? _dates = widget.initial.dates;
+  late bool _freeOnly = widget.initial.freeOnly;
+  late String _artistId = widget.initial.artistId;
+  late String _language = widget.initial.language;
+  late RangeValues _price;
+  late final double _priceCeiling;
 
-  List<Map<String, dynamic>> allItems = [];
-  List<Map<String, dynamic>> priceRanges = [
-    {'range': '₹1 - ₹500', 'min': 1, 'max': 500, 'selected': false, 'count': 0},
-    {'range': '₹501 - ₹1000', 'min': 501, 'max': 1000, 'selected': false, 'count': 0},
-    {'range': '₹1001 - ₹1500', 'min': 1001, 'max': 1500, 'selected': false, 'count': 0},
-    {'range': 'Above ₹1500', 'min': 1501, 'max': 999999, 'selected': false, 'count': 0},
-    {'range': 'Free', 'min': 0, 'max': 0, 'selected': false, 'count': 0},
-  ];
+  late final List<String> _allCategories;
+  late final List<String> _allLanguages;
+  late final List<MapEntry<String, String>> _artists;
 
   @override
   void initState() {
     super.initState();
-    _loadFilterData();
+    final categories = <String, String>{};
+    var highest = 0.0;
+    final artistIds = <String>{};
+    for (final event in widget.events) {
+      if (event.category.isNotEmpty) categories.putIfAbsent(event.category.toLowerCase(), () => event.category);
+      final max = event.maxPrice ?? 0;
+      if (max > highest) highest = max;
+      artistIds.addAll(event.artistIds);
+    }
+    _allCategories = categories.values.toList()..sort();
+    _allLanguages = languagesOf(widget.events);
+    // Only artists who appear on a loaded event and whose name is known.
+    _artists = [
+      for (final id in artistIds)
+        if ((widget.artistNames[id] ?? '').isNotEmpty) MapEntry(id, widget.artistNames[id]!),
+    ]..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
+    if (_artistId.isNotEmpty && !_artists.any((a) => a.key == _artistId)) _artistId = '';
+
+    _priceCeiling = highest <= 0 ? 0 : (highest / 100).ceil() * 100.0;
+    final low = (widget.initial.minPrice ?? 0).clamp(0, _priceCeiling).toDouble();
+    final high = (widget.initial.maxPrice ?? _priceCeiling).clamp(low, _priceCeiling).toDouble();
+    _price = RangeValues(low, high);
   }
 
-  Future<void> _loadFilterData() async {
-    setState(() { isLoading = true; });
-    
-    try {
-      // Load artists
-      final artistsResult = await ApiService.getArtists();
-      List<Map<String, dynamic>> artists = [];
-      if (artistsResult['success'] == true && artistsResult['artists'] != null) {
-        artists = (artistsResult['artists'] as List).map((artist) => {
-          'name': artist['name'] ?? 'Unknown Artist',
-          'count': 1, // Will be updated with real event count
-          'selected': false,
-          'type': 'artist',
-          'id': artist['_id']
-        }).toList();
-      }
+  bool get _priceSet => _priceCeiling > 0 && (_price.start > 0 || _price.end < _priceCeiling);
 
-      // Load venues
-      final venuesResult = await ApiService.getVenues();
-      List<Map<String, dynamic>> venues = [];
-      if (venuesResult['success'] == true && venuesResult['venues'] != null) {
-        venues = (venuesResult['venues'] as List).map((venue) => {
-          'name': venue['name'] ?? 'Unknown Venue',
-          'count': 0, // Will be updated with event count
-          'selected': false,
-          'type': 'venue',
-          'id': venue['_id']
-        }).toList();
-      }
+  Future<void> _pickDates() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 2, now.month, now.day),
+      initialDateRange: _dates == null ? null : DateTimeRange(start: _dates!.start, end: _dates!.end),
+    );
+    if (picked != null) setState(() => _dates = DayRange(picked.start, picked.end));
+  }
 
-      // Load events and count occurrences
-      final eventsResult = await ApiService.getApprovedEvents();
-      List<Map<String, dynamic>> events = [];
-      Map<String, int> venueCounts = {};
-      
-      if (eventsResult['success'] == true && eventsResult['events'] != null) {
-        final eventsList = eventsResult['events'] as List;
-        
-        // Count events by title
-        Map<String, int> eventCounts = {};
-        for (var event in eventsList) {
-          final title = event['name'] ?? event['title'] ?? 'Unknown Event';
-          eventCounts[title] = (eventCounts[title] ?? 0) + 1;
-          
-          // Count venues by name
-          if (event['venue'] != null) {
-            String venueName = '';
-            if (event['venue'] is Map) {
-              venueName = event['venue']['name'] ?? 'Unknown Venue';
-            } else if (event['venueDetails'] != null && event['venueDetails'] is Map) {
-              venueName = event['venueDetails']['name'] ?? 'Unknown Venue';
-            } else {
-              // Find venue by ID from loaded venues
-              final venueId = event['venue'].toString();
-              final venue = venues.firstWhere(
-                (v) => v['id'] == venueId,
-                orElse: () => {'name': 'Unknown Venue'}
-              );
-              venueName = venue['name'];
-            }
-            if (venueName.isNotEmpty && venueName != 'Unknown Venue') {
-              venueCounts[venueName] = (venueCounts[venueName] ?? 0) + 1;
-            }
-          }
-          
-          // Update price range counts
-          final price = _extractPrice(event);
-          for (var range in priceRanges) {
-            if (price >= range['min'] && price <= range['max']) {
-              range['count'] = (range['count'] ?? 0) + 1;
-              break;
-            }
-          }
-        }
-        
-        events = eventCounts.entries.map((entry) => {
-          'name': entry.key,
-          'count': entry.value,
-          'selected': false,
-          'type': 'event'
-        }).toList();
-        
-        // Create venue list from counts (real venues with events)
-        venues = venueCounts.entries.map((entry) => {
-          'name': entry.key,
-          'count': entry.value,
-          'selected': false,
-          'type': 'venue'
-        }).toList();
-      }
+  void _apply() {
+    Navigator.of(context).pop(EventFilter(
+      query: widget.initial.query,
+      city: widget.initial.city,
+      categories: _categories,
+      dates: _dates,
+      freeOnly: _freeOnly,
+      minPrice: _priceSet && !_freeOnly ? _price.start : null,
+      maxPrice: _priceSet && !_freeOnly ? _price.end : null,
+      artistId: _artistId,
+      language: _language,
+    ));
+  }
 
-      setState(() {
-        allItems = [...artists, ...events, ...venues];
-        isLoading = false;
+  void _reset() => setState(() {
+        _categories = {};
+        _dates = null;
+        _freeOnly = false;
+        _artistId = '';
+        _language = '';
+        _price = RangeValues(0, _priceCeiling);
       });
-    } catch (e) {
-      print('Error loading filter data: $e');
-      setState(() { isLoading = false; });
-    }
-  }
 
-  int _extractPrice(Map<String, dynamic> event) {
-    if (event['tickets'] != null && event['tickets'] is List && (event['tickets'] as List).isNotEmpty) {
-      final tickets = event['tickets'] as List;
-      final firstTicket = tickets[0];
-      if (firstTicket is Map && firstTicket['price'] != null) {
-        return int.tryParse(firstTicket['price'].toString().replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-      }
-    }
-    return int.tryParse(event['price']?.toString()?.replaceAll(RegExp(r'[^0-9]'), '') ?? '0') ?? 0;
-  }
-
-  List<Map<String, dynamic>> getFilteredItems() {
-    String currentType = '';
-    switch (selectedCategoryIndex) {
-      case 0: currentType = 'artist'; break;
-      case 1: currentType = 'event'; break;
-      case 2: currentType = 'venue'; break;
-      case 3: return [];
-      case 4: return [];
-    }
-    
-    var filtered = allItems.where((item) => item['type'] == currentType).toList();
-    
-    if (searchQuery.isNotEmpty) {
-      filtered = filtered.where((item) => 
-        item['name'].toLowerCase().contains(searchQuery.toLowerCase())
-      ).toList();
-    }
-    
-    return filtered;
-  }
-
-  Widget buildDateContent() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Start Date
-          GestureDetector(
-            onTap: () async {
-              final date = await showDatePicker(
-                context: context,
-                initialDate: startDate ?? DateTime.now(),
-                firstDate: DateTime.now(),
-                lastDate: DateTime.now().add(const Duration(days: 365)),
-              );
-              if (date != null) {
-                setState(() { startDate = date; });
-              }
-            },
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_today, color: Color(0xFF001F3F)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Start Date', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                        Text(
-                          startDate != null 
-                            ? '${startDate!.day}/${startDate!.month}/${startDate!.year}'
-                            : 'Select start date',
-                          style: const TextStyle(fontSize: 16)
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.arrow_forward_ios, size: 16),
-                ],
-              ),
-            ),
-          ),
-          // End Date
-          GestureDetector(
-            onTap: () async {
-              final date = await showDatePicker(
-                context: context,
-                initialDate: endDate ?? startDate ?? DateTime.now(),
-                firstDate: startDate ?? DateTime.now(),
-                lastDate: DateTime.now().add(const Duration(days: 365)),
-              );
-              if (date != null) {
-                setState(() { endDate = date; });
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_today, color: Color(0xFF001F3F)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('End Date', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                        Text(
-                          endDate != null 
-                            ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
-                            : 'Select end date',
-                          style: const TextStyle(fontSize: 16)
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.arrow_forward_ios, size: 16),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget buildPriceContent() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: priceRanges.length,
-      itemBuilder: (context, index) {
-        final priceRange = priceRanges[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${priceRange['range']} (${priceRange['count']})',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.black87,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ),
-                Transform.scale(
-                  scale: 0.8,
-                  child: Checkbox(
-                    value: priceRange['selected'],
-                    onChanged: (value) {
-                      setState(() {
-                        priceRange['selected'] = value ?? false;
-                      });
-                    },
-                    activeColor: const Color(0xFF001F3F),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
+  Widget _title(String text) => Padding(
+        padding: const EdgeInsets.only(top: 20, bottom: 8),
+        child: Text(text, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+      );
 
   @override
   Widget build(BuildContext context) {
-    final filteredItems = getFilteredItems();
-    
+    final presets = datePresets(DateTime.now());
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Filter',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      body: Row(
+      appBar: navyAppBar('Filters', actions: [
+        TextButton(onPressed: _reset, child: const Text('Reset', style: TextStyle(color: Colors.white))),
+      ]),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          // Left sidebar
-          Container(
-            width: 120,
-            color: Colors.grey.shade300,
-            child: ListView.builder(
-              itemCount: filterCategories.length,
-              itemBuilder: (context, index) {
-                final isSelected = selectedCategoryIndex == index;
-                return Container(
-                  color: isSelected ? Colors.white : Colors.transparent,
-                  child: ListTile(
-                    title: Text(
-                      filterCategories[index],
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    onTap: () {
-                      setState(() {
-                        selectedCategoryIndex = index;
-                        searchQuery = '';
-                      });
-                    },
-                  ),
-                );
-              },
-            ),
+          _title('Date'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final preset in presets)
+                ChoiceChip(
+                  label: Text('${preset.title} (${preset.range.label})'),
+                  selected: _dates == preset.range,
+                  onSelected: (on) => setState(() => _dates = on ? preset.range : null),
+                ),
+              ActionChip(
+                avatar: const Icon(Icons.date_range, size: 18),
+                label: Text(_dates != null && !presets.any((p) => p.range == _dates) ? _dates!.label : 'Pick dates'),
+                onPressed: _pickDates,
+              ),
+            ],
           ),
-          // Right content
-          Expanded(
-            child: Column(
+          if (_allCategories.isNotEmpty) ...[
+            _title('Category'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                // Search bar for filterable categories
-                if (selectedCategoryIndex < 3)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    child: TextField(
-                      onChanged: (value) {
-                        setState(() { searchQuery = value; });
-                      },
-                      decoration: InputDecoration(
-                        hintText: 'Search ${filterCategories[selectedCategoryIndex].toLowerCase()}...',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      ),
-                    ),
+                for (final category in _allCategories)
+                  FilterChip(
+                    label: Text(category),
+                    selected: _categories.contains(category),
+                    onSelected: (on) => setState(() => on ? _categories.add(category) : _categories.remove(category)),
                   ),
-                Expanded(
-                  child: isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : selectedCategoryIndex == 3 
-                      ? buildDateContent()
-                      : selectedCategoryIndex == 4
-                        ? buildPriceContent()
-                        : ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: filteredItems.length,
-                          itemBuilder: (context, index) {
-                            final item = filteredItems[index];
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        '${item['name']} (${item['count']})',
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.black87,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                        maxLines: 1,
-                                      ),
-                                    ),
-                                    Transform.scale(
-                                      scale: 0.8,
-                                      child: Checkbox(
-                                        value: item['selected'],
-                                        onChanged: (value) {
-                                          setState(() {
-                                            item['selected'] = value ?? false;
-                                          });
-                                        },
-                                        activeColor: const Color(0xFF001F3F),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-                // Bottom buttons
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      // Clear filters button
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () {
-                            setState(() {
-                              for (var item in allItems) {
-                                item['selected'] = false;
-                              }
-                              for (var range in priceRanges) {
-                                range['selected'] = false;
-                              }
-                              startDate = null;
-                              endDate = null;
-                              searchQuery = '';
-                            });
-                          },
-                          child: const Text(
-                            'Clear All Filters',
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.pop(context),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF001F3F),
-                                side: const BorderSide(color: Color(0xFF001F3F)),
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                              ),
-                              child: const Text('Close'),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () {
-                                // Collect selected filters
-                                Map<String, dynamic> selectedFilters = {
-                                  'artists': allItems.where((item) => item['type'] == 'artist' && item['selected']).map((item) => item['name'] as String).toList(),
-                                  'events': allItems.where((item) => item['type'] == 'event' && item['selected']).map((item) => item['name'] as String).toList(),
-                                  'venues': allItems.where((item) => item['type'] == 'venue' && item['selected']).map((item) => item['name'] as String).toList(),
-                                  'priceRanges': priceRanges.where((range) => range['selected']).toList(),
-                                  'startDate': startDate,
-                                  'endDate': endDate,
-                                };
-                                
-                                widget.onFiltersApplied(selectedFilters);
-                                Navigator.pop(context);
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF001F3F),
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                              ),
-                              child: const Text(
-                                'Apply Filters',
-                                style: TextStyle(color: Colors.white),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
+          ],
+          _title('Price'),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Free events only'),
+            value: _freeOnly,
+            activeThumbColor: AppColors.navy,
+            onChanged: (on) => setState(() => _freeOnly = on),
           ),
+          if (_priceCeiling > 0 && !_freeOnly) ...[
+            Text('${formatRupees(_price.start)} to ${formatRupees(_price.end)} per ticket', style: TextStyle(color: Colors.grey.shade700)),
+            RangeSlider(
+              values: _price,
+              min: 0,
+              max: _priceCeiling,
+              divisions: (_priceCeiling / 50).round().clamp(1, 200),
+              activeColor: AppColors.navy,
+              onChanged: (values) => setState(() => _price = values),
+            ),
+          ],
+          if (_artists.isNotEmpty) ...[
+            _title('Artist'),
+            DropdownButtonFormField<String>(
+              key: ValueKey('artist-$_artistId'),
+              initialValue: _artistId,
+              isExpanded: true,
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+              items: [
+                const DropdownMenuItem(value: '', child: Text('Any artist')),
+                for (final artist in _artists) DropdownMenuItem(value: artist.key, child: Text(artist.value, overflow: TextOverflow.ellipsis)),
+              ],
+              onChanged: (value) => setState(() => _artistId = value ?? ''),
+            ),
+          ],
+          if (_allLanguages.isNotEmpty) ...[
+            _title('Language'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final language in _allLanguages)
+                  ChoiceChip(
+                    label: Text(language),
+                    selected: _language.toLowerCase() == language.toLowerCase(),
+                    onSelected: (on) => setState(() => _language = on ? language : ''),
+                  ),
+              ],
+            ),
+          ],
         ],
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: ElevatedButton(onPressed: _apply, style: primaryButtonStyle(), child: const Text('SHOW EVENTS')),
+        ),
       ),
     );
   }

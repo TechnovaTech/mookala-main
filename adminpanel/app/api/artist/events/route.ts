@@ -1,61 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
+import { fail, ok } from '@/lib/http';
+import { requireAppUser } from '@/lib/app-auth';
+
+export const dynamic = 'force-dynamic';
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 200 });
 }
 
+/** GET /api/artist/events?phone=   Approved events this artist has accepted. */
 export async function GET(request: NextRequest) {
+  const auth = requireAppUser(request, new URL(request.url).searchParams.get('phone'));
+  if (!auth.ok) return auth.response;
+
   try {
-    const { searchParams } = new URL(request.url);
-    const artistPhone = searchParams.get('phone');
-
-    if (!artistPhone) {
-      return NextResponse.json({ error: 'Artist phone required' }, { status: 400 });
-    }
-
     const { db } = await connectToDatabase();
-    
-    // Find the artist by phone to get their ObjectId
-    const artist = await db.collection('artists').findOne({ phone: artistPhone });
-    
-    if (!artist) {
-      return NextResponse.json({ error: 'Artist not found' }, { status: 404 });
-    }
 
-    // Find events where this artist is selected and has accepted
-    const acceptedEvents = await db.collection('events').find({
-      artists: artist._id,
-      status: 'approved',
-      artistResponse: 'accepted'
-    }).toArray();
+    const artist = await db.collection('artists').findOne({ phone: auth.phone }, { projection: { _id: 1 } });
+    if (!artist) return fail('Artist not found', 404);
 
-    // Get organizer details for each event
-    const eventsWithDetails = await Promise.all(
-      acceptedEvents.map(async (event) => {
-        const organizer = await db.collection('organizers').findOne({ _id: event.organizerId });
-        
+    const accepted = await db
+      .collection('events')
+      .find({ artists: artist._id, status: 'approved', artistResponse: 'accepted' })
+      .project({ media: 0, tickets: 0, scannerStaff: 0 })
+      .toArray();
+
+    const events = await Promise.all(
+      accepted.map(async (event) => {
+        const organizer = await db
+          .collection('organizers')
+          .findOne({ _id: event.organizerId }, { projection: { name: 1, phone: 1 } });
+
         return {
           _id: event._id,
           eventTitle: event.name || 'Untitled Event',
           eventType: event.locationType || 'venue',
           eventDate: event.startDate,
           eventTime: event.startTime,
-          venue: event.location?.venue || event.location?.address || 'Venue TBD',
+          venue: event.location?.name || event.location?.venue || event.location?.address || 'Venue TBD',
           city: event.location?.city || 'City TBD',
           organizerName: organizer?.name || 'Unknown Organizer',
           organizerPhone: organizer?.phone || '',
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
         };
       })
     );
 
-    return NextResponse.json({ 
-      success: true, 
-      events: eventsWithDetails 
-    });
+    return ok({ events });
   } catch (error) {
     console.error('Artist events error:', error);
-    return NextResponse.json({ error: 'Failed to fetch artist events' }, { status: 500 });
+    return fail('Failed to fetch artist events', 500);
   }
 }

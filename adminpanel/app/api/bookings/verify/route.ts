@@ -1,105 +1,90 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
-import { ObjectId } from 'mongodb';
+import { asString } from '@/lib/http';
+import { checkInBlock, effectivePaymentStatus, findBooking, markCheckedIn } from '@/lib/bookings';
+
+export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/bookings/verify
- * Body: { bookingId } OR { qrData: "<json string from the ticket QR>" }
+ * POST /api/bookings/verify (public: the gate scanners in both apps)
+ * Body: { bookingId } OR { qrData: "<json string from the ticket QR>" },
+ *       optional { eventId } (the event the scanner is working at),
+ *       optional { checkOnly: true } to look without admitting.
  *
- * Verifies a ticket against the database and performs a one-time check-in:
- *  - not found            -> valid:false, reason:"not_found"
- *  - already checked in   -> valid:false, reason:"already_used"  (+ prior check-in time)
- *  - cancelled            -> valid:false, reason:"cancelled"
- *  - otherwise            -> valid:true, marks checkedIn + status:"attended"
+ * Always answers 200 with { success, valid, reason, message, booking }.
+ * Reasons: ok, bad_qr, not_found, already_used, cancelled, and (new)
+ * wrong_event, payment_pending, expired, payment_unverified, not_confirmed.
  *
- * A `checkOnly:true` flag verifies WITHOUT marking the ticket as used.
+ * The check-in itself is one conditional update, so when two scanners read
+ * the same ticket at the same moment exactly one of them is told "ok".
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    let bookingId: string | undefined = body.bookingId;
-    const checkOnly: boolean = body.checkOnly === true;
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ success: false, error: 'bookingId or qrData is required' }, { status: 400 });
+    }
+
+    let bookingId = asString(body.bookingId, 80);
+    const checkOnly = body.checkOnly === true;
+    const eventId = asString(body.eventId, 80);
 
     // Allow passing the raw QR JSON payload directly.
     if (!bookingId && body.qrData) {
       try {
         const parsed = typeof body.qrData === 'string' ? JSON.parse(body.qrData) : body.qrData;
-        bookingId = parsed.bookingId || parsed._id || parsed.id;
+        bookingId = asString(parsed?.bookingId, 80) || asString(parsed?._id, 80) || asString(parsed?.id, 80);
       } catch {
-        return NextResponse.json(
-          { success: true, valid: false, reason: 'bad_qr', message: 'QR data is not valid' },
-          { status: 200 }
-        );
+        bookingId = '';
+      }
+      if (!bookingId) {
+        return NextResponse.json({ success: true, valid: false, reason: 'bad_qr', message: 'QR data is not valid' });
       }
     }
 
     if (!bookingId) {
-      return NextResponse.json(
-        { success: false, error: 'bookingId or qrData is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'bookingId or qrData is required' }, { status: 400 });
     }
 
     const { db } = await connectToDatabase();
 
-    // Resolve the booking by ObjectId when possible, else by common string id fields.
-    let booking = null;
-    if (/^[a-fA-F0-9]{24}$/.test(bookingId)) {
-      booking = await db.collection('bookings').findOne({ _id: new ObjectId(bookingId) });
-    }
+    // Tickets are stored under an ObjectId or, for old app versions, a plain
+    // string _id; a few carry a separate bookingId/ticketId field.
+    let booking = await findBooking(db, bookingId);
     if (!booking) {
-      // The mobile app generates its own `_id` (a millisecond timestamp) and
-      // sends it with the booking, so most tickets are stored under a plain
-      // string _id rather than an ObjectId. Without this lookup every one of
-      // those QR codes reported "ticket not found" at the gate.
-      booking = await db.collection('bookings').findOne({ _id: bookingId as any });
-    }
-    if (!booking) {
-      // Fallback: some tickets carry a string bookingId/ticketId field.
-      booking = await db.collection('bookings').findOne({
-        $or: [{ bookingId: bookingId }, { ticketId: bookingId }],
-      });
+      booking = await db.collection('bookings').findOne({ $or: [{ bookingId }, { ticketId: bookingId }] });
     }
 
     if (!booking) {
-      return NextResponse.json({
-        success: true,
-        valid: false,
-        reason: 'not_found',
-        message: 'Ticket not found',
-      });
+      return NextResponse.json({ success: true, valid: false, reason: 'not_found', message: 'Ticket not found' });
     }
 
-    if (booking.status === 'cancelled') {
-      return NextResponse.json({
+    const refuse = (reason: string, message: string, current: any) =>
+      NextResponse.json({
         success: true,
         valid: false,
-        reason: 'cancelled',
-        message: 'This ticket was cancelled',
-        booking: serialize(booking),
+        reason,
+        message,
+        ...(reason === 'already_used' ? { checkedInAt: current.checkedInAt || null } : {}),
+        booking: serialize(current),
       });
-    }
 
-    if (booking.checkedIn === true) {
-      return NextResponse.json({
-        success: true,
-        valid: false,
-        reason: 'already_used',
-        message: 'Ticket already checked in',
-        checkedInAt: booking.checkedInAt || null,
-        booking: serialize(booking),
-      });
-    }
+    const block = checkInBlock(booking, eventId || undefined);
+    if (block) return refuse(block.reason, block.message, booking);
 
-    // Valid ticket. Mark as used unless caller only wants to peek.
     if (!checkOnly) {
-      const checkedInAt = new Date();
-      await db.collection('bookings').updateOne(
-        { _id: booking._id },
-        { $set: { checkedIn: true, checkedInAt, status: 'attended', updatedAt: checkedInAt } }
-      );
+      const result = await markCheckedIn(db, booking, 'scanner');
+      if (!result.done) {
+        // Another scanner got there first, or the booking changed meanwhile.
+        const current = (await db.collection('bookings').findOne({ _id: booking._id })) || booking;
+        const now = checkInBlock(current, eventId || undefined) || {
+          reason: 'already_used',
+          message: 'Ticket already checked in',
+        };
+        return refuse(now.reason, now.message, current);
+      }
       booking.checkedIn = true;
-      booking.checkedInAt = checkedInAt;
+      booking.checkedInAt = result.checkedInAt;
       booking.status = 'attended';
     }
 
@@ -112,17 +97,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Verify Error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to verify ticket' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to verify ticket' }, { status: 500 });
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function serialize(booking: any) {
   return {
     _id: booking._id?.toString(),
+    eventId: booking.eventId ? String(booking.eventId) : '',
     eventTitle: booking.eventTitle || '',
     eventDate: booking.eventDate || '',
     eventTime: booking.eventTime || '',
@@ -132,6 +114,7 @@ function serialize(booking: any) {
     totalPrice: booking.totalPrice || 0,
     tickets: booking.tickets || [],
     status: booking.status || '',
+    paymentStatus: effectivePaymentStatus(booking),
     checkedIn: booking.checkedIn === true,
     checkedInAt: booking.checkedInAt || null,
   };

@@ -1,60 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
+import { fail, ok } from '@/lib/http';
+import { requestOtp } from '@/lib/otp';
+import { otpFailure, readBody } from '@/lib/app-auth';
+
+export const dynamic = 'force-dynamic';
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 200 });
 }
 
+/**
+ * POST /api/user/register   { phone }
+ * Sends a one-time password and makes sure a customer record exists
+ * ('pending' until the code is verified through /api/user/verify-otp).
+ */
 export async function POST(request: NextRequest) {
+  const body = await readBody(request);
+  if (!body) return fail('Invalid request body', 400);
+
   try {
-    const { phone } = await request.json();
-
-    console.log('User registration request for phone:', phone);
-
-    if (!phone || !/^\d{10}$/.test(phone)) {
-      return NextResponse.json({ error: 'Valid 10-digit phone number required' }, { status: 400 });
-    }
-
     const { db } = await connectToDatabase();
-    
-    // Check if user exists
-    const existingUser = await db.collection('users').findOne({ phone });
-    
-    if (existingUser) {
-      console.log('Existing user found, updating OTP');
-      // User exists, update OTP for re-sending
-      await db.collection('users').updateOne(
-        { phone },
-        { $set: { otp: '1234', updatedAt: new Date() } }
-      );
-      
-      return NextResponse.json({ 
-        success: true, 
-        message: 'OTP sent successfully',
-        otp: '1234',
-        isExisting: true
-      });
-    }
 
-    console.log('New user, creating record');
-    // New user - store phone with pending status
-    await db.collection('users').insertOne({
-      phone,
-      status: 'pending',
-      otp: '1234',
-      createdAt: new Date()
-    });
+    const sent = await requestOtp(db, { phone: body.phone, purpose: 'user-register', role: 'user', request });
+    if (!sent.ok) return otpFailure(sent);
+    const phone = sent.phone;
 
-    console.log('User created successfully');
+    const users = db.collection('users');
+    const existing = await users.findOne({ phone }, { projection: { _id: 1 } });
+    if (!existing) await users.insertOne({ phone, status: 'pending', createdAt: new Date() });
 
-    return NextResponse.json({ 
-      success: true, 
-      message: 'OTP sent successfully',
-      otp: '1234',
-      isExisting: false
+    return ok({
+      message: sent.message,
+      isExisting: Boolean(existing),
+      ...(sent.devMode ? { devMode: true } : {}),
     });
   } catch (error) {
     console.error('Registration error:', error);
-    return NextResponse.json({ error: 'Registration failed' }, { status: 500 });
+    return fail('Registration failed', 500);
   }
 }

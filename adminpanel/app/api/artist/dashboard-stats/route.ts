@@ -1,99 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
+import { fail, ok } from '@/lib/http';
+import { requireAppUser } from '@/lib/app-auth';
+
+export const dynamic = 'force-dynamic';
 
 export async function OPTIONS() {
-  return new NextResponse(null, { 
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
-  });
+  return new NextResponse(null, { status: 200 });
 }
 
+/** GET /api/artist/dashboard-stats?phone= */
 export async function GET(request: NextRequest) {
+  const auth = requireAppUser(request, new URL(request.url).searchParams.get('phone'));
+  if (!auth.ok) return auth.response;
+
   try {
-    const { searchParams } = new URL(request.url);
-    const phone = searchParams.get('phone');
-
-    if (!phone) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Phone number is required' 
-      }, { status: 400 });
-    }
-
     const { db } = await connectToDatabase();
-    
-    // Find artist by phone
-    const artist = await db.collection('artists').findOne({ phone });
-    
-    if (!artist) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Artist not found' 
-      }, { status: 404 });
+
+    const artist = await db.collection('artists').findOne(
+      { phone: auth.phone },
+      { projection: { name: 1, phone: 1, status: 1, followersCount: 1, totalEarnings: 1 } }
+    );
+    if (!artist) return fail('Artist not found', 404);
+
+    const followers = await db.collection('users').countDocuments({ followedArtists: artist._id });
+    if (artist.followersCount !== followers) {
+      await db.collection('artists').updateOne({ _id: artist._id }, { $set: { followersCount: followers } });
     }
 
-    // Count real followers from users collection
-    const realFollowersCount = await db.collection('users')
-      .countDocuments({ 
-        'followedArtists': artist._id
-      });
-    
-    // Update followersCount if it doesn't match
-    if (artist.followersCount !== realFollowersCount) {
-      await db.collection('artists').updateOne(
-        { _id: artist._id },
-        { $set: { followersCount: realFollowersCount } }
-      );
-    }
+    // A booking request is an approved event that lists the artist and has no
+    // answer yet: the same rule as /api/artist/booking-requests.
+    const bookingRequests = await db.collection('events').countDocuments({
+      artists: artist._id,
+      status: 'approved',
+      artistResponse: { $exists: false },
+    });
 
-    // Get booking requests count
-    const bookingRequestsCount = await db.collection('events')
-      .countDocuments({ 
-        'requestedArtists': artist._id,
-        'status': { $in: ['pending', 'requested'] }
-      });
-
-    // Get upcoming events count
-    // `acceptedArtists` is never written anywhere — an accepted booking sets
-    // `artistResponse` on the event instead, and the artist sits in `artists`.
-    // Querying the phantom field made this count permanently zero. The date
-    // also lives in `startDate` as a "YYYY-MM-DD" string, not a `date` Date.
+    // `startDate` is stored as "YYYY-MM-DD" text.
     const today = new Date().toISOString().slice(0, 10);
-    const upcomingEventsCount = await db.collection('events')
-      .countDocuments({
-        artists: artist._id,
-        artistResponse: 'accepted',
-        startDate: { $gte: today }
-      });
+    const upcomingEvents = await db.collection('events').countDocuments({
+      artists: artist._id,
+      artistResponse: 'accepted',
+      startDate: { $gte: today },
+    });
 
-    // Get basic stats
-    const stats = {
-      followers: realFollowersCount,
-      bookingRequests: bookingRequestsCount,
-      upcomingEvents: upcomingEventsCount,
-      totalEarnings: artist.totalEarnings || 0
-    };
-
-    return NextResponse.json({ 
-      success: true, 
-      stats,
+    return ok({
+      stats: {
+        followers,
+        bookingRequests,
+        upcomingEvents,
+        totalEarnings: artist.totalEarnings || 0,
+      },
       artist: {
         _id: artist._id.toString(),
         name: artist.name,
         phone: artist.phone,
-        status: artist.status
-      }
+        status: artist.status,
+      },
     });
-
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to fetch dashboard stats' 
-    }, { status: 500 });
+    return fail('Failed to fetch dashboard stats', 500);
   }
 }

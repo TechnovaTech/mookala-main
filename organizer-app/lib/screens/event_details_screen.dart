@@ -1,213 +1,83 @@
 import 'package:flutter/material.dart';
+
+import '../widgets/common.dart';
 import 'event_media_upload_screen.dart';
 
+/// Step 2 of creating an event: description, terms and the photography contact.
 class EventDetailsScreen extends StatefulWidget {
+  const EventDetailsScreen({super.key, required this.eventData, this.venue});
+
   final Map<String, dynamic> eventData;
-  
-  const EventDetailsScreen({super.key, required this.eventData});
+
+  /// The venue picked in step 1 (with its seating plan), when it came from the list.
+  final Map<String, dynamic>? venue;
 
   @override
   State<EventDetailsScreen> createState() => _EventDetailsScreenState();
 }
 
 class _EventDetailsScreenState extends State<EventDetailsScreen> {
-  final TextEditingController _descriptionController = TextEditingController();
-  final TextEditingController _termsController = TextEditingController();
-  final TextEditingController _photographyContactController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final _description = TextEditingController();
+  final _terms = TextEditingController();
+  final _photography = TextEditingController();
+
+  @override
+  void dispose() {
+    _description.dispose();
+    _terms.dispose();
+    _photography.dispose();
+    super.dispose();
+  }
+
+  void _continue() {
+    if (!_formKey.currentState!.validate()) return;
+    final data = Map<String, dynamic>.from(widget.eventData)
+      ..['description'] = _description.text.trim()
+      ..['terms'] = _terms.text.trim()
+      ..['photographyContact'] = _photography.text.trim();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => EventMediaUploadScreen(eventData: data, venue: widget.venue)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Event Details',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      appBar: appBar('Create event · 2 of 4'),
+      body: SafeArea(
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
             children: [
-              const Text(
-                'Event Description',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Provide a detailed description of your event.',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 20),
-              
+              const SectionTitle('About the event'),
               TextFormField(
-                controller: _descriptionController,
-                maxLines: 8,
-                decoration: InputDecoration(
-                  hintText: 'Enter event description...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFF001F3F)),
-                  ),
-                  contentPadding: const EdgeInsets.all(16),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter event description';
-                  }
-                  return null;
-                },
+                controller: _description,
+                maxLines: 6,
+                maxLength: 5000,
+                decoration: fieldDecoration('Description *', hint: 'What will happen, who performs, what to expect'),
+                validator: (v) => (v ?? '').trim().length < 20 ? 'Write at least a couple of sentences (20 characters)' : null,
               ),
-              
-              const SizedBox(height: 32),
-              
-              const Text(
-                'Terms & Conditions',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Add terms and conditions for your event.',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 20),
-              
+              const SizedBox(height: 12),
               TextFormField(
-                controller: _termsController,
-                maxLines: 8,
-                decoration: InputDecoration(
-                  hintText: 'Enter terms and conditions...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFF001F3F)),
-                  ),
-                  contentPadding: const EdgeInsets.all(16),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter terms and conditions';
-                  }
-                  return null;
-                },
-              ),
-              
-              const SizedBox(height: 32),
-              
-              const Text(
-                'Photography & Videography Contact',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Contact details for photography and videography services.',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 20),
-              
-              TextFormField(
-                controller: _photographyContactController,
+                controller: _terms,
                 maxLines: 4,
-                decoration: InputDecoration(
-                  hintText: 'Enter photography/videography contact details...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFF001F3F)),
-                  ),
-                  contentPadding: const EdgeInsets.all(16),
-                ),
+                maxLength: 5000,
+                decoration: fieldDecoration('Terms & conditions (optional)', hint: 'Entry rules, age limits, what is not allowed'),
               ),
-              
-              const SizedBox(height: 40),
-              
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    if (_formKey.currentState!.validate()) {
-                      final updatedEventData = Map<String, dynamic>.from(widget.eventData);
-                      updatedEventData['description'] = _descriptionController.text.trim();
-                      updatedEventData['terms'] = _termsController.text.trim();
-                      updatedEventData['photographyContact'] = _photographyContactController.text.trim();
-                      
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => EventMediaUploadScreen(eventData: updatedEventData),
-                        ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF001F3F),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: const Text(
-                    'Continue',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
-                ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _photography,
+                maxLength: 200,
+                decoration: fieldDecoration('Photography contact (optional)',
+                        hint: 'Name and phone of the photographer', icon: Icons.camera_alt_outlined)
+                    .copyWith(counterText: ''),
+                validator: (v) => null,
               ),
+              const SizedBox(height: 20),
+              PrimaryButton(label: 'Continue', onPressed: _continue),
             ],
           ),
         ),

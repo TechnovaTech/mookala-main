@@ -1,57 +1,30 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
-import { ObjectId } from 'mongodb';
+import { requireAdmin } from '@/lib/auth';
+import { can } from '@/lib/permissions';
+import { fail, ok, toObjectId } from '@/lib/http';
+import { loadArtistDetail } from '@/app/api/admin/artists/_detail';
 
+export const dynamic = 'force-dynamic';
+
+/**
+ * GET /api/artist/[id]
+ * Older admin endpoint for one artist, kept for anything that still links to
+ * it. Same data as GET /api/admin/artists/[id]: no KYC documents, images as
+ * links only.
+ */
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const check = await requireAdmin(request, 'artists:view');
+  if (!check.ok) return check.response;
+  if (!toObjectId(params.id)) return fail('Invalid artist id', 400);
+
   try {
     const { db } = await connectToDatabase();
-    const artist = await db.collection('artists').findOne({ _id: new ObjectId(params.id) });
-    
-    if (!artist) {
-      return NextResponse.json({ success: false, error: 'Artist not found' }, { status: 404 });
-    }
-
-    // Events carry the artist in `artists` with the reply in `artistResponse`;
-    // the `acceptedArtists` field this used to query is never written, so the
-    // admin panel showed no events for artists who clearly had them.
-    const events = await db.collection('events')
-      .find({
-        artists: new ObjectId(params.id),
-        artistResponse: 'accepted'
-      })
-      .toArray();
-
-    const artistId = artist._id.toString();
-    
-    return NextResponse.json({ 
-      success: true, 
-      artist: {
-        _id: artistId,
-        phone: artist.phone,
-        name: artist.name,
-        email: artist.email,
-        city: artist.city,
-        bio: artist.bio,
-        genre: artist.genre,
-        pricing: artist.pricing,
-        status: artist.status,
-        createdAt: artist.createdAt,
-        profileImage: artist.profileImage ? `/api/images/${artistId}?type=profile` : null,
-        bannerImage: artist.bannerImage ? `/api/images/${artistId}?type=banner` : null,
-        media: artist.media ? artist.media.map((_: any, idx: number) => `/api/images/${artistId}?type=media&index=${idx}`) : [],
-        events: events.map(e => ({
-          id: e._id.toString(),
-          name: e.name,
-          // Events store the day in `startDate`; `date` does not exist, so
-          // every row rendered with an empty date.
-          date: e.startDate || e.date || null
-        })),
-        followersCount: artist.followersCount || (artist.followers ? artist.followers.length : 0),
-        followers: artist.followers || []
-      }
-    });
+    const artist = await loadArtistDetail(db, params.id, can(check.admin, 'kyc:view'));
+    if (!artist) return fail('Artist not found', 404);
+    return ok({ artist });
   } catch (error) {
-    console.error('GET Error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to fetch artist' }, { status: 500 });
+    console.error('Error fetching artist:', error);
+    return fail('Failed to fetch artist', 500);
   }
 }

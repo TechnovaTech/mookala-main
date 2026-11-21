@@ -1,398 +1,191 @@
 import 'package:flutter/material.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../services/auth_service.dart';
 
+import '../logic/event_logic.dart';
+import '../logic/ticket_logic.dart';
+import '../services/api.dart';
+import '../services/api_client.dart';
+import '../widgets/common.dart';
+
+/// Sales and check-ins of one event, matched by event id.
+///
+/// Sources: `GET /events/{id}` (ticket inventory), `GET /events/{id}/scan-stats`
+/// and `GET /bookings?organizerPhone=&eventId=`. There is no payout data in
+/// the app, so none is shown.
 class EventAnalyticsScreen extends StatefulWidget {
-  final String eventTitle;
-  
-  const EventAnalyticsScreen({super.key, required this.eventTitle});
-  
+  const EventAnalyticsScreen({super.key, required this.eventId, required this.eventName});
+
+  final String eventId;
+  final String eventName;
+
   @override
   State<EventAnalyticsScreen> createState() => _EventAnalyticsScreenState();
 }
 
 class _EventAnalyticsScreenState extends State<EventAnalyticsScreen> {
-  bool _isLoading = true;
-  int _totalTicketsSold = 0;
-  double _totalRevenue = 0.0;
-  int _totalCheckIns = 0;
-  List<Map<String, dynamic>> _bookingData = [];
-  
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic> _stats = {};
+  EventSales? _sales;
+  List<Map<String, dynamic>> _tickets = [];
+
   @override
   void initState() {
     super.initState();
-    _fetchAnalyticsData();
-  }
-  
-  Future<void> _fetchAnalyticsData() async {
-    try {
-      final userData = await AuthService.getUserData();
-      final userPhone = userData['phone'];
-      
-      if (userPhone != null) {
-        // Fetch bookings for this event
-        final response = await http.get(
-          Uri.parse('https://mookala.vercel.app/api/bookings?organizerPhone=$userPhone&eventTitle=${Uri.encodeComponent(widget.eventTitle)}'),
-          headers: {'Content-Type': 'application/json'},
-        );
-        
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          if (data['success'] == true && data['bookings'] != null) {
-            final bookings = List<Map<String, dynamic>>.from(data['bookings']);
-            _calculateAnalytics(bookings);
-          }
-        }
-      }
-    } catch (e) {
-      print('Error fetching analytics: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-  
-  void _calculateAnalytics(List<Map<String, dynamic>> bookings) {
-    int totalTickets = 0;
-    double totalRevenue = 0.0;
-    int checkIns = 0;
-    
-    for (var booking in bookings) {
-      if (booking['eventTitle'] == widget.eventTitle) {
-        // Count tickets
-        if (booking['tickets'] != null) {
-          for (var ticket in booking['tickets']) {
-            totalTickets += (ticket['quantity'] as int? ?? 0);
-            totalRevenue += ((ticket['totalPrice'] as num? ?? 0).toDouble());
-          }
-        } else {
-          totalTickets += (booking['totalSeats'] as int? ?? 0);
-          totalRevenue += ((booking['totalPrice'] as num? ?? 0).toDouble());
-        }
-        
-        // Count check-ins (set by the gate QR scanner: checkedIn=true, status='attended')
-        if (booking['checkedIn'] == true ||
-            booking['status'] == 'attended' ||
-            booking['status'] == 'checked-in') {
-          checkIns++;
-        }
-      }
-    }
-    
-    setState(() {
-      _totalTicketsSold = totalTickets;
-      _totalRevenue = totalRevenue;
-      _totalCheckIns = checkIns;
-      _bookingData = bookings;
-    });
+    _load();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          'Analytics - ${widget.eventTitle}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+  Future<void> _load() async {
+    setState(() {
+      _loading = _sales == null;
+      _error = null;
+    });
+    try {
+      final results = await Future.wait([
+        Api.scanStats(widget.eventId),
+        Api.eventBookings(widget.eventId),
+        Api.event(widget.eventId),
+      ]);
+      if (!mounted) return;
+      final event = results[2] as Map<String, dynamic>;
+      setState(() {
+        _stats = results[0] as Map<String, dynamic>;
+        _sales = EventSales.fromBookings(results[1] as List<Map<String, dynamic>>, widget.eventId);
+        _tickets = event['tickets'] is List
+            ? (event['tickets'] as List).whereType<Map>().map((t) => Map<String, dynamic>.from(t)).toList()
+            : [];
+      });
+    } on ApiException catch (e) {
+      // A failed load is shown as an error, never as zeros.
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Widget _tile(String label, String value, IconData icon, {String? note}) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Dashboard Header
-            const Text(
-              'Dashboard',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 20),
-            
-
-            
-            // Performance Metrics
-            if (_isLoading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(40),
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            else ...[
-              _buildPerformanceCard(
-                'Total Tickets Sold',
-                _totalTicketsSold.toString(),
-                _totalTicketsSold == 0 ? 'No tickets sold yet' : 'Tickets sold successfully',
-                Icons.confirmation_number,
-                Colors.blue,
-              ),
-              const SizedBox(height: 12),
-              _buildPerformanceCard(
-                'Revenue Generated',
-                '₹${_totalRevenue.toStringAsFixed(2)}',
-                'Total earnings from ticket sales',
-                Icons.currency_rupee,
-                Colors.green,
-              ),
-              const SizedBox(height: 12),
-              _buildPerformanceCard(
-                'Check-in Count',
-                _totalCheckIns.toString(),
-                'Attendees who checked in',
-                Icons.check_circle,
-                Colors.orange,
-              ),
-            ],
-            
-            const SizedBox(height: 32),
-            
-            // Refresh Button
-            Center(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _isLoading = true;
-                  });
-                  _fetchAnalyticsData();
-                },
-                icon: const Icon(Icons.refresh, color: Colors.white),
-                label: const Text('Refresh Data', style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF001F3F),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ),
-            
-            const SizedBox(height: 32),
-            
-            // Payouts Section
-            const Text(
-              'Payouts',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 16),
-            
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.1),
-                    spreadRadius: 1,
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.account_balance_wallet,
-                        color: Colors.purple.shade600,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'Settlement History',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'No settlements processed yet',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.pending_actions,
-                        color: Colors.amber.shade600,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'Pending Earnings',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Amount pending for payout',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      Text(
-                        '₹${_totalRevenue.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            Icon(icon, color: AppColors.navy),
+            const SizedBox(height: 8),
+            Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.navy)),
+            Text(label, style: const TextStyle(color: Colors.black54)),
+            if (note != null) Text(note, style: const TextStyle(color: Colors.black45, fontSize: 11)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAnalyticsCard(String title, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _content() {
+    final sales = _sales!;
+    final total = TicketLogic.countOf(_stats['totalTickets']);
+    final sold = TicketLogic.countOf(_stats['soldTickets']);
+    final scanned = TicketLogic.countOf(_stats['scannedTickets']);
+    final waiting = TicketLogic.countOf(_stats['remainingTickets']);
+    final unsold = TicketLogic.countOf(_stats['unsoldTickets']);
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(14),
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-              fontWeight: FontWeight.w500,
+          Text(widget.eventName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.navy)),
+          const SizedBox(height: 10),
+          if (_error != null) ...[InfoBanner('Could not refresh: $_error', color: Colors.red), const SizedBox(height: 10)],
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            childAspectRatio: 1.45,
+            children: [
+              _tile('Tickets sold', '$sold', Icons.confirmation_number_outlined, note: 'of $total on sale'),
+              _tile('Checked in', '$scanned', Icons.how_to_reg_outlined, note: '$waiting sold, not yet checked in'),
+              _tile('Unsold', '$unsold', Icons.inventory_2_outlined),
+              _tile('Bookings', '${sales.bookings}', Icons.receipt_long_outlined,
+                  note: '${sales.cancelledBookings} cancelled'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Gross ticket sales', style: TextStyle(color: Colors.black54)),
+                  Text('₹${TicketLogic.formatAmount(sales.grossSales)}',
+                      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: AppColors.navy)),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'The value of confirmed and attended bookings. This is not your payout: platform commission, '
+                    'taxes, payment gateway fees and refunds are deducted when Mookalaa settles the event. '
+                    'Settlement and payout amounts are not available in the app yet.',
+                    style: TextStyle(color: Colors.black54, fontSize: 12, height: 1.4),
+                  ),
+                  if (sales.unverifiedBookings > 0) ...[
+                    const SizedBox(height: 8),
+                    InfoBanner('${sales.unverifiedBookings} confirmed booking(s) have a payment the gateway never '
+                        'verified. They are included above but may not be paid out.'),
+                  ],
+                ],
+              ),
             ),
           ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
+          const SizedBox(height: 14),
+          const SectionTitle('By ticket'),
+          if (_tickets.isEmpty) const Text('This event has no tickets.', style: TextStyle(color: Colors.black54)),
+          for (final t in _tickets)
+            Builder(builder: (_) {
+              final quantity = TicketLogic.countOf(t['quantity']);
+              final ticketSold = TicketLogic.countOf(t['sold']);
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text((t['name'] ?? '').toString(), style: const TextStyle(fontWeight: FontWeight.w600)),
+                          ),
+                          Text(TicketLogic.formatPrice(t['price']), style: const TextStyle(color: AppColors.navy)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        value: quantity == 0 ? 0 : (ticketSold / quantity).clamp(0, 1).toDouble(),
+                        color: AppColors.navy,
+                        backgroundColor: Colors.grey.shade200,
+                      ),
+                      const SizedBox(height: 4),
+                      Text('$ticketSold of $quantity sold', style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              );
+            }),
         ],
       ),
     );
   }
 
-  Widget _buildPerformanceCard(String title, String value, String subtitle, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: appBar('Sales & check-ins'),
+      body: SafeArea(
+        child: _loading
+            ? const LoadingView()
+            : _sales == null
+                ? StateView.error(_error ?? 'Could not load the figures.', onRetry: _load)
+                : _content(),
       ),
     );
   }

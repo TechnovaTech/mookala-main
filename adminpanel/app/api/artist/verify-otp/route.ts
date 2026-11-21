@@ -1,43 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
+import { fail } from '@/lib/http';
+import { verifyRoleProfile } from '@/lib/app-auth';
+
+export const dynamic = 'force-dynamic';
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 200 });
 }
 
+/** POST /api/artist/verify-otp   { phone, otp }   See verifyRoleProfile in lib/app-auth.ts. */
 export async function POST(request: NextRequest) {
   try {
-    const { phone, otp } = await request.json();
-
-    if (!phone || !otp) {
-      return NextResponse.json({ error: 'Phone and OTP required' }, { status: 400 });
-    }
-
     const { db } = await connectToDatabase();
-    
-    const user = await db.collection('artists').findOne({ phone, status: 'pending' });
-    
-    if (!user) {
-      return NextResponse.json({ error: 'Invalid phone number' }, { status: 400 });
-    }
-
-    if (otp !== '1234') {
-      return NextResponse.json({ error: 'Invalid OTP' }, { status: 400 });
-    }
-
-    await db.collection('artists').updateOne(
-      { phone },
-      { 
-        $set: { status: 'verified' },
-        $unset: { otp: 1 }
-      }
-    );
-
-    return NextResponse.json({ 
-      success: true, 
-      message: 'OTP verified successfully' 
-    });
+    return await verifyRoleProfile(db, request, 'artist');
   } catch (error) {
-    return NextResponse.json({ error: 'OTP verification failed' }, { status: 500 });
+    console.error('OTP verification error:', error);
+    return fail('OTP verification failed', 500);
   }
 }

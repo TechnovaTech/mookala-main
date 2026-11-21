@@ -1,22 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAppUser } from '@/lib/app-auth';
 import { connectToDatabase } from '@/lib/mongodb';
+import { requireAdmin } from '@/lib/auth';
+import { asString } from '@/lib/http';
 
-// GET /api/jatra                     -> all jatra registrations (admin)
-// GET /api/jatra?organizerPhone=xxx  -> a single organizer's registrations
+export const dynamic = 'force-dynamic';
+
+// GET /api/jatra?organizerPhone=xxx  -> one organiser's registrations (organiser app, no login)
+// GET /api/jatra                     -> every registration (admin with events:view only)
 export async function GET(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
     const { searchParams } = new URL(request.url);
-    const organizerPhone = searchParams.get('organizerPhone');
+    const organizerPhone = asString(searchParams.get('organizerPhone'), 30);
 
     const query: Record<string, unknown> = {};
-    if (organizerPhone) query.organizerPhone = organizerPhone;
+    if (organizerPhone) {
+      const gate = requireAppUser(request, organizerPhone);
+      if (!gate.ok) return gate.response;
+      query.organizerPhone = organizerPhone;
+    } else {
+      const check = await requireAdmin(request, 'events:view');
+      if (!check.ok) return check.response;
+    }
 
-    const jatras = await db
-      .collection('jatras')
-      .find(query)
-      .sort({ createdAt: -1 })
-      .toArray();
+    const { db } = await connectToDatabase();
+    const jatras = await db.collection('jatras').find(query).sort({ createdAt: -1 }).limit(1000).toArray();
 
     return NextResponse.json({
       success: true,
@@ -31,40 +39,49 @@ export async function GET(request: NextRequest) {
         committeeMembers: j.committeeMembers || [],
         organizerPhone: j.organizerPhone || '',
         status: j.status || 'pending',
+        rejectionReason: j.rejectionReason || '',
+        reviewedAt: j.reviewedAt || null,
         createdAt: j.createdAt,
       })),
     });
   } catch (error) {
     console.error('GET Error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch jatra registrations' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to fetch jatra registrations' }, { status: 500 });
   }
+}
+
+function textList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((v) => typeof v === 'string' || typeof v === 'number')
+    .map((v) => String(v).trim().slice(0, 200))
+    .filter(Boolean)
+    .slice(0, 100);
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { name, venue, date, time, description, artists, committeeMembers, organizerPhone } =
-      await request.json();
+    const body = await request.json().catch(() => null);
+    const name = asString(body?.name, 300);
+    const organizerPhone = asString(body?.organizerPhone, 30);
 
     if (!name || !organizerPhone) {
-      return NextResponse.json(
-        { success: false, error: 'name and organizerPhone are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'name and organizerPhone are required' }, { status: 400 });
     }
+    const gate = requireAppUser(request, organizerPhone);
+    if (!gate.ok) return gate.response;
 
     const { db } = await connectToDatabase();
 
+    // A registration is always created as pending; only an admin can decide it.
     const result = await db.collection('jatras').insertOne({
       name,
-      venue: venue || '',
-      date: date || '',
-      time: time || '',
-      description: description || '',
-      artists: Array.isArray(artists) ? artists : [],
-      committeeMembers: Array.isArray(committeeMembers) ? committeeMembers : [],
+      venue: asString(body.venue, 300),
+      date: asString(body.date, 40),
+      time: asString(body.time, 40),
+      description: asString(body.description, 5000),
+      artists: textList(body.artists),
+      committeeMembers: textList(body.committeeMembers),
       organizerPhone,
       status: 'pending',
       createdAt: new Date(),
@@ -77,9 +94,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('POST Error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to register jatra' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to register jatra' }, { status: 500 });
   }
 }

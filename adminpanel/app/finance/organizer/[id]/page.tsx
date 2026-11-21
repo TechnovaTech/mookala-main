@@ -1,118 +1,148 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import Sidebar from '../../../../components/Sidebar'
-import { ArrowLeft, Calendar, MapPin } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
+import { ArrowLeft } from 'lucide-react'
+import AdminShell from '@/components/AdminShell'
+import { Badge, Card, EmptyState, NoticeBar, Spinner, StatCard, api, formatDate, formatMoney, type Notice } from '@/components/ui'
+import type { Tone } from '@/lib/resource-types'
 
-export default function OrganizerEventsPage() {
+const EVENT_TONE: Record<string, Tone> = { approved: 'green', pending: 'amber', rejected: 'red' }
+
+const linkClass =
+  'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+
+export default function OrganizerFinancePage() {
   const params = useParams()
-  const router = useRouter()
-  const [events, setEvents] = useState<any[]>([])
-  const [organizer, setOrganizer] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const organizerId = String(params?.id || '')
+
+  const [data, setData] = useState<any>(null)
+  const [failed, setFailed] = useState(false)
+  const [notice, setNotice] = useState<Notice>(null)
 
   useEffect(() => {
-    if (params.id) {
-      fetchOrganizerEvents(params.id as string)
-    }
-  }, [params.id])
+    if (!organizerId) return
+    api<any>(`/api/events/organizer/${organizerId}`)
+      .then(setData)
+      .catch((error: any) => {
+        setFailed(true)
+        setNotice({ type: 'error', text: error.message || 'Could not load the organiser.' })
+      })
+  }, [organizerId])
 
-  const fetchOrganizerEvents = async (organizerId: string) => {
-    setLoading(true)
-    try {
-      const [eventsRes, organizerRes] = await Promise.all([
-        fetch(`/api/events/organizer/${organizerId}`),
-        fetch(`/api/organizers/${organizerId}`)
-      ])
-      
-      const eventsData = await eventsRes.json()
-      const organizerData = await organizerRes.json()
-      
-      setEvents(eventsData.events || [])
-      setOrganizer(organizerData.organizer)
-    } catch (error) {
-      console.error('Error fetching data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const payee = data?.payee
+  const balance = data?.balance
+  const events: any[] = data?.events || []
+  const nothingInLedger = balance && balance.gross === 0 && balance.refunds === 0 && balance.settled === 0
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
-      
-      <div className="flex-1 ml-64 transition-all duration-300 min-h-screen">
-        <header className="bg-white shadow-lg border-b border-gray-200 px-6 py-4 fixed top-0 right-0 left-64 z-40">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => router.push('/finance')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-all"
-              >
-                <ArrowLeft size={20} className="text-slate-gray" />
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold text-deep-blue">Organizer Events</h1>
-                <p className="text-slate-gray text-sm">{organizer?.name || 'Loading...'}</p>
-              </div>
-            </div>
-          </div>
-        </header>
+    <AdminShell
+      title={payee?.name || 'Organiser finance'}
+      subtitle={
+        payee
+          ? [payee.type === 'artist' ? 'Artist' : 'Organiser', payee.city, payee.phone, payee.email].filter(Boolean).join(' · ')
+          : 'Events and money owed for one organiser'
+      }
+      actions={
+        <>
+          <Link href="/finance" className={linkClass}>
+            <ArrowLeft size={16} />
+            Back to finance
+          </Link>
+          <Link href="/finance/settlements" className={linkClass}>
+            Settlements
+          </Link>
+        </>
+      }
+    >
+      <NoticeBar notice={notice} onClose={() => setNotice(null)} />
 
-        <main className="p-10 mt-24">
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">Events by {organizer?.name}</h2>
-            
-            {loading ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald"></div>
-              </div>
+      {failed ? (
+        <Card>
+          <EmptyState title="This organiser could not be loaded." hint="Check the link, or open the organiser from the Organisers screen." />
+        </Card>
+      ) : !data ? (
+        <Spinner />
+      ) : (
+        <div className="space-y-4">
+          {!payee && (
+            <NoticeBar notice={{ type: 'info', text: 'The account that created these events no longer exists. The events and their ledger entries are still shown.' }} />
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <StatCard label="Gross payments (verified)" value={formatMoney(balance.gross)} tone="green" hint="from the ledger" />
+            <StatCard
+              label="Charges"
+              value={formatMoney(balance.commission + balance.gst + balance.gatewayFee)}
+              tone="gray"
+              hint={`commission ${formatMoney(balance.commission)} · GST ${formatMoney(balance.gst)} · gateway ${formatMoney(balance.gatewayFee)}`}
+            />
+            <StatCard label="Refunds" value={formatMoney(balance.refunds)} tone="gray" hint="returned to customers" />
+            <StatCard label="Pending payout" value={formatMoney(balance.pending)} tone="blue" hint={`earned ${formatMoney(balance.earned)} · settled ${formatMoney(balance.settled)}`} />
+          </div>
+
+          {nothingInLedger && (
+            <NoticeBar
+              notice={{
+                type: 'info',
+                text: 'Nothing is in the ledger for this account yet. Amounts appear once customer payments for its events are verified through the payment gateway.',
+              }}
+            />
+          )}
+
+          <Card>
+            <div className="p-5 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-deep-blue">Events ({events.length})</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Money columns come from the ledger. Tickets sold is the count kept on the event.</p>
+            </div>
+            {events.length === 0 ? (
+              <EmptyState title="This account has not created any events." />
             ) : (
-              <div className="grid gap-4">
-                {events.map((event: any) => (
-                  <div 
-                    key={event._id}
-                    onClick={() => router.push(`/finance/event/${event._id}`)}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
-                  >
-                    <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
-                        <Calendar className="w-6 h-6 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-lg">{event.name}</h3>
-                        <div className="flex items-center space-x-4 text-sm text-gray-600">
-                          <span className="flex items-center">
-                            <Calendar className="w-4 h-4 mr-1" />
-                            {event.startDate}
-                          </span>
-                          <span className="flex items-center">
-                            <MapPin className="w-4 h-4 mr-1" />
-                            {event.location?.city || 'Online'}
-                          </span>
-                          <span className={`px-2 py-1 rounded-full text-xs ${
-                            event.status === 'approved' ? 'bg-green-100 text-green-800' :
-                            event.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {event.status}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                
-                {events.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    No events found for this organizer
-                  </div>
-                )}
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200 bg-gray-50">
+                      <th className="px-4 py-3 font-medium">Event</th>
+                      <th className="px-4 py-3 font-medium">Date</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium text-right">Tickets sold</th>
+                      <th className="px-4 py-3 font-medium text-right">Gross</th>
+                      <th className="px-4 py-3 font-medium text-right">Charges</th>
+                      <th className="px-4 py-3 font-medium text-right">Refunds</th>
+                      <th className="px-4 py-3 font-medium text-right">Net</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {events.map((event) => (
+                      <tr key={event._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <Link href={`/finance/event/${event._id}`} className="font-medium text-deep-blue underline">
+                            {event.name || 'Unnamed event'}
+                          </Link>
+                          <span className="block text-xs text-gray-500">{event.location?.city || (event.locationType === 'online' ? 'Online' : '')}</span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">{event.startDate ? formatDate(event.startDate) : '—'}</td>
+                        <td className="px-4 py-3">
+                          <Badge tone={EVENT_TONE[event.status] || 'gray'}>{event.status || '—'}</Badge>
+                        </td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          {event.ticketsSold} of {event.totalTickets}
+                        </td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">{formatMoney(event.ledger.gross)}</td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          {formatMoney(event.ledger.commission + event.ledger.gst + event.ledger.gatewayFee)}
+                        </td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">{formatMoney(event.ledger.refunds)}</td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap font-semibold text-deep-blue">{formatMoney(event.ledger.net)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
-          </div>
-        </main>
-      </div>
-    </div>
+          </Card>
+        </div>
+      )}
+    </AdminShell>
   )
 }

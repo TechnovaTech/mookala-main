@@ -1,16 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAppUser } from '@/lib/app-auth';
 import { connectToDatabase } from '@/lib/mongodb';
+import { asString } from '@/lib/http';
+import { sanitiseEvent } from '@/app/api/admin/catalogue/_lib/shared';
 
+export const dynamic = 'force-dynamic';
+
+/** GET /api/events/user/[phone]: the organiser app's "my events" list. */
 export async function GET(request: NextRequest, { params }: { params: { phone: string } }) {
   try {
-    const { db } = await connectToDatabase();
-    const userPhone = params.phone;
+    const userPhone = asString(params.phone, 30);
+    if (!userPhone) return NextResponse.json({ events: [] });
+    const gate = requireAppUser(request, userPhone);
+    if (!gate.ok) return gate.response;
 
-    // Find the creator by phone. Events can be created by an organizer or an
-    // artist, so collect every matching account and look up events for all of them.
+    const { db } = await connectToDatabase();
+
+    // Events can be created by an organiser or an artist, so collect every
+    // matching account and look up events for all of them.
     const [organizer, artist] = await Promise.all([
-      db.collection('organizers').findOne({ phone: userPhone }),
-      db.collection('artists').findOne({ phone: userPhone }),
+      db.collection('organizers').findOne({ phone: userPhone }, { projection: { _id: 1 } }),
+      db.collection('artists').findOne({ phone: userPhone }, { projection: { _id: 1 } }),
     ]);
 
     const creatorIds = [];
@@ -21,13 +31,13 @@ export async function GET(request: NextRequest, { params }: { params: { phone: s
       return NextResponse.json({ events: [] });
     }
 
-    // Find events created by this organizer/artist
-    const events = await db.collection('events').find({
-      organizerId: { $in: creatorIds }
-    }).sort({ createdAt: -1 }).toArray();
+    const events = await db
+      .collection('events')
+      .find({ organizerId: { $in: creatorIds } })
+      .sort({ createdAt: -1 })
+      .toArray();
 
-    // Add booking status for each event
-    const eventsWithStatus = events.map(event => {
+    const eventsWithStatus = events.map((event) => {
       let bookingStatus = 'pending';
       if (event.status === 'approved' && event.artists && event.artists.length > 0) {
         if (event.artistResponse === 'accepted') {
@@ -44,9 +54,10 @@ export async function GET(request: NextRequest, { params }: { params: { phone: s
       }
 
       return {
-        ...event,
-        bookingStatus: bookingStatus,
-        artistResponse: event.artistResponse || null
+        // The creator sees their staff's contact details, never the passwords.
+        ...sanitiseEvent(event, 'contacts'),
+        bookingStatus,
+        artistResponse: event.artistResponse || null,
       };
     });
 

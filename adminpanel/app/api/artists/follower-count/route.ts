@@ -1,71 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
-import { ObjectId } from 'mongodb';
+import { fail, ok, toObjectId } from '@/lib/http';
+
+export const dynamic = 'force-dynamic';
 
 export async function OPTIONS() {
-  return new NextResponse(null, { 
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
-  });
+  return new NextResponse(null, { status: 200 });
 }
 
+/** GET /api/artists/follower-count?artistId=<artist id or phone>   Public: a count only. */
 export async function GET(request: NextRequest) {
+  const artistId = (new URL(request.url).searchParams.get('artistId') || '').trim();
+  if (!artistId) return fail('Artist ID is required', 400);
+
   try {
-    const { searchParams } = new URL(request.url);
-    const artistId = searchParams.get('artistId');
-
-    if (!artistId) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Artist ID is required' 
-      }, { status: 400 });
-    }
-
     const { db } = await connectToDatabase();
-    
-    // Find the artist
-    const artist = await db.collection('artists').findOne({ 
-      $or: [
-        { _id: new ObjectId(artistId) },
-        { phone: artistId }
-      ]
-    });
 
-    if (!artist) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Artist not found' 
-      }, { status: 404 });
-    }
+    const oid = toObjectId(artistId);
+    const artist = await db
+      .collection('artists')
+      .findOne(oid ? { _id: oid } : { phone: artistId }, { projection: { _id: 1, followersCount: 1 } });
+    if (!artist) return fail('Artist not found', 404);
 
-    // Count real followers from users collection
-    const followerCount = await db.collection('users')
-      .countDocuments({ 
-        'followedArtists': artist._id
-      });
-
-    // Update artist's follower count if it's different
+    const followerCount = await db.collection('users').countDocuments({ followedArtists: artist._id });
     if (artist.followersCount !== followerCount) {
-      await db.collection('artists').updateOne(
-        { _id: artist._id },
-        { $set: { followersCount: followerCount } }
-      );
+      await db.collection('artists').updateOne({ _id: artist._id }, { $set: { followersCount: followerCount } });
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      followerCount: followerCount
-    });
-
+    return ok({ followerCount });
   } catch (error) {
     console.error('Error getting follower count:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to get follower count' 
-    }, { status: 500 });
+    return fail('Failed to get follower count', 500);
   }
 }

@@ -1,7 +1,10 @@
 'use client'
-import { useState, useEffect } from 'react'
-import Sidebar from '../../components/Sidebar'
-import { Bell, Search, ChevronDown, LogOut, User, Settings as SettingsIcon, ClipboardList, Trash2 } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Trash2 } from 'lucide-react'
+import AdminShell, { useCan } from '@/components/AdminShell'
+import { Badge, Card, ConfirmDialog, EmptyState, NoticeBar, Spinner, api, formatDate, inputClass, type Notice } from '@/components/ui'
+import { SearchInput, TabLinks, matches } from '@/components/catalogue/shared'
+import type { Tone } from '@/lib/resource-types'
 
 interface HireRequest {
   _id: string
@@ -14,217 +17,216 @@ interface HireRequest {
   city: string
   message: string
   status: string
+  statusReason: string
   createdAt: string
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  accepted: 'bg-emerald/10 text-emerald border-emerald/20',
-  rejected: 'bg-red-100 text-red-800 border-red-200',
-  completed: 'bg-blue-100 text-blue-800 border-blue-200',
-}
+const TABS = [
+  { href: '/professionals', label: 'Professionals' },
+  { href: '/hire-requests', label: 'Hire requests' },
+]
 
-export default function HireRequestsPage() {
-  const [requests, setRequests] = useState<HireRequest[]>([])
+const STATUSES: { value: string; label: string; tone: Tone }[] = [
+  { value: 'pending', label: 'Pending', tone: 'amber' },
+  { value: 'accepted', label: 'Accepted', tone: 'blue' },
+  { value: 'rejected', label: 'Rejected', tone: 'red' },
+  { value: 'completed', label: 'Completed', tone: 'green' },
+]
+
+type Pending = { item: HireRequest; kind: 'delete' } | { item: HireRequest; kind: 'status'; status: string }
+
+function HireRequestList() {
+  const canManage = useCan('hire:manage')
+  const [items, setItems] = useState<HireRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [notice, setNotice] = useState<Notice>(null)
   const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('')
+  const [pending, setPending] = useState<Pending | null>(null)
+  const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    fetchRequests()
-  }, [])
-
-  const fetchRequests = async () => {
-    setLoading(true)
+  const load = useCallback(async () => {
     try {
-      const response = await fetch('/api/hire-requests')
-      const data = await response.json()
-      if (data.success) setRequests(data.requests)
-    } catch (error) {
-      console.error('Error fetching hire requests:', error)
+      const data = await api<{ requests: HireRequest[] }>('/api/hire-requests')
+      setItems(data.requests || [])
+    } catch (error: any) {
+      setNotice({ type: 'error', text: error.message || 'Could not load hire requests.' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const updateStatus = async (id: string, status: string) => {
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const visible = useMemo(
+    () =>
+      items.filter(
+        (r) => (!status || r.status === status) && matches(search, r.userName, r.userPhone, r.professionalName, r.city, r.message)
+      ),
+    [items, search, status]
+  )
+
+  const counts = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const r of items) out[r.status] = (out[r.status] || 0) + 1
+    return out
+  }, [items])
+
+  const confirm = async (reason: string) => {
+    if (!pending) return
+    setBusy(true)
     try {
-      const response = await fetch(`/api/hire-requests/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      })
-      const data = await response.json()
-      if (data.success) fetchRequests()
-    } catch (error) {
-      console.error('Error updating status:', error)
+      if (pending.kind === 'delete') {
+        await api(`/api/hire-requests/${pending.item._id}`, { method: 'DELETE', body: { reason } })
+        setNotice({ type: 'success', text: 'The hire request was deleted.' })
+      } else {
+        await api(`/api/hire-requests/${pending.item._id}`, { method: 'PUT', body: { status: pending.status, reason } })
+        setNotice({ type: 'success', text: `The request from ${pending.item.userName || pending.item.userPhone} is now ${pending.status}.` })
+      }
+      setPending(null)
+      await load()
+    } catch (error: any) {
+      setNotice({ type: 'error', text: `Nothing was changed. ${error.message || ''}` })
+      setPending(null)
+    } finally {
+      setBusy(false)
     }
   }
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this request?')) return
-    try {
-      const response = await fetch(`/api/hire-requests/${id}`, { method: 'DELETE' })
-      const data = await response.json()
-      if (data.success) fetchRequests()
-    } catch (error) {
-      console.error('Error deleting request:', error)
-    }
-  }
-
-  const visible = requests.filter((r) => {
-    const q = search.toLowerCase()
-    return (
-      !q ||
-      r.professionalName.toLowerCase().includes(q) ||
-      r.userName.toLowerCase().includes(q) ||
-      r.userPhone.toLowerCase().includes(q) ||
-      r.city.toLowerCase().includes(q)
-    )
-  })
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
+    <>
+      <TabLinks tabs={TABS} current="/hire-requests" />
+      <NoticeBar notice={notice} onClose={() => setNotice(null)} />
 
-      <div className="flex-1 ml-64 transition-all duration-300 min-h-screen">
-        <header className="bg-white shadow-lg border-b border-gray-200 px-6 py-4 fixed top-0 right-0 left-64 z-40">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-deep-blue">Hire Requests</h1>
-              <p className="text-slate-gray text-sm">Photographer / videographer booking requests</p>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-gray w-4 h-4" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search requests..."
-                  className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none transition-all"
-                />
-              </div>
-
-              <button className="relative p-2 text-slate-gray hover:text-deep-blue hover:bg-teal/10 rounded-lg transition-all">
-                <Bell size={20} />
+      <Card>
+        <div className="p-4 border-b border-gray-200 space-y-3">
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filter by status">
+            {[{ value: '', label: 'All' }, ...STATUSES].map((tab) => (
+              <button
+                key={tab.value}
+                role="tab"
+                aria-selected={status === tab.value}
+                onClick={() => setStatus(tab.value)}
+                className={`px-3 py-1.5 rounded-full text-sm ${status === tab.value ? 'bg-deep-blue text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              >
+                {tab.label} ({tab.value ? counts[tab.value] || 0 : items.length})
               </button>
-
-              <div className="relative">
-                <button
-                  onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className="flex items-center space-x-3 bg-gray-50 rounded-lg px-3 py-2 hover:bg-teal/10 transition-all cursor-pointer"
-                >
-                  <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-md">
-                    <span className="text-white text-sm font-bold">A</span>
-                  </div>
-                  <div className="hidden md:block text-left">
-                    <p className="text-sm font-medium text-deep-blue">Admin User</p>
-                    <p className="text-xs text-slate-gray">Super Admin</p>
-                  </div>
-                  <ChevronDown size={16} className={`text-slate-gray transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                {isProfileOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <User size={16} className="mr-3 text-slate-gray" />
-                      Profile Settings
-                    </button>
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <SettingsIcon size={16} className="mr-3 text-slate-gray" />
-                      Account Settings
-                    </button>
-                    <hr className="my-2 border-gray-200" />
-                    <button
-                      onClick={() => (window.location.href = '/login')}
-                      className="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      <LogOut size={16} className="mr-3" />
-                      Logout
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
+            ))}
           </div>
-        </header>
+          <div className="flex flex-wrap gap-3">
+            <SearchInput id="hire-search" value={search} onChange={setSearch} placeholder="Search by customer, phone, professional, city or message..." />
+          </div>
+        </div>
 
-        <main className="p-10 mt-24">
-          <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-            <div className="flex items-center mb-6">
-              <ClipboardList className="text-emerald mr-3" size={24} />
-              <h2 className="text-xl font-bold text-gray-900">All Requests ({visible.length})</h2>
-            </div>
-
-            {loading ? (
-              <div className="flex justify-center items-center py-20">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald"></div>
-              </div>
-            ) : visible.length === 0 ? (
-              <div className="text-center py-20">
-                <ClipboardList className="mx-auto text-gray-400 mb-4" size={48} />
-                <p className="text-gray-500 text-lg font-medium">No hire requests yet</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-gray-200 text-sm text-slate-gray">
-                      <th className="py-3 px-2">Professional</th>
-                      <th className="py-3 px-2">Type</th>
-                      <th className="py-3 px-2">User</th>
-                      <th className="py-3 px-2">Event Date</th>
-                      <th className="py-3 px-2">City</th>
-                      <th className="py-3 px-2">Message</th>
-                      <th className="py-3 px-2">Status</th>
-                      <th className="py-3 px-2">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visible.map((r) => (
-                      <tr key={r._id} className="border-b border-gray-100 text-sm">
-                        <td className="py-3 px-2 font-medium text-deep-blue">{r.professionalName || '-'}</td>
-                        <td className="py-3 px-2 capitalize">{r.type || '-'}</td>
-                        <td className="py-3 px-2">
-                          <div>{r.userName || '-'}</div>
-                          <div className="text-slate-gray text-xs">{r.userPhone}</div>
-                        </td>
-                        <td className="py-3 px-2">{r.eventDate || '-'}</td>
-                        <td className="py-3 px-2">{r.city || '-'}</td>
-                        <td className="py-3 px-2 max-w-[180px] truncate" title={r.message}>{r.message || '-'}</td>
-                        <td className="py-3 px-2">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium border capitalize ${STATUS_STYLES[r.status] || STATUS_STYLES.pending}`}>
-                            {r.status}
-                          </span>
-                        </td>
-                        <td className="py-3 px-2">
-                          <div className="flex items-center space-x-2">
+        {loading ? (
+          <Spinner />
+        ) : visible.length === 0 ? (
+          <EmptyState
+            title={items.length === 0 ? 'No hire requests yet' : 'No hire requests match these filters'}
+            hint={items.length === 0 ? 'Requests appear here when a customer asks to hire a photographer or videographer from the user app.' : undefined}
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Customer</th>
+                  <th className="px-4 py-3 font-medium">Professional</th>
+                  <th className="px-4 py-3 font-medium">Event date</th>
+                  <th className="px-4 py-3 font-medium">City</th>
+                  <th className="px-4 py-3 font-medium">Message</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Received</th>
+                  {canManage && <th className="px-4 py-3 font-medium text-right">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {visible.map((item) => {
+                  const current = STATUSES.find((s) => s.value === item.status)
+                  return (
+                    <tr key={item._id} className="align-top hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-deep-blue">{item.userName || 'Name not given'}</p>
+                        <p className="text-gray-500">{item.userPhone}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.professionalName || '—'}
+                        <span className="block text-gray-500 capitalize">{item.type}</span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">{item.eventDate || '—'}</td>
+                      <td className="px-4 py-3">{item.city || '—'}</td>
+                      <td className="px-4 py-3 max-w-xs">
+                        <p className="whitespace-pre-wrap break-words">{item.message || '—'}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tone={current?.tone || 'gray'}>{current?.label || item.status}</Badge>
+                        {item.statusReason && <p className="text-xs text-gray-600 mt-1 max-w-[14rem]">Reason: {item.statusReason}</p>}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-gray-600">{formatDate(item.createdAt, true)}</td>
+                      {canManage && (
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end items-center gap-1">
                             <select
-                              value={r.status}
-                              onChange={(e) => updateStatus(r._id, e.target.value)}
-                              className="px-2 py-1 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-teal outline-none"
+                              aria-label={`Change status of the request from ${item.userName || item.userPhone}`}
+                              value={item.status}
+                              onChange={(e) => setPending({ item, kind: 'status', status: e.target.value })}
+                              className={inputClass + ' w-auto !py-1.5'}
                             >
-                              <option value="pending">Pending</option>
-                              <option value="accepted">Accepted</option>
-                              <option value="rejected">Rejected</option>
-                              <option value="completed">Completed</option>
+                              {!current && <option value={item.status}>{item.status}</option>}
+                              {STATUSES.map((s) => (
+                                <option key={s.value} value={s.value}>
+                                  {s.label}
+                                </option>
+                              ))}
                             </select>
-                            <button onClick={() => handleDelete(r._id)} className="text-red-600 hover:text-red-800">
+                            <button
+                              onClick={() => setPending({ item, kind: 'delete' })}
+                              aria-label={`Delete the request from ${item.userName || item.userPhone}`}
+                              title="Delete"
+                              className="p-2 rounded-lg text-red-600 hover:bg-red-50"
+                            >
                               <Trash2 size={16} />
                             </button>
                           </div>
                         </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-        </main>
-      </div>
-    </div>
+        )}
+      </Card>
+
+      <ConfirmDialog
+        open={Boolean(pending)}
+        title={pending?.kind === 'delete' ? 'Delete hire request' : `Mark request as ${pending?.kind === 'status' ? pending.status : ''}`}
+        message={
+          pending?.kind === 'delete'
+            ? 'This permanently removes the request. The customer is not told.'
+            : pending?.kind === 'status' && pending.status === 'rejected'
+            ? 'Give the reason for rejecting this request. It is saved with the request.'
+            : `The request from ${pending?.item.userName || pending?.item.userPhone || 'the customer'} for ${pending?.item.professionalName || 'the professional'} will be updated. The app does not notify the customer yet, so contact them directly.`
+        }
+        confirmLabel={pending?.kind === 'delete' ? 'Delete' : 'Update status'}
+        danger={pending?.kind === 'delete'}
+        askReason
+        reasonRequired={pending?.kind === 'status' && pending.status === 'rejected'}
+        busy={busy}
+        onConfirm={confirm}
+        onClose={() => setPending(null)}
+      />
+    </>
+  )
+}
+
+export default function HireRequestsPage() {
+  return (
+    <AdminShell title="Hire Requests" subtitle="Requests from customers to hire photographers and videographers">
+      <HireRequestList />
+    </AdminShell>
   )
 }

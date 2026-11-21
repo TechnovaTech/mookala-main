@@ -1,22 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
+import { isAdminWith, requireAdmin } from '@/lib/auth';
+import { logAudit } from '@/lib/audit';
+import { asString } from '@/lib/http';
+import { mediaProblem } from '@/app/api/admin/catalogue/_lib/shared';
 
-// GET /api/professionals            -> all active professionals
+export const dynamic = 'force-dynamic';
+
+const TYPES = ['photographer', 'videographer'];
+
+// GET /api/professionals                    -> active professionals (the user app, no login)
 // GET /api/professionals?type=photographer  -> filter by type (photographer | videographer)
+// An admin with hire:view also receives inactive professionals.
 export async function GET(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
     const { searchParams } = new URL(request.url);
-    const type = searchParams.get('type');
+    const type = asString(searchParams.get('type'), 30);
 
     const query: Record<string, unknown> = {};
     if (type) query.type = type;
+    if (!isAdminWith(request, 'hire:view')) query.status = { $ne: 'inactive' };
 
-    const professionals = await db
-      .collection('professionals')
-      .find(query)
-      .sort({ createdAt: -1 })
-      .toArray();
+    const { db } = await connectToDatabase();
+    const professionals = await db.collection('professionals').find(query).sort({ createdAt: -1 }).toArray();
 
     return NextResponse.json({
       success: true,
@@ -37,54 +43,67 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('GET Error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch professionals' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to fetch professionals' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const check = await requireAdmin(request, 'hire:manage');
+  if (!check.ok) return check.response;
+
   try {
-    const { name, type, phone, city, price, image, bio, portfolio, experience } =
-      await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') return NextResponse.json({ success: false, error: 'Invalid request body' }, { status: 400 });
+
+    const name = asString(body.name, 200);
+    const type = asString(body.type, 30);
 
     if (!name || !type) {
-      return NextResponse.json(
-        { success: false, error: 'Name and type are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Name and type are required' }, { status: 400 });
+    }
+    if (!TYPES.includes(type)) {
+      return NextResponse.json({ success: false, error: 'type must be photographer or videographer' }, { status: 400 });
     }
 
-    if (type !== 'photographer' && type !== 'videographer') {
-      return NextResponse.json(
-        { success: false, error: 'type must be photographer or videographer' },
-        { status: 400 }
-      );
+    const portfolio = asString(body.portfolio, 2000);
+    if (portfolio && !/^https?:\/\//i.test(portfolio)) {
+      return NextResponse.json({ success: false, error: 'Portfolio link must start with http:// or https://' }, { status: 400 });
     }
+
+    const problem = mediaProblem(body.image, 'Photo');
+    if (problem) return problem;
 
     const { db } = await connectToDatabase();
-
-    const result = await db.collection('professionals').insertOne({
+    const doc = {
       name,
       type,
-      phone: phone || '',
-      city: city || '',
-      price: price || '',
-      image: image || '',
-      bio: bio || '',
-      portfolio: portfolio || '',
-      experience: experience || '',
-      status: 'active',
+      phone: asString(body.phone, 30),
+      city: asString(body.city, 100),
+      price: asString(body.price, 100),
+      image: typeof body.image === 'string' ? body.image : '',
+      bio: asString(body.bio, 5000),
+      portfolio,
+      experience: asString(body.experience, 100),
+      status: body.status === 'inactive' ? 'inactive' : 'active',
       createdAt: new Date(),
+      createdBy: check.admin.email || null,
+    };
+    const result = await db.collection('professionals').insertOne(doc);
+
+    await logAudit({
+      admin: check.admin,
+      action: 'create',
+      module: 'hire',
+      entityType: 'professional',
+      entityId: String(result.insertedId),
+      entityLabel: name,
+      after: doc,
+      request,
     });
 
     return NextResponse.json({ success: true, professionalId: result.insertedId });
   } catch (error) {
     console.error('POST Error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to add professional' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to add professional' }, { status: 500 });
   }
 }

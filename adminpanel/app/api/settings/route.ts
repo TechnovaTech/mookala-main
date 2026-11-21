@@ -1,45 +1,33 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
+import { requireAdmin } from '@/lib/auth';
+import { fail, ok } from '@/lib/http';
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+
+/** GET /api/settings: the stored platform settings document (read-only here). */
+export async function GET(request: NextRequest) {
+  const check = await requireAdmin(request, 'finance:view');
+  if (!check.ok) return check.response;
+
   try {
     const { db } = await connectToDatabase();
     const settings = await db.collection('settings').findOne({ type: 'platform' });
-    
-    return NextResponse.json({ 
-      success: true, 
-      settings: settings || { platformCharges: '' }
-    });
+    return ok({ settings: settings || {} });
   } catch (error) {
-    console.error('GET Error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to fetch settings' }, { status: 500 });
+    console.error('GET /api/settings error:', error);
+    return fail('Failed to fetch settings', 500);
   }
 }
 
+/**
+ * This used to save a single "platform charges" percentage that no part of the
+ * system ever read. Commission, GST and gateway charges are now separate,
+ * dated rules under Finance -> Commission Settings, so the old value can no
+ * longer be written.
+ */
 export async function POST(request: NextRequest) {
-  try {
-    const { platformCharges } = await request.json();
-    
-    if (!platformCharges) {
-      return NextResponse.json({ success: false, error: 'Platform charges is required' }, { status: 400 });
-    }
-
-    const { db } = await connectToDatabase();
-    
-    const result = await db.collection('settings').updateOne(
-      { type: 'platform' },
-      { 
-        $set: {
-          platformCharges: parseFloat(platformCharges),
-          updatedAt: new Date()
-        }
-      },
-      { upsert: true }
-    );
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('POST Error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to save settings' }, { status: 500 });
-  }
+  const check = await requireAdmin(request, 'finance:manage');
+  if (!check.ok) return check.response;
+  return fail('Platform charges are no longer set here. Use Finance -> Commission Settings.', 410);
 }

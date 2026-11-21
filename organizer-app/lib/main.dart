@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+
+import 'app_flow.dart';
+import 'config/app_config.dart';
 import 'screens/splash_screen.dart';
-import 'screens/phone_login_screen.dart';
-import 'screens/dashboard_screen.dart';
-import 'screens/artist_dashboard_screen.dart';
-import 'services/auth_service.dart';
+import 'widgets/common.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  AppFlow.install();
   runApp(const MyApp());
 }
 
@@ -15,34 +17,15 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Mookaala organizer-app',
+      title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
+      navigatorKey: AppFlow.navigatorKey,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.navy, primary: AppColors.navy),
+        scaffoldBackgroundColor: AppColors.background,
         useMaterial3: true,
       ),
-      home: FutureBuilder<Map<String, String?>>(
-        future: AuthService.getUserData(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const SplashScreen();
-          }
-          
-          final userData = snapshot.data;
-          final isLoggedIn = userData?['isLoggedIn'] == 'true';
-          final role = userData?['role'];
-          
-          if (isLoggedIn && role != null) {
-            if (role == 'artist') {
-              return const ArtistDashboardScreen();
-            } else {
-              return const DashboardScreen();
-            }
-          }
-          
-          return const PhoneLoginScreen();
-        },
-      ),
+      home: const SplashScreen(),
     );
   }
 }

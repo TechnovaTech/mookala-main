@@ -1,232 +1,154 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { Search, Menu, X, User, LogOut } from "lucide-react"
-import { useEffect } from "react"
+import { usePathname, useRouter } from "next/navigation"
+import { Menu, Search, Ticket, User, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useLanguage } from "@/lib/language-context"
+import { TranslateWidget } from "@/components/translate-widget"
+import { useAuth } from "@/lib/auth"
 
-declare global {
-  interface Window {
-    google: any
-    googleTranslateElementInit: () => void
-  }
-}
-
-export function Header() {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [isSearchOpen, setIsSearchOpen] = useState(false)
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [userPhone, setUserPhone] = useState<string | null>(null)
-  const { language, setLanguage, t } = useLanguage()
+function SearchForm({ className, onSearched }: { className: string; onSearched?: () => void }) {
   const router = useRouter()
+  const [query, setQuery] = useState("")
 
-  useEffect(() => {
-    // Check if user is logged in
-    const phone = localStorage.getItem('userPhone')
-    if (phone) {
-      setIsLoggedIn(true)
-      setUserPhone(phone)
-    }
-    
-    const addScript = () => {
-      if (!document.getElementById('google-translate-script')) {
-        const script = document.createElement('script')
-        script.id = 'google-translate-script'
-        script.src = '//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit'
-        script.async = true
-        document.body.appendChild(script)
-      }
-    }
-
-    window.googleTranslateElementInit = () => {
-      new window.google.translate.TranslateElement(
-        {
-          pageLanguage: 'en',
-          includedLanguages: 'en,bn,brx,doi,gu,hi,kn,ks,gom,mai,ml,mni,mr,ne,or,pa,sa,sat,sd,ta,te,ur',
-          layout: window.google.translate.TranslateElement.InlineLayout.DROPDOWN,
-          multilanguagePage: true,
-          autoDisplay: false
-        },
-        'google_translate_element'
-      )
-      
-      setTimeout(() => {
-        const banner = document.querySelector('.goog-te-banner-frame')
-        if (banner) banner.remove()
-        
-        // Clear any saved language to always start fresh
-        localStorage.removeItem('googtrans')
-        document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
-        
-        const combo = document.querySelector('.goog-te-combo')
-        if (combo) {
-          // Add default "Select Language" option
-          const selectElement = combo as HTMLSelectElement
-          if (selectElement && !selectElement.querySelector('option[value=""]')) {
-            const defaultOption = document.createElement('option')
-            defaultOption.value = ''
-            defaultOption.text = 'Select Language'
-            defaultOption.selected = true
-            selectElement.insertBefore(defaultOption, selectElement.firstChild)
-          }
-
-          // Google omits the page language from the dropdown, so English never
-          // showed up alongside the Indian languages. Add it ourselves, right
-          // after the placeholder, if the widget did not provide it.
-          if (selectElement && !selectElement.querySelector('option[value="en"]')) {
-            const englishOption = document.createElement('option')
-            englishOption.value = 'en'
-            englishOption.text = 'English'
-            const placeholder = selectElement.querySelector('option[value=""]')
-            selectElement.insertBefore(englishOption, placeholder ? placeholder.nextSibling : selectElement.firstChild)
-          }
-
-          combo.addEventListener('change', function() {
-            const selectedValue = (this as HTMLSelectElement).value
-            if (selectedValue === '' || selectedValue === 'en') {
-              // Both mean "show the original page" — drop the saved
-              // translation first so the reload comes back untranslated.
-              localStorage.removeItem('googtrans')
-              document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
-              window.location.reload()
-            } else {
-              setTimeout(() => {
-                const banner = document.querySelector('.goog-te-banner-frame')
-                if (banner) banner.remove()
-              }, 100)
-            }
-          })
-        }
-      }, 1000)
-    }
-
-    addScript()
-    
-    // Always clear translation data on page load
-    localStorage.removeItem('googtrans')
-    document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
-    
-    const observer = new MutationObserver(() => {
-      const banner = document.querySelector('.goog-te-banner-frame')
-      if (banner) banner.remove()
-    })
-    
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    })
-    
-    return () => observer.disconnect()
-  }, [])
-
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (searchQuery.trim()) {
-      router.push(`/events?search=${encodeURIComponent(searchQuery)}`)
-    }
+    const text = query.trim()
+    router.push(text ? `/events?search=${encodeURIComponent(text)}` : "/events")
+    onSearched?.()
   }
 
   return (
-    <header className="sticky top-0 z-50 backdrop-blur-lg border-b border-[#124972]/40" style={{backgroundColor: '#124972'}}>
+    <form onSubmit={handleSubmit} role="search" className={className}>
+      <div className="relative w-full">
+        <input
+          type="search"
+          aria-label="Search events"
+          placeholder="Search arts & events..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="w-full pl-4 pr-10 py-2 bg-muted rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-accent/20 transition text-sm"
+        />
+        <button type="submit" aria-label="Search" className="absolute right-3 top-1/2 -translate-y-1/2">
+          <Search size={18} className="text-muted-foreground" />
+        </button>
+      </div>
+    </form>
+  )
+}
+
+export function Header() {
+  const { ready, isSignedIn, signOut } = useAuth()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const pathname = usePathname()
+  const router = useRouter()
+
+  // Close the mobile menu whenever the visitor lands on another page.
+  useEffect(() => {
+    setMenuOpen(false)
+  }, [pathname])
+
+  const signedIn = ready && isSignedIn
+
+  const handleSignOut = () => {
+    signOut()
+    setMenuOpen(false)
+    // Account pages send themselves home when the session ends.
+    if (!["/profile", "/profile-setup"].includes(pathname)) router.push("/")
+  }
+
+  const pill = "rounded-lg bg-white text-[#124972] hover:bg-gray-100 text-sm px-4"
+
+  return (
+    <header className="sticky top-0 z-50 border-b border-[#124972]/40" style={{ backgroundColor: "#124972" }}>
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-20">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 font-bold text-xl hover:opacity-80 transition flex-shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-x-3">
+          <Link href="/" className="flex items-center h-16 sm:h-20 hover:opacity-80 transition flex-shrink-0">
             <img src="/mookalaa-logo-2.png" alt="MOOKALAA - Unite through Arts" className="h-8 sm:h-10 w-auto" />
           </Link>
 
-          {/* Search Bar - Hidden on mobile */}
-          <form onSubmit={handleSearch} className="hidden lg:flex flex-1 max-w-md mx-4 xl:mx-8">
-            <div className="relative w-full">
-              <input
-                type="text"
-                placeholder="Search arts & events..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-2 bg-muted rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-accent/20 transition text-sm"
-              />
-              <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2">
-                <Search size={18} className="text-muted-foreground" />
-              </button>
-            </div>
-          </form>
+          <SearchForm className="hidden lg:flex flex-1 max-w-md mx-4 xl:mx-8" />
 
-          {/* Google Translate */}
-          <div className="hidden lg:block" suppressHydrationWarning>
-            <div id="google_translate_element" suppressHydrationWarning></div>
-          </div>
+          {/* One translate control: in the bar on large screens, in the menu on small ones. */}
+          <TranslateWidget
+            className={`${menuOpen ? "block" : "hidden"} lg:block order-last lg:order-none basis-full lg:basis-auto pb-3 lg:pb-0`}
+          />
 
-          {/* Right Actions */}
-          <div className="flex items-center gap-2 sm:gap-3" suppressHydrationWarning>
-
-            
-            {/* Login/User Actions */}
-            {isLoggedIn ? (
-              <Button asChild size="sm" className="rounded-lg bg-white text-[#124972] hover:bg-gray-100 text-xs sm:text-sm px-3 sm:px-4">
-                <Link href="/profile">
-                  <User size={16} className="mr-1" />
-                  Profile
-                </Link>
-              </Button>
+          {/* Desktop actions */}
+          <nav className="hidden lg:flex items-center gap-3" aria-label="Account">
+            {signedIn ? (
+              <>
+                <Button asChild size="sm" className={pill}>
+                  <Link href="/bookings">
+                    <Ticket size={16} className="mr-1" />
+                    My bookings
+                  </Link>
+                </Button>
+                <Button asChild size="sm" className={pill}>
+                  <Link href="/profile">
+                    <User size={16} className="mr-1" />
+                    Profile
+                  </Link>
+                </Button>
+              </>
             ) : (
-              <Button asChild size="sm" className="rounded-lg bg-white text-[#124972] hover:bg-gray-100 text-xs sm:text-sm px-3 sm:px-4">
+              <Button asChild size="sm" className={pill}>
                 <Link href="/login">Login</Link>
               </Button>
             )}
-            
-            {/* Explore Button */}
-            <Button asChild size="sm" className="rounded-lg bg-accent hover:bg-accent/90 text-xs sm:text-sm px-3 sm:px-4">
-              <Link href="/events">{t("explore")}</Link>
+            <Button asChild size="sm" className="rounded-lg bg-accent hover:bg-accent/90 text-sm px-4">
+              <Link href="/events">Explore</Link>
             </Button>
-          </div>
+          </nav>
+
+          {/* Mobile menu button */}
+          <button
+            type="button"
+            className="lg:hidden p-2 rounded-lg text-white hover:bg-white/10"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-menu"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+
+          {/* Mobile menu */}
+          {menuOpen && (
+            <div id="mobile-menu" className="lg:hidden order-last basis-full pb-4 space-y-3">
+              <SearchForm className="flex" onSearched={() => setMenuOpen(false)} />
+              <nav className="flex flex-col gap-2" aria-label="Menu">
+                <Link href="/events" className="px-3 py-2 rounded-lg text-white hover:bg-white/10">
+                  Explore events
+                </Link>
+                {signedIn ? (
+                  <>
+                    <Link href="/bookings" className="px-3 py-2 rounded-lg text-white hover:bg-white/10">
+                      My bookings
+                    </Link>
+                    <Link href="/profile" className="px-3 py-2 rounded-lg text-white hover:bg-white/10">
+                      Profile
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className="px-3 py-2 rounded-lg text-left text-white hover:bg-white/10"
+                    >
+                      Sign out
+                    </button>
+                  </>
+                ) : (
+                  <Link href="/login" className="px-3 py-2 rounded-lg text-white hover:bg-white/10">
+                    Login
+                  </Link>
+                )}
+              </nav>
+            </div>
+          )}
         </div>
       </div>
-      <style jsx global>{`
-        .goog-te-gadget {
-          font-family: inherit !important;
-        }
-        .goog-te-gadget-simple {
-          background-color: transparent !important;
-          border: none !important;
-          font-size: 14px !important;
-        }
-        .goog-te-gadget-simple .goog-te-menu-value {
-          color: white !important;
-        }
-        .goog-te-banner-frame {
-          display: none !important;
-        }
-        .goog-te-combo {
-          padding: 12px 12px 8px 12px !important;
-          border: 1px solid #ccc !important;
-          border-radius: 4px !important;
-          background: #124972 !important;
-          color: white !important;
-          font-size: 14px !important;
-          min-width: 150px !important;
-        }
-        .goog-te-gadget-simple a {
-          display: none !important;
-        }
-        .goog-te-gadget img {
-          display: none !important;
-        }
-        #goog-gt-tt {
-          display: none !important;
-        }
-        .goog-tooltip {
-          display: none !important;
-        }
-        body > .skiptranslate {
-          display: none !important;
-        }
-      `}</style>
     </header>
   )
 }

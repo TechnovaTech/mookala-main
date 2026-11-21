@@ -1,493 +1,240 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'artist_dashboard_screen.dart';
-import 'kyc_verification_screen.dart';
-import '../services/auth_service.dart';
 
+import 'package:flutter/material.dart';
+
+import '../app_flow.dart';
+import '../logic/validators.dart';
+import '../services/api.dart';
+import '../services/api_client.dart';
+import '../utils/image_utils.dart';
+import '../widgets/common.dart';
+
+/// The artist's details form: used once after registration and again for
+/// editing. Genres come from `GET /genres`.
 class ArtistFillProfileScreen extends StatefulWidget {
-  const ArtistFillProfileScreen({super.key});
+  const ArtistFillProfileScreen({super.key, this.editing = false});
+
+  final bool editing;
 
   @override
   State<ArtistFillProfileScreen> createState() => _ArtistFillProfileScreenState();
 }
 
 class _ArtistFillProfileScreenState extends State<ArtistFillProfileScreen> {
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _bioController = TextEditingController();
-  final TextEditingController _pricingController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _cityController = TextEditingController();
-  
-  bool _isLoading = false;
-  Uint8List? _profileImage;
-  String? _profileImageBase64;
-  final ImagePicker _picker = ImagePicker();
-  
-  String? _selectedGenre;
-  final List<String> _genres = [
-    'Classical',
-    'Rock',
-    'Pop',
-    'Jazz',
-    'Hip Hop',
-    'Electronic',
-    'Folk',
-    'Country',
-    'R&B',
-    'Reggae',
-    'Blues',
-    'Metal',
-  ];
-
-  bool get _isFormValid {
-    return _nameController.text.isNotEmpty &&
-           _bioController.text.isNotEmpty &&
-           _emailController.text.isNotEmpty &&
-           _cityController.text.isNotEmpty &&
-           _selectedGenre != null;
-  }
+  final _formKey = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _bio = TextEditingController();
+  final _email = TextEditingController();
+  final _city = TextEditingController();
+  final _pricing = TextEditingController();
+  List<String> _genres = [];
+  String? _genre;
+  String? _genreError;
+  Uint8List? _newImage;
+  dynamic _storedImage;
+  bool _loading = true;
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _nameController.addListener(() => setState(() {}));
-    _bioController.addListener(() => setState(() {}));
+    _load();
+  }
+
+  @override
+  void dispose() {
+    for (final c in [_name, _bio, _email, _city, _pricing]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _genreError = null;
+    });
+    Map<String, dynamic> user = {};
+    try {
+      user = await Api.profile('artist');
+    } on ApiException {
+      // A new profile has nothing to prefill.
+    }
+    List<String> genres = [];
+    String? genreError;
+    try {
+      genres = await Api.genres();
+    } on ApiException catch (e) {
+      genreError = 'Could not load the genre list: ${e.message}';
+    }
+    if (!mounted) return;
+    _name.text = (user['name'] ?? '').toString();
+    _bio.text = (user['bio'] ?? '').toString();
+    _email.text = (user['email'] ?? '').toString();
+    _city.text = (user['city'] ?? '').toString();
+    _pricing.text = (user['pricing'] ?? '').toString();
+    _storedImage = user['profileImage'];
+    final stored = (user['genre'] ?? '').toString().trim();
+    setState(() {
+      // Keep a stored genre selectable even when the list no longer has it.
+      _genres = [...genres, if (stored.isNotEmpty && !genres.contains(stored)) stored];
+      _genre = stored.isEmpty ? null : stored;
+      _genreError = genreError;
+      _loading = false;
+    });
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final bytes = await ImageUtils.pick();
+      if (bytes == null || !mounted) return;
+      final problem = ImageUtils.sizeProblem(bytes);
+      if (problem != null) {
+        showMessage(context, problem, error: true);
+        return;
+      }
+      setState(() => _newImage = bytes);
+    } catch (_) {
+      if (mounted) showMessage(context, 'Could not open the photo. Check the photo permission and try again.', error: true);
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      await Api.saveArtistProfile({
+        'name': _name.text.trim(),
+        'bio': _bio.text.trim(),
+        'email': _email.text.trim(),
+        'city': _city.text.trim(),
+        if (_genre != null) 'genre': _genre,
+        if (_pricing.text.trim().isNotEmpty) 'pricing': _pricing.text.trim(),
+        if (_newImage != null) 'profileImage': base64Encode(_newImage!),
+      });
+      if (!mounted) return;
+      if (widget.editing) {
+        showMessage(context, 'Profile updated');
+        Navigator.pop(context, true);
+      } else {
+        await AppFlow.refreshAndRoute(preferredRole: 'artist');
+      }
+    } on ApiException catch (e) {
+      if (mounted) showMessage(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Fill Profile',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Profile Picture
-            Center(
-              child: Stack(
-                children: [
-                  Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.grey.shade100,
-                      border: Border.all(color: Colors.grey.shade300, width: 2),
-                    ),
-                    child: _profileImage != null
-                        ? ClipOval(
-                            child: Image.memory(
-                              _profileImage!,
-                              width: 120,
-                              height: 120,
-                              fit: BoxFit.cover,
+      appBar: appBar(widget.editing ? 'Edit profile' : 'Artist profile', showBack: widget.editing),
+      body: SafeArea(
+        child: _loading
+            ? const LoadingView()
+            : Form(
+                key: _formKey,
+                child: ListView(
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    Center(
+                      child: GestureDetector(
+                        onTap: _pickImage,
+                        child: Stack(
+                          children: [
+                            ClipOval(
+                              child: SizedBox(
+                                width: 104,
+                                height: 104,
+                                child: _newImage != null
+                                    ? Image.memory(_newImage!, fit: BoxFit.cover)
+                                    : StoredImage(_storedImage, placeholderIcon: Icons.person),
+                              ),
                             ),
-                          )
-                        : Icon(
-                            Icons.person,
-                            size: 60,
-                            color: Colors.grey.shade500,
-                          ),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: GestureDetector(
-                      onTap: () => _showImageSourceDialog(),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF001F3F),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                        ),
-                        child: const Icon(
-                          Icons.camera_alt,
-                          color: Colors.white,
-                          size: 20,
+                            const Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: CircleAvatar(
+                                radius: 16,
+                                backgroundColor: AppColors.navy,
+                                child: Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 40),
-            
-            // Name Field
-            _buildLabel('Name', true),
-            const SizedBox(height: 8),
-            _buildTextField(
-              controller: _nameController,
-              hintText: 'Enter your full name',
-            ),
-            const SizedBox(height: 24),
-            
-            // Bio Field
-            _buildLabel('Bio', true),
-            const SizedBox(height: 8),
-            _buildTextField(
-              controller: _bioController,
-              hintText: 'Tell us about yourself and your musical journey...',
-              maxLines: 4,
-            ),
-            const SizedBox(height: 24),
-            
-            // Email Field
-            _buildLabel('Email', true),
-            const SizedBox(height: 8),
-            _buildTextField(
-              controller: _emailController,
-              hintText: 'Enter your email address',
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 24),
-            
-            // City Field
-            _buildLabel('City', true),
-            const SizedBox(height: 8),
-            _buildTextField(
-              controller: _cityController,
-              hintText: 'Enter your city',
-            ),
-            const SizedBox(height: 24),
-            
-            // Genre Selection
-            _buildLabel('Genre', true),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedGenre,
-                  hint: Text(
-                    'Select your music genre',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                  isExpanded: true,
-                  items: _genres.map((genre) {
-                    return DropdownMenuItem<String>(
-                      value: genre,
-                      child: Text(genre),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedGenre = value;
-                    });
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            
-            // Pricing Field (Optional)
-            _buildLabel('Pricing per Hour', false),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _pricingController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-              ],
-              decoration: InputDecoration(
-                hintText: 'Enter your rate (optional)',
-                hintStyle: TextStyle(color: Colors.grey.shade500),
-                prefixText: '₹ ',
-                prefixStyle: const TextStyle(
-                  color: Colors.black87,
-                  fontWeight: FontWeight.w500,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFF001F3F), width: 2),
-                ),
-                contentPadding: const EdgeInsets.all(16),
-              ),
-            ),
-            const SizedBox(height: 40),
-            
-            // Create Profile Button
-            Container(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isFormValid && !_isLoading ? _saveProfile : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isFormValid ? const Color(0xFF001F3F) : Colors.grey.shade400,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Text(
-                        'Create Profile',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                    const SizedBox(height: 6),
+                    const Center(child: Text('Profile photo (optional)', style: TextStyle(color: Colors.black54))),
+                    const SizedBox(height: 20),
+                    TextFormField(
+                      controller: _name,
+                      maxLength: 120,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: fieldDecoration('Stage name', icon: Icons.person).copyWith(counterText: ''),
+                      validator: (v) => Validators.requiredText(v ?? '', 'Name'),
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: _bio,
+                      maxLines: 4,
+                      maxLength: 3000,
+                      decoration: fieldDecoration('About you', hint: 'What you perform, your experience'),
+                      validator: (v) => Validators.requiredText(v ?? '', 'About you'),
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: _email,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: fieldDecoration('Email', icon: Icons.email),
+                      validator: (v) => Validators.email(v ?? ''),
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: _city,
+                      maxLength: 120,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: fieldDecoration('City', icon: Icons.location_city).copyWith(counterText: ''),
+                      validator: (v) => Validators.requiredText(v ?? '', 'City'),
+                    ),
+                    const SizedBox(height: 14),
+                    if (_genres.isNotEmpty)
+                      DropdownButtonFormField<String>(
+                        initialValue: _genre,
+                        isExpanded: true,
+                        decoration: fieldDecoration('Genre', icon: Icons.music_note),
+                        items: [for (final g in _genres) DropdownMenuItem(value: g, child: Text(g))],
+                        onChanged: (v) => setState(() => _genre = v),
+                        validator: (v) => v == null ? 'Choose a genre' : null,
+                      ),
+                    if (_genreError != null) ...[
+                      InfoBanner('$_genreError You can save without a genre and set it later.'),
+                      TextButton(onPressed: _load, child: const Text('Reload genres')),
+                    ],
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: _pricing,
+                      maxLength: 200,
+                      decoration: fieldDecoration('Your fee (optional)', hint: 'For example: ₹25,000 per show')
+                          .copyWith(counterText: ''),
+                    ),
+                    const SizedBox(height: 24),
+                    PrimaryButton(label: widget.editing ? 'Save changes' : 'Continue', loading: _saving, onPressed: _save),
+                    if (!widget.editing) ...[
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton(
+                          onPressed: _saving ? null : () => AppFlow.signOut(),
+                          child: const Text('Sign out', style: TextStyle(color: AppColors.navy)),
                         ),
                       ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLabel(String text, bool isRequired) {
-    return RichText(
-      text: TextSpan(
-        text: text,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-          color: Colors.black87,
-        ),
-        children: [
-          if (isRequired)
-            const TextSpan(
-              text: ' *',
-              style: TextStyle(color: Colors.red),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String hintText,
-    int maxLines = 1,
-    TextInputType? keyboardType,
-    String? prefixText,
-  }) {
-    return TextField(
-      controller: controller,
-      maxLines: maxLines,
-      keyboardType: keyboardType,
-      decoration: InputDecoration(
-        hintText: hintText,
-        hintStyle: TextStyle(color: Colors.grey.shade500),
-        prefixText: prefixText,
-        prefixStyle: const TextStyle(
-          color: Colors.black87,
-          fontWeight: FontWeight.w500,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF001F3F), width: 2),
-        ),
-        contentPadding: const EdgeInsets.all(16),
-      ),
-    );
-  }
-
-  void _showImageSourceDialog() {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Select Profile Picture',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildSourceOption(
-                    'Camera',
-                    Icons.camera_alt,
-                    () {
-                      Navigator.pop(context);
-                      _pickImage(ImageSource.camera);
-                    },
-                  ),
+                    ],
+                  ],
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildSourceOption(
-                    'Gallery',
-                    Icons.photo_library,
-                    () {
-                      Navigator.pop(context);
-                      _pickImage(ImageSource.gallery);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Future<void> _pickImage(ImageSource source) async {
-    try {
-      final XFile? image = await _picker.pickImage(
-        source: source,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 80,
-      );
-      
-      if (image != null) {
-        final bytes = await image.readAsBytes();
-        final base64Image = base64Encode(bytes);
-        
-        if (mounted) {
-          setState(() {
-            _profileImage = bytes;
-            _profileImageBase64 = base64Image;
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error picking image: $e')),
-        );
-      }
-    }
-  }
-
-  Widget _buildSourceOption(String title, IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 40, color: Color(0xFF001F3F)),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
               ),
-            ),
-          ],
-        ),
       ),
     );
-  }
-
-  void _saveProfile() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    final userData = await AuthService.getUserData();
-    final phone = userData['phone'];
-    
-    if (phone != null) {
-      final result = await AuthService.updateArtistProfile(
-        phone,
-        _nameController.text,
-        _emailController.text,
-        _cityController.text,
-        _bioController.text,
-        _selectedGenre!,
-        _pricingController.text.isNotEmpty ? _pricingController.text : null,
-        _profileImageBase64,
-      );
-      
-      setState(() {
-        _isLoading = false;
-      });
-      
-      if (result['success'] == true) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => KYCVerificationScreen(phone: phone),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['error'] ?? 'Failed to save profile')),
-        );
-      }
-    } else {
-      setState(() {
-        _isLoading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User session not found')),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _bioController.dispose();
-    _pricingController.dispose();
-    _emailController.dispose();
-    _cityController.dispose();
-    super.dispose();
   }
 }

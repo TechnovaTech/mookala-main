@@ -1,337 +1,926 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import Sidebar from '../../../components/Sidebar'
-import { ArrowLeft, Mail, Phone, MapPin, Calendar, User, Music, DollarSign, FileText, Image, Bell, ChevronDown, LogOut, Settings as SettingsIcon, CheckCircle, Clock } from 'lucide-react'
+import React, { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
+import { ArrowLeft } from 'lucide-react'
+import AdminShell from '@/components/AdminShell'
+import { Badge, Button, Card, ConfirmDialog, EmptyState, Modal, NoticeBar, Spinner, api, formatDate, formatMoney, inputClass, type Notice } from '@/components/ui'
+import AccountActions from '@/components/artists/AccountActions'
+import {
+  AccountBadge,
+  Avatar,
+  EventStatusBadge,
+  Field,
+  HistoryList,
+  KycBadge,
+  SectionTitle,
+  selectClass,
+  type HistoryEntry,
+  type KycView,
+} from '@/components/artists/shared'
 
-interface ArtistDetail {
-  _id: string
-  phone: string
-  name?: string
-  email?: string
-  city?: string
-  bio?: string
-  genre?: string
-  pricing?: string
-  status: string
-  createdAt: string
-  profileImage?: string
-  bannerImage?: string
-  media?: Array<{data: string, type: string} | string>
-  events?: any[]
-  followersCount?: number
-  followers?: string[]
+interface MediaItem {
+  index: number
+  type: string
+  uploadedAt: string | null
+  reviewStatus: 'pending' | 'approved' | 'rejected'
+  reviewed: boolean
+  reviewedBy: string | null
+  reviewReason: string
+  url: string
 }
 
-export default function ArtistDetailPage() {
-  const params = useParams()
-  const router = useRouter()
-  const [artist, setArtist] = useState<ArtistDetail | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [isProfileOpen, setIsProfileOpen] = useState(false)
+interface EventRow {
+  _id: string
+  name: string
+  category: string
+  status: string
+  startDate: string | null
+  startTime: string
+  city: string
+  place: string
+  relation?: string
+  artistResponse?: string
+  bookings: number
+  tickets: number
+  value: number
+  checkedIn: number
+  cancelled: number
+  other: number
+}
+
+interface BookingRow {
+  _id: string
+  eventId: string
+  eventTitle: string
+  userPhone: string
+  status: string
+  paymentStatus: string
+  seats: number
+  categories: string
+  totalPrice: number
+  checkedIn: boolean
+  createdAt: string | null
+}
+
+interface Feedback {
+  rating: number | null
+  ratingCount: number
+  ratings: { _id: string; rating: number; comment: string; customerName: string; status: string; createdAt: string | null }[]
+  complaints: { _id: string; subject: string; status: string; priority: string; bookingId: string; createdAt: string | null }[]
+  reports: { _id: string; reason: string; details: string; status: string; createdAt: string | null }[]
+}
+
+interface Availability {
+  from: string
+  to: string
+  summary: { available: number; unavailable: number; booked: number; not_set: number }
+  days: { date: string; status: 'available' | 'unavailable' | 'booked'; source: string; note: string; events: { _id: string; name: string }[] }[]
+}
+
+interface Artist {
+  _id: string
+  name: string
+  phone: string
+  email: string
+  city: string
+  genre: string
+  pricing: any
+  bio: string
+  signupStatus: string
+  kyc: KycView
+  kycCorrectionRequested: boolean
+  kycReviewedBy: string | null
+  kycReviewedAt: string | null
+  rejectionNotes: string
+  accountStatus: string
+  accountStatusReason: string
+  accountStatusBy: string | null
+  accountStatusAt: string | null
+  categoryId: string | null
+  categoryName: string | null
+  followers: number
+  profileImageUrl: string | null
+  bannerImageUrl: string | null
+  identity: { aadhar: string; pan: string } | null
+  media: MediaItem[]
+  events: EventRow[]
+  bookingTotals: { bookings: number; tickets: number; value: number; checkedIn: number; cancelled: number; other: number }
+  bookingCount: number
+  recentBookings: BookingRow[]
+  feedback: Feedback
+  availability: Availability
+  history: HistoryEntry[]
+  createdAt: string | null
+}
+
+interface DetailResponse {
+  artist: Artist
+  canManage: boolean
+  canViewKyc: boolean
+  canViewPayments: boolean
+}
+
+interface Category {
+  _id: string
+  name: string
+  parentId: string | null
+  status: string
+}
+
+const MEDIA_LABEL: Record<string, { label: string; tone: 'gray' | 'green' | 'red' }> = {
+  pending: { label: 'Not reviewed', tone: 'gray' },
+  approved: { label: 'Approved', tone: 'green' },
+  rejected: { label: 'Rejected', tone: 'red' },
+}
+
+function CategoryDialog({
+  artist,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  artist: Artist
+  onClose: () => void
+  onSaved: (message: string) => void
+  onError: (message: string) => void
+}) {
+  const [categories, setCategories] = useState<Category[] | null>(null)
+  const [categoryId, setCategoryId] = useState(artist.categoryId || '')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState('')
 
   useEffect(() => {
-    if (params.id) {
-      fetchArtistDetail(params.id as string)
-    }
-  }, [params.id])
+    api<{ items: any[] }>('/api/admin/r/artist-categories?limit=100&sort=displayOrder&dir=asc')
+      .then((data) =>
+        setCategories(
+          data.items.map((item) => ({
+            _id: String(item._id),
+            name: item.name || '',
+            parentId: item.parentId ? String(item.parentId) : null,
+            status: item.status || 'active',
+          }))
+        )
+      )
+      .catch((error) => {
+        setCategories([])
+        setProblem(error.message || 'Could not load the categories.')
+      })
+  }, [])
 
-  const fetchArtistDetail = async (artistId: string) => {
+  const save = async () => {
+    setBusy(true)
+    setProblem('')
     try {
-      const response = await fetch(`/api/artist/${artistId}`)
-      const data = await response.json()
-      if (data.success) {
-        setArtist(data.artist)
-      }
-    } catch (error) {
-      console.error('Error fetching artist:', error)
+      await api(`/api/admin/artists/${artist._id}`, {
+        method: 'PATCH',
+        body: { action: 'assign_category', categoryId: categoryId || null, reason: reason.trim() },
+      })
+      onSaved('The category was updated.')
+    } catch (error: any) {
+      setProblem(error.message || 'The category could not be changed.')
+      onError('')
     } finally {
-      setLoading(false)
+      setBusy(false)
     }
   }
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return 'N/A'
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
+  const parents = (categories || []).filter((c) => !c.parentId)
+  const unchanged = categoryId === (artist.categoryId || '')
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen bg-gray-50">
-        <Sidebar />
-        <div className="flex-1 ml-64 flex items-center justify-center">
-          <p className="text-gray-500">Loading artist details...</p>
+  return (
+    <Modal
+      open
+      title="Change category"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={busy} disabled={unchanged || !reason.trim() || categories === null}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      {problem && <NoticeBar notice={{ type: 'error', text: problem }} />}
+      {categories === null ? (
+        <Spinner />
+      ) : categories.length === 0 && !problem ? (
+        <p className="text-sm text-gray-700">
+          There are no artist categories yet.{' '}
+          <Link href="/artists/categories" className="text-teal underline">
+            Add categories
+          </Link>{' '}
+          first.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="category-select" className="block text-sm font-medium text-gray-700 mb-1">
+              Category
+            </label>
+            <select id="category-select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={selectClass + ' w-full'}>
+              <option value="">No category</option>
+              {parents.map((parent) => (
+                <React.Fragment key={parent._id}>
+                  <option value={parent._id}>
+                    {parent.name}
+                    {parent.status === 'hidden' ? ' (hidden)' : ''}
+                  </option>
+                  {(categories || [])
+                    .filter((c) => c.parentId === parent._id)
+                    .map((child) => (
+                      <option key={child._id} value={child._id}>
+                        {parent.name} › {child.name}
+                        {child.status === 'hidden' ? ' (hidden)' : ''}
+                      </option>
+                    ))}
+                </React.Fragment>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="category-reason" className="block text-sm font-medium text-gray-700 mb-1">
+              Reason
+            </label>
+            <textarea
+              id="category-reason"
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className={inputClass}
+              placeholder="Saved in the activity log with the old and new category"
+            />
+          </div>
         </div>
-      </div>
-    )
-  }
+      )}
+    </Modal>
+  )
+}
 
-  if (!artist) {
-    return (
-      <div className="flex min-h-screen bg-gray-50">
-        <Sidebar />
-        <div className="flex-1 ml-64 flex items-center justify-center">
-          <p className="text-gray-500">Artist not found</p>
-        </div>
-      </div>
-    )
+const PROFILE_INPUTS: { key: 'name' | 'city' | 'genre' | 'pricing' | 'bio'; label: string; max: number; area?: boolean }[] = [
+  { key: 'name', label: 'Name', max: 120 },
+  { key: 'city', label: 'City', max: 120 },
+  { key: 'genre', label: 'Genre', max: 200 },
+  { key: 'pricing', label: 'Pricing', max: 200 },
+  { key: 'bio', label: 'Bio', max: 3000, area: true },
+]
+
+function ProfileDialog({ artist, onClose, onSaved }: { artist: Artist; onClose: () => void; onSaved: (message: string) => void }) {
+  const original = {
+    name: artist.name || '',
+    city: artist.city || '',
+    genre: artist.genre || '',
+    pricing: artist.pricing === null || artist.pricing === undefined ? '' : String(artist.pricing),
+    bio: artist.bio || '',
+  }
+  const [form, setForm] = useState(original)
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState('')
+
+  const changed = PROFILE_INPUTS.filter((input) => form[input.key].trim() !== original[input.key].trim())
+
+  const save = async () => {
+    setBusy(true)
+    setProblem('')
+    try {
+      const profile: Record<string, string> = {}
+      for (const input of changed) profile[input.key] = form[input.key].trim()
+      await api(`/api/admin/artists/${artist._id}`, { method: 'PATCH', body: { action: 'edit_profile', profile, reason: reason.trim() } })
+      onSaved(`Profile updated: ${changed.map((input) => input.label.toLowerCase()).join(', ')}.`)
+    } catch (error: any) {
+      setProblem(error.message || 'The profile could not be saved.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
-      
-      <div className="flex-1 ml-64 transition-all duration-300 min-h-screen">
-        <header className="bg-white shadow-lg border-b border-gray-200 px-6 py-4 fixed top-0 right-0 left-64 z-40">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => router.push('/artists')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-all"
-              >
-                <ArrowLeft size={20} />
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold text-deep-blue">Artist Profile</h1>
-                <p className="text-slate-gray text-sm">Complete artist information and portfolio</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <button className="relative p-2 text-slate-gray hover:text-deep-blue hover:bg-teal/10 rounded-lg transition-all">
-                <Bell size={20} />
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald text-white text-xs rounded-full flex items-center justify-center animate-pulse">
-                  3
-                </span>
-              </button>
-              
-              <div className="relative">
-                <button
-                  onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className="flex items-center space-x-3 bg-gray-50 rounded-lg px-3 py-2 hover:bg-teal/10 transition-all cursor-pointer"
-                >
-                  <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-md">
-                    <span className="text-white text-sm font-bold">A</span>
-                  </div>
-                  <div className="hidden md:block text-left">
-                    <p className="text-sm font-medium text-deep-blue">Admin User</p>
-                    <p className="text-xs text-slate-gray">Super Admin</p>
-                  </div>
-                  <ChevronDown size={16} className={`text-slate-gray transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
-                </button>
-                
-                {isProfileOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <User size={16} className="mr-3 text-slate-gray" />
-                      Profile Settings
-                    </button>
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <SettingsIcon size={16} className="mr-3 text-slate-gray" />
-                      Account Settings
-                    </button>
-                    <hr className="my-2 border-gray-200" />
-                    <button 
-                      onClick={() => window.location.href = '/login'}
-                      className="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      <LogOut size={16} className="mr-3" />
-                      Logout
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="p-10 mt-24">
-          {/* Artist Header Card */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden mb-6">
-            {artist.bannerImage && (
-              <div className="h-48 w-full overflow-hidden">
-                <img src={artist.bannerImage} alt="Cover" className="w-full h-full object-cover" />
-              </div>
+    <Modal
+      open
+      title="Edit public profile"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={busy} disabled={changed.length === 0 || !reason.trim() || !form.name.trim()}>
+            Save changes
+          </Button>
+        </>
+      }
+    >
+      {problem && <NoticeBar notice={{ type: 'error', text: problem }} />}
+      <p className="text-sm text-gray-600 mb-4">
+        This is the text customers see on the artist&apos;s profile in the apps. Phone, email and identity documents cannot be changed here.
+      </p>
+      <div className="space-y-4">
+        {PROFILE_INPUTS.map((input) => (
+          <div key={input.key}>
+            <label htmlFor={`profile-${input.key}`} className="block text-sm font-medium text-gray-700 mb-1">
+              {input.label}
+            </label>
+            {input.area ? (
+              <textarea
+                id={`profile-${input.key}`}
+                rows={4}
+                maxLength={input.max}
+                value={form[input.key]}
+                onChange={(e) => setForm({ ...form, [input.key]: e.target.value })}
+                className={inputClass}
+              />
+            ) : (
+              <input
+                id={`profile-${input.key}`}
+                type="text"
+                maxLength={input.max}
+                value={form[input.key]}
+                onChange={(e) => setForm({ ...form, [input.key]: e.target.value })}
+                className={inputClass}
+              />
             )}
-            <div className={`${artist.bannerImage ? 'bg-white' : 'bg-gradient-to-r from-emerald to-teal'} p-8`}>
-              <div className="flex items-center gap-6">
-                <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-lg overflow-hidden">
-                  {artist.profileImage ? (
-                    <img src={artist.profileImage} alt="Profile" className="w-full h-full object-cover" />
-                  ) : (
-                    <Music size={48} className="text-teal" />
-                  )}
-                </div>
-                <div className={`${artist.bannerImage ? 'text-gray-900' : 'text-white'} flex-1`}>
-                  <h2 className="text-3xl font-bold">{artist.name || 'Unnamed Artist'}</h2>
-                  <p className={`${artist.bannerImage ? 'text-gray-600' : 'text-white/80'} mt-1`}>{artist.email || artist.phone}</p>
-                  <div className="mt-3 flex items-center gap-3">
-                    <span className={`px-3 py-1 rounded-full text-sm ${
-                      artist.status === 'completed' 
-                        ? artist.bannerImage ? 'bg-emerald/20 text-emerald' : 'bg-white/20 text-white'
-                        : artist.status === 'verified'
-                        ? 'bg-yellow-400 text-yellow-900'
-                        : artist.bannerImage ? 'bg-gray-200 text-gray-700' : 'bg-white/10 text-white'
-                    }`}>
-                      {artist.status}
-                    </span>
-                    {artist.genre && (
-                      <span className={`px-3 py-1 rounded-full text-sm ${artist.bannerImage ? 'bg-teal/20 text-teal' : 'bg-white/20 text-white'}`}>
-                        {artist.genre}
-                      </span>
-                    )}
-                    <span className={`px-3 py-1 rounded-full text-sm ${artist.bannerImage ? 'bg-blue-100 text-blue-700' : 'bg-white/20 text-white'}`}>
-                      {artist.followersCount || 0} Followers
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
+          </div>
+        ))}
+        <div>
+          <label htmlFor="profile-reason" className="block text-sm font-medium text-gray-700 mb-1">
+            Reason
+          </label>
+          <textarea
+            id="profile-reason"
+            rows={2}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className={inputClass}
+            placeholder="Saved in the activity log with the old and new text"
+          />
+        </div>
+      </div>
+    </Modal>
+  )
+}
 
-            <div className="p-8">
-              <h3 className="text-xl font-bold text-gray-900 mb-6">Contact & Basic Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                  <div className="w-12 h-12 bg-teal/10 rounded-lg flex items-center justify-center">
-                    <Phone size={24} className="text-teal" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Phone Number</p>
-                    <p className="text-gray-900 font-medium">{artist.phone}</p>
-                  </div>
-                </div>
+const DAY_TONE: Record<string, 'green' | 'red' | 'blue'> = { available: 'green', unavailable: 'red', booked: 'blue' }
+const DAY_LABEL: Record<string, string> = { available: 'Available', unavailable: 'Unavailable', booked: 'Booked' }
 
-                {artist.email && (
-                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="w-12 h-12 bg-teal/10 rounded-lg flex items-center justify-center">
-                      <Mail size={24} className="text-teal" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Email Address</p>
-                      <p className="text-gray-900 font-medium">{artist.email}</p>
-                    </div>
-                  </div>
-                )}
+const BOOKING_TONE: Record<string, 'green' | 'red' | 'amber' | 'gray' | 'blue'> = {
+  confirmed: 'green',
+  attended: 'blue',
+  cancelled: 'red',
+  pending_payment: 'amber',
+  expired: 'gray',
+}
 
-                {artist.city && (
-                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="w-12 h-12 bg-teal/10 rounded-lg flex items-center justify-center">
-                      <MapPin size={24} className="text-teal" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">City</p>
-                      <p className="text-gray-900 font-medium">{artist.city}</p>
-                    </div>
-                  </div>
-                )}
+function ArtistDetail() {
+  const params = useParams()
+  const id = String(params?.id || '')
+  const [data, setData] = useState<DetailResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [notice, setNotice] = useState<Notice>(null)
+  const [missing, setMissing] = useState('')
+  const [categoryOpen, setCategoryOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [removing, setRemoving] = useState<'profile' | 'banner' | null>(null)
+  const [removeBusy, setRemoveBusy] = useState(false)
 
-                {artist.pricing && (
-                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="w-12 h-12 bg-teal/10 rounded-lg flex items-center justify-center">
-                      <DollarSign size={24} className="text-teal" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Pricing</p>
-                      <p className="text-gray-900 font-medium">₹{artist.pricing}/hour</p>
-                    </div>
-                  </div>
-                )}
+  const load = useCallback(async () => {
+    try {
+      setData(await api<DetailResponse>(`/api/admin/artists/${id}`))
+      setMissing('')
+    } catch (error: any) {
+      setMissing(error.message || 'Could not load this artist.')
+    } finally {
+      setLoading(false)
+    }
+  }, [id])
 
-                <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                  <div className="w-12 h-12 bg-teal/10 rounded-lg flex items-center justify-center">
-                    <Calendar size={24} className="text-teal" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Joined Date</p>
-                    <p className="text-gray-900 font-medium">{formatDate(artist.createdAt)}</p>
-                  </div>
-                </div>
-              </div>
+  useEffect(() => {
+    load()
+  }, [load])
+
+  if (loading) return <Spinner />
+  if (!data) {
+    return (
+      <Card>
+        <EmptyState title={missing || 'Artist not found'} hint="Go back to the artist list and open the artist again." />
+      </Card>
+    )
+  }
+
+  const { artist } = data
+  const done = (text: string) => {
+    setNotice({ type: 'success', text })
+    load()
+  }
+
+  const removeImage = async (reason: string) => {
+    if (!removing) return
+    setRemoveBusy(true)
+    try {
+      await api(`/api/admin/artists/${artist._id}`, { method: 'PATCH', body: { action: 'remove_image', image: removing, reason } })
+      const label = removing === 'profile' ? 'profile photo' : 'banner image'
+      setRemoving(null)
+      done(`The ${label} was removed.`)
+    } catch (error: any) {
+      setRemoving(null)
+      setNotice({ type: 'error', text: `Nothing was changed. ${error.message || ''}` })
+    } finally {
+      setRemoveBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <Link href="/artists" className="inline-flex items-center gap-1 text-sm text-teal hover:underline mb-3">
+        <ArrowLeft size={16} /> All artists
+      </Link>
+      <NoticeBar notice={notice} onClose={() => setNotice(null)} />
+
+      <Card className="mb-4 overflow-hidden">
+        {artist.bannerImageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={artist.bannerImageUrl} alt="" className="w-full h-36 object-cover bg-gray-100" />
+        )}
+        <div className="flex flex-wrap items-center gap-4 p-5">
+          <Avatar name={artist.name} src={artist.profileImageUrl} size={72} />
+          <div className="flex-1 min-w-[200px]">
+            <h2 className="text-xl font-bold text-deep-blue">{artist.name || 'No name yet'}</h2>
+            <p className="text-sm text-gray-600">
+              {[artist.genre, artist.city].filter(Boolean).join(' · ') || 'No genre or city on the profile'}
+            </p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              <KycBadge kyc={artist.kyc} correction={artist.kycCorrectionRequested} />
+              <AccountBadge status={artist.accountStatus} />
+              {artist.categoryName && <Badge tone="blue">{artist.categoryName}</Badge>}
             </div>
           </div>
+          <div className="flex flex-wrap gap-3">
+            {data.canViewPayments && (
+              <Link
+                href={`/artists/payments?artist=${artist._id}`}
+                className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+              >
+                Payments
+              </Link>
+            )}
+            {data.canManage && (
+              <AccountActions
+                endpoint={`/api/admin/artists/${artist._id}`}
+                name={artist.name}
+                status={artist.accountStatus}
+                kind="artist"
+                onDone={done}
+                onError={(text) => setNotice({ type: 'error', text })}
+              />
+            )}
+          </div>
+        </div>
+        {artist.accountStatus !== 'active' && (
+          <div className="px-5 py-3 bg-amber-50 border-t border-amber-200 text-sm text-amber-800">
+            This account is {artist.accountStatus}
+            {artist.accountStatusBy ? ` (by ${artist.accountStatusBy}, ${formatDate(artist.accountStatusAt, true)})` : ''}
+            {artist.accountStatusReason ? `. Reason: ${artist.accountStatusReason}` : '.'} It is not listed in the apps.
+          </div>
+        )}
+      </Card>
 
-          {/* Bio Section */}
-          {artist.bio && (
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-8 mb-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <FileText size={24} className="text-teal" />
-                Biography
-              </h3>
-              <p className="text-gray-700 leading-relaxed">{artist.bio}</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        <Card className="lg:col-span-2">
+          <SectionTitle
+            aside={
+              data.canManage ? (
+                <button onClick={() => setProfileOpen(true)} className="text-sm text-teal font-medium hover:underline">
+                  Edit profile
+                </button>
+              ) : undefined
+            }
+          >
+            Profile
+          </SectionTitle>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-5">
+            <Field label="Phone">{artist.phone}</Field>
+            <Field label="Email">{artist.email}</Field>
+            <Field label="City">{artist.city}</Field>
+            <Field label="Genre">{artist.genre}</Field>
+            <Field label="Pricing">{artist.pricing ? String(artist.pricing) : ''}</Field>
+            <Field label="Followers">{String(artist.followers)}</Field>
+            <Field label="Joined">{formatDate(artist.createdAt)}</Field>
+            <Field label="Signup progress">{artist.signupStatus}</Field>
+            <div className="sm:col-span-2">
+              <Field label="Bio">{artist.bio ? <span className="whitespace-pre-wrap">{artist.bio}</span> : ''}</Field>
             </div>
-          )}
+            <Field label="Profile photo">
+              {artist.profileImageUrl ? (
+                <span className="flex items-center gap-3">
+                  Uploaded
+                  {data.canManage && (
+                    <button onClick={() => setRemoving('profile')} className="text-sm text-red-700 font-medium hover:underline">
+                      Remove profile photo
+                    </button>
+                  )}
+                </span>
+              ) : (
+                'None'
+              )}
+            </Field>
+            <Field label="Banner image">
+              {artist.bannerImageUrl ? (
+                <span className="flex items-center gap-3">
+                  Uploaded
+                  {data.canManage && (
+                    <button onClick={() => setRemoving('banner')} className="text-sm text-red-700 font-medium hover:underline">
+                      Remove banner image
+                    </button>
+                  )}
+                </span>
+              ) : (
+                'None'
+              )}
+            </Field>
+          </dl>
+        </Card>
 
-          {/* Media Gallery */}
-          {artist.media && artist.media.length > 0 && (
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-8 mb-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                <Image size={24} className="text-teal" />
-                Media Gallery ({artist.media.length})
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {artist.media.map((media, idx) => {
-                  const mediaUrl = typeof media === 'string' ? media : media.data;
-                  return (
-                    <div key={idx} className="aspect-square rounded-lg overflow-hidden border border-gray-200 hover:shadow-lg transition-all">
-                      <img 
-                        src={mediaUrl} 
-                        alt={`Media ${idx + 1}`}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23f0f0f0" width="200" height="200"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage%3C/text%3E%3C/svg%3E'
-                        }}
-                      />
-                    </div>
-                  );
-                })}
+        <div className="space-y-4">
+          <Card>
+            <SectionTitle
+              aside={
+                data.canViewKyc && artist.kyc !== 'not_submitted' ? (
+                  <Link href={`/kyc?role=artist&id=${artist._id}`} className="text-sm text-teal font-medium hover:underline">
+                    Open review
+                  </Link>
+                ) : undefined
+              }
+            >
+              KYC verification
+            </SectionTitle>
+            <dl className="space-y-3 p-5">
+              <Field label="Status">
+                <KycBadge kyc={artist.kyc} correction={artist.kycCorrectionRequested} />
+              </Field>
+              {artist.kyc === 'not_submitted' && (
+                <p className="text-sm text-gray-600">The artist has not uploaded identity documents yet.</p>
+              )}
+              <Field label="Reviewed by">{artist.kycReviewedBy}</Field>
+              <Field label="Reviewed on">{artist.kycReviewedAt ? formatDate(artist.kycReviewedAt, true) : ''}</Field>
+              {artist.rejectionNotes && <Field label="Note sent to the artist">{artist.rejectionNotes}</Field>}
+              {artist.identity && (
+                <>
+                  <Field label="Aadhaar">{artist.identity.aadhar}</Field>
+                  <Field label="PAN">{artist.identity.pan}</Field>
+                </>
+              )}
+            </dl>
+          </Card>
+
+          <Card>
+            <SectionTitle
+              aside={
+                data.canManage ? (
+                  <button onClick={() => setCategoryOpen(true)} className="text-sm text-teal font-medium hover:underline">
+                    Change
+                  </button>
+                ) : undefined
+              }
+            >
+              Category
+            </SectionTitle>
+            <p className="p-5 text-sm text-gray-900">{artist.categoryName || 'Not assigned to a category'}</p>
+          </Card>
+
+          <Card>
+            <SectionTitle
+              aside={
+                <Link href={`/artists/availability?artist=${artist._id}`} className="text-sm text-teal font-medium hover:underline">
+                  Open calendar
+                </Link>
+              }
+            >
+              Availability, next 30 days
+            </SectionTitle>
+            <div className="p-5">
+              <div className="flex flex-wrap gap-2 mb-3" data-testid="availability-summary">
+                <Badge tone="green">{artist.availability.summary.available} available</Badge>
+                <Badge tone="red">{artist.availability.summary.unavailable} unavailable</Badge>
+                <Badge tone="blue">{artist.availability.summary.booked} booked</Badge>
+                <Badge tone="gray">{artist.availability.summary.not_set} not set</Badge>
               </div>
+              {artist.availability.days.length === 0 ? (
+                <p className="text-sm text-gray-600">
+                  Nothing is recorded for the next 30 days. Days are set by the artist in the artist app, by an accepted event, or by an admin on the
+                  availability calendar.
+                </p>
+              ) : (
+                <ul className="space-y-1.5 text-sm">
+                  {artist.availability.days.slice(0, 12).map((day) => (
+                    <li key={day.date} className="flex flex-wrap items-center gap-2">
+                      <span className="text-gray-700 w-24">{formatDate(day.date)}</span>
+                      <Badge tone={DAY_TONE[day.status]}>{DAY_LABEL[day.status]}</Badge>
+                      <span className="text-gray-500 text-xs">
+                        {day.events.length ? day.events.map((event) => event.name).join(', ') : day.source === 'admin' ? 'set by an admin' : 'set by the artist'}
+                      </span>
+                    </li>
+                  ))}
+                  {artist.availability.days.length > 12 && (
+                    <li className="text-xs text-gray-500">and {artist.availability.days.length - 12} more days on the calendar</li>
+                  )}
+                </ul>
+              )}
             </div>
-          )}
-
-          {/* Events Section */}
-          {artist.events && artist.events.length > 0 && (
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-8">
-              <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                <CheckCircle size={24} className="text-teal" />
-                Accepted Events ({artist.events.length})
-              </h3>
-              <div className="space-y-4">
-                {artist.events.map((event, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition-all">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-teal/10 rounded-lg flex items-center justify-center">
-                        <Music size={24} className="text-teal" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900">{event.name || 'Event'}</h4>
-                        <p className="text-sm text-gray-500">{event.date ? new Date(event.date).toLocaleDateString() : 'Date TBD'}</p>
-                      </div>
-                    </div>
-                    <span className="px-3 py-1 bg-emerald/10 text-emerald rounded-full text-sm font-medium">
-                      Accepted
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Empty States */}
-          {(!artist.media || artist.media.length === 0) && (!artist.events || artist.events.length === 0) && (
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-12 text-center">
-              <Clock size={48} className="mx-auto text-gray-300 mb-4" />
-              <p className="text-gray-500 text-lg">No additional information available</p>
-              <p className="text-gray-400 text-sm mt-2">Media and events will appear here once added</p>
-            </div>
-          )}
-        </main>
+          </Card>
+        </div>
       </div>
-    </div>
+
+      <Card className="mb-4">
+        <SectionTitle
+          aside={
+            artist.media.length > 0 ? (
+              <Link href={`/artists/portfolio?artistId=${artist._id}`} className="text-sm text-teal font-medium hover:underline">
+                Review portfolio
+              </Link>
+            ) : undefined
+          }
+        >
+          Portfolio ({artist.media.length})
+        </SectionTitle>
+        {artist.media.length === 0 ? (
+          <EmptyState title="No portfolio items" hint="Photos and videos the artist uploads in the artist app appear here." />
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 p-5">
+            {artist.media.map((item) => (
+              <div key={item.index} className="border border-gray-200 rounded-lg overflow-hidden">
+                {/video/i.test(item.type) ? (
+                  <video src={item.url} controls preload="none" className="w-full h-32 object-cover bg-black" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={item.url} alt={`Portfolio item ${item.index + 1}`} loading="lazy" className="w-full h-32 object-cover bg-gray-100" />
+                )}
+                <div className="p-2">
+                  <Badge tone={MEDIA_LABEL[item.reviewStatus].tone}>{MEDIA_LABEL[item.reviewStatus].label}</Badge>
+                  <p className="text-xs text-gray-500 mt-1">{item.uploadedAt ? formatDate(item.uploadedAt) : 'Upload date not recorded'}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card className="mb-4">
+        <SectionTitle>Events ({artist.events.length})</SectionTitle>
+        {artist.events.length === 0 ? (
+          <EmptyState title="No events" hint="Events this artist created or was added to by an organiser appear here." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
+                  <th className="px-5 py-3 font-medium">Event</th>
+                  <th className="px-5 py-3 font-medium">Date</th>
+                  <th className="px-5 py-3 font-medium">Place</th>
+                  <th className="px-5 py-3 font-medium">Role and response</th>
+                  <th className="px-5 py-3 font-medium">Event status</th>
+                  <th className="px-5 py-3 font-medium text-right">Bookings</th>
+                  <th className="px-5 py-3 font-medium text-right">Tickets</th>
+                  <th className="px-5 py-3 font-medium text-right">Value</th>
+                  <th className="px-5 py-3 font-medium text-right">Checked in</th>
+                  <th className="px-5 py-3 font-medium text-right">Cancelled</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {artist.events.map((event) => (
+                  <tr key={event._id}>
+                    <td className="px-5 py-3">
+                      <Link href={`/events/${event._id}`} className="font-medium text-deep-blue hover:underline">
+                        {event.name || 'Untitled event'}
+                      </Link>
+                      {event.category && <p className="text-xs text-gray-500">{event.category}</p>}
+                    </td>
+                    <td className="px-5 py-3 text-gray-700 whitespace-nowrap">
+                      {event.startDate ? formatDate(event.startDate) : '—'}
+                      {event.startTime ? `, ${event.startTime}` : ''}
+                    </td>
+                    <td className="px-5 py-3 text-gray-700">{[event.place, event.city].filter(Boolean).join(', ') || '—'}</td>
+                    <td className="px-5 py-3 text-gray-700">
+                      {event.relation === 'created' ? (
+                        'Created by the artist'
+                      ) : (
+                        <span className="flex flex-wrap items-center gap-2">
+                          Invited
+                          <Badge tone={event.artistResponse === 'accepted' ? 'green' : event.artistResponse === 'rejected' ? 'red' : 'amber'}>
+                            {event.artistResponse === 'accepted'
+                              ? 'Accepted'
+                              : event.artistResponse === 'rejected'
+                              ? 'Declined'
+                              : 'No answer yet'}
+                          </Badge>
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      <EventStatusBadge status={event.status} />
+                    </td>
+                    <td className="px-5 py-3 text-right">{event.bookings}</td>
+                    <td className="px-5 py-3 text-right">{event.tickets}</td>
+                    <td className="px-5 py-3 text-right whitespace-nowrap">{formatMoney(event.value)}</td>
+                    <td className="px-5 py-3 text-right">{event.checkedIn}</td>
+                    <td className="px-5 py-3 text-right">{event.cancelled}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t border-gray-200 font-semibold text-deep-blue">
+                <tr data-testid="artist-booking-totals">
+                  <td className="px-5 py-3" colSpan={5}>
+                    Total
+                  </td>
+                  <td className="px-5 py-3 text-right">{artist.bookingTotals.bookings}</td>
+                  <td className="px-5 py-3 text-right">{artist.bookingTotals.tickets}</td>
+                  <td className="px-5 py-3 text-right whitespace-nowrap">{formatMoney(artist.bookingTotals.value)}</td>
+                  <td className="px-5 py-3 text-right">{artist.bookingTotals.checkedIn}</td>
+                  <td className="px-5 py-3 text-right">{artist.bookingTotals.cancelled}</td>
+                </tr>
+              </tfoot>
+            </table>
+            <p className="px-5 py-3 text-xs text-gray-500 border-t border-gray-100">
+              Bookings, tickets and value count confirmed and attended bookings. Cancelled bookings are shown separately; bookings that were never paid
+              for are not counted.
+            </p>
+          </div>
+        )}
+      </Card>
+
+      <Card className="mb-4">
+        <SectionTitle>Booking history ({artist.bookingCount})</SectionTitle>
+        {artist.recentBookings.length === 0 ? (
+          <EmptyState title="No bookings yet" hint="Customer bookings on this artist's events appear here as they are made in the apps and on the website." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
+                  <th className="px-5 py-3 font-medium">Booked on</th>
+                  <th className="px-5 py-3 font-medium">Event</th>
+                  <th className="px-5 py-3 font-medium">Customer</th>
+                  <th className="px-5 py-3 font-medium">Tickets</th>
+                  <th className="px-5 py-3 font-medium text-right">Amount</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium">Payment</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {artist.recentBookings.map((booking) => (
+                  <tr key={booking._id}>
+                    <td className="px-5 py-3 text-gray-700 whitespace-nowrap">{formatDate(booking.createdAt, true)}</td>
+                    <td className="px-5 py-3">
+                      <Link href={`/events/${booking.eventId}`} className="font-medium text-deep-blue hover:underline">
+                        {booking.eventTitle || 'Untitled event'}
+                      </Link>
+                    </td>
+                    <td className="px-5 py-3 text-gray-700">{booking.userPhone || '—'}</td>
+                    <td className="px-5 py-3 text-gray-700">
+                      {booking.seats}
+                      {booking.categories ? ` (${booking.categories})` : ''}
+                    </td>
+                    <td className="px-5 py-3 text-right whitespace-nowrap">{formatMoney(booking.totalPrice)}</td>
+                    <td className="px-5 py-3">
+                      <Badge tone={BOOKING_TONE[booking.status] || 'gray'}>{booking.status.replace(/_/g, ' ') || 'unknown'}</Badge>
+                      {booking.checkedIn && <span className="ml-2 text-xs text-gray-500">checked in</span>}
+                    </td>
+                    <td className="px-5 py-3 text-gray-700">{booking.paymentStatus.replace(/_/g, ' ') || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {artist.bookingCount > artist.recentBookings.length && (
+              <p className="px-5 py-3 text-xs text-gray-500 border-t border-gray-100">
+                Showing the latest {artist.recentBookings.length} of {artist.bookingCount} bookings. Open an event to see all of its bookings.
+              </p>
+            )}
+          </div>
+        )}
+      </Card>
+
+      <Card className="mb-4">
+        <SectionTitle
+          aside={
+            <Link href="/artists/performance" className="text-sm text-teal font-medium hover:underline">
+              Compare artists
+            </Link>
+          }
+        >
+          Ratings, complaints and reports
+        </SectionTitle>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 lg:divide-x divide-gray-100">
+          <div className="p-5" data-testid="artist-ratings">
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">
+              Ratings{' '}
+              <span className="font-normal text-gray-600">
+                {artist.feedback.rating !== null ? `${artist.feedback.rating.toFixed(2)} out of 5 from ${artist.feedback.ratingCount}` : 'none yet'}
+              </span>
+            </h3>
+            {artist.feedback.ratings.length === 0 ? (
+              <p className="text-sm text-gray-500">Ratings recorded under Support, Feedback for this artist appear here.</p>
+            ) : (
+              <ul className="space-y-2 text-sm">
+                {artist.feedback.ratings.map((rating) => (
+                  <li key={rating._id}>
+                    <span className="font-medium text-gray-900">{rating.rating} / 5</span>
+                    <span className="text-gray-500"> · {rating.customerName || 'Customer'} · {formatDate(rating.createdAt)}</span>
+                    {rating.comment && <p className="text-gray-700">{rating.comment}</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="p-5 border-t lg:border-t-0 border-gray-100" data-testid="artist-complaints">
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Complaints ({artist.feedback.complaints.length})</h3>
+            {artist.feedback.complaints.length === 0 ? (
+              <p className="text-sm text-gray-500">Complaints that name a booking on one of this artist&apos;s events appear here.</p>
+            ) : (
+              <ul className="space-y-2 text-sm">
+                {artist.feedback.complaints.map((complaint) => (
+                  <li key={complaint._id}>
+                    <Link href="/support/complaints" className="font-medium text-deep-blue hover:underline">
+                      {complaint.subject || 'Complaint'}
+                    </Link>
+                    <span className="text-gray-500"> · {complaint.status.replace(/_/g, ' ')} · {formatDate(complaint.createdAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="p-5 border-t lg:border-t-0 border-gray-100" data-testid="artist-reports">
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Reports ({artist.feedback.reports.length})</h3>
+            {artist.feedback.reports.length === 0 ? (
+              <p className="text-sm text-gray-500">Reports filed against this artist&apos;s phone number appear here.</p>
+            ) : (
+              <ul className="space-y-2 text-sm">
+                {artist.feedback.reports.map((report) => (
+                  <li key={report._id}>
+                    <span className="font-medium text-gray-900">{report.reason.replace(/_/g, ' ') || 'Report'}</span>
+                    <span className="text-gray-500"> · {report.status.replace(/_/g, ' ')} · {formatDate(report.createdAt)}</span>
+                    {report.details && <p className="text-gray-700">{report.details}</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle>Admin history</SectionTitle>
+        <HistoryList
+          entries={artist.history}
+          empty="No admin action has been recorded for this artist yet. KYC decisions, suspensions, category changes and portfolio reviews are listed here."
+        />
+      </Card>
+
+      {profileOpen && (
+        <ProfileDialog
+          artist={artist}
+          onClose={() => setProfileOpen(false)}
+          onSaved={(text) => {
+            setProfileOpen(false)
+            done(text)
+          }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={removing !== null}
+        title={removing === 'banner' ? 'Remove the banner image?' : 'Remove the profile photo?'}
+        message="The image is deleted from the artist's profile and stops showing in the apps. The artist can upload a new one. The image is not kept, so this cannot be undone."
+        confirmLabel="Remove image"
+        danger
+        askReason
+        reasonRequired
+        busy={removeBusy}
+        onConfirm={removeImage}
+        onClose={() => setRemoving(null)}
+      />
+
+      {categoryOpen && (
+        <CategoryDialog
+          artist={artist}
+          onClose={() => setCategoryOpen(false)}
+          onError={() => {}}
+          onSaved={(text) => {
+            setCategoryOpen(false)
+            done(text)
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+export default function ArtistDetailPage() {
+  return (
+    <AdminShell title="Artist" subtitle="Profile, KYC, category, availability, portfolio, events, bookings, ratings and account status">
+      <ArtistDetail />
+    </AdminShell>
   )
 }

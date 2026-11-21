@@ -5,27 +5,27 @@ import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
 
 import { Header } from "@/components/header"
-import { LanguageProvider } from "@/lib/language-context"
-import GoogleTranslate from "@/components/GoogleTranslate"
+import { MaintenanceGate, PlatformProvider } from "@/components/platform-provider"
 
-const _geist = Geist({ subsets: ["latin"] })
+// Calling these registers the "Geist" font faces that globals.css names in
+// --font-sans and --font-mono.
+const geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 }
 
 export const metadata: Metadata = {
-  title: "Mookalaa Website",
+  title: "Mookalaa - Unite Through Arts",
   description:
-    "Unite Through Arts. Discover amazing Jatra, Cinema, Music, Dance, Festivals, Workshops, and Custom Orders from artists worldwide.",
+    "Unite Through Arts. Discover and book Jatra, Cinema, Music, Dance, Festivals and Workshops from artists across India.",
   icons: {
     icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
       { url: "/mookalaa-logo.png", sizes: "32x32", type: "image/png" },
-      { url: "/favicon.ico", sizes: "16x16", type: "image/x-icon" }
+      { url: "/favicon.ico", sizes: "16x16", type: "image/x-icon" },
     ],
     apple: "/mookalaa-logo.png",
   },
@@ -43,22 +43,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-        <link rel="icon" type="image/png" href="/mookalaa-logo.png" />
-        <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-      </head>
-      <body className={`font-sans antialiased bg-background text-foreground`} suppressHydrationWarning>
-        <LanguageProvider>
+      <body className={`${geist.className} antialiased bg-background text-foreground`} suppressHydrationWarning>
+        <PlatformProvider>
           <Header />
-          {children}
-          <GoogleTranslate />
-          <Analytics />
-        </LanguageProvider>
+          <MaintenanceGate>{children}</MaintenanceGate>
+        </PlatformProvider>
+        <Analytics />
       </body>
     </html>
   )

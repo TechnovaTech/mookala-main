@@ -13,6 +13,15 @@ import { encryptValue, decryptValue } from './crypto';
 
 export const PAYMENT_SETTINGS_TYPE = 'payment';
 
+/**
+ * Base address of the Razorpay REST API. `RAZORPAY_BASE_URL` exists so tests
+ * can point the server at a local stand-in; it is not set in production.
+ */
+export function razorpayBaseUrl(): string {
+  const override = (process.env.RAZORPAY_BASE_URL || '').trim().replace(/\/+$/, '');
+  return override || 'https://api.razorpay.com/v1';
+}
+
 export type RazorpayMode = 'test' | 'live' | 'unknown';
 export type RazorpayConfigSource = 'database' | 'environment' | 'none';
 
@@ -33,6 +42,11 @@ export interface RazorpayConfig {
   envFallbackAvailable: boolean;
   updatedAt: Date | null;
   updatedBy: string | null;
+  /** Secret used to check the signature of Razorpay webhook deliveries. Server-side only. */
+  webhookSecret: string;
+  hasWebhookSecret: boolean;
+  webhookSecretSource: RazorpayConfigSource;
+  webhookSecretDecryptFailed: boolean;
 }
 
 export interface SaveRazorpayInput {
@@ -158,6 +172,23 @@ export async function getRazorpayConfig(): Promise<RazorpayConfig> {
     }
   }
 
+  // The webhook secret is a separate value chosen when the webhook is created
+  // in the Razorpay dashboard. It is stored encrypted like the key secret.
+  const envWebhookSecret = (process.env.RAZORPAY_WEBHOOK_SECRET || '').trim();
+  let dbWebhookSecret = '';
+  let webhookSecretDecryptFailed = false;
+  if (doc?.razorpayWebhookSecret) {
+    const decrypted = decryptValue(doc.razorpayWebhookSecret);
+    if (decrypted) dbWebhookSecret = decrypted.trim();
+    else webhookSecretDecryptFailed = true;
+  }
+  const webhookSecret = dbWebhookSecret || envWebhookSecret;
+  const webhookSecretSource: RazorpayConfigSource = dbWebhookSecret
+    ? 'database'
+    : envWebhookSecret
+    ? 'environment'
+    : 'none';
+
   // A key id saved by the admin always wins over the environment variable.
   const useDatabase = dbKeyId.length > 0;
 
@@ -187,6 +218,10 @@ export async function getRazorpayConfig(): Promise<RazorpayConfig> {
     envFallbackAvailable,
     updatedAt: doc?.updatedAt ? new Date(doc.updatedAt) : null,
     updatedBy: doc?.updatedBy || null,
+    webhookSecret,
+    hasWebhookSecret: Boolean(webhookSecret),
+    webhookSecretSource,
+    webhookSecretDecryptFailed,
   };
 }
 
@@ -245,6 +280,55 @@ export async function setRazorpayEnabled(enabled: boolean, updatedBy?: string | 
   return getRazorpayConfig();
 }
 
+export function validateWebhookSecret(secret: unknown): { valid: boolean; error?: string } {
+  if (typeof secret !== 'string' || secret.trim().length === 0) {
+    return { valid: false, error: 'Webhook secret is required' };
+  }
+  const value = secret.trim();
+  if (value.length < 8) return { valid: false, error: 'Webhook secret must be at least 8 characters' };
+  if (value.length > 200) return { valid: false, error: 'Webhook secret is too long' };
+  if (value.includes(DOT)) {
+    return { valid: false, error: 'Please paste the real webhook secret, not the masked value' };
+  }
+  return { valid: true };
+}
+
+/** Saves the webhook secret (encrypted). The API keys are left untouched. */
+export async function saveRazorpayWebhookSecret(secret: string, updatedBy?: string | null) {
+  const { db } = await connectToDatabase();
+
+  await db.collection('settings').updateOne(
+    { type: PAYMENT_SETTINGS_TYPE },
+    {
+      $set: {
+        type: PAYMENT_SETTINGS_TYPE,
+        razorpayWebhookSecret: encryptValue(secret.trim()),
+        webhookSecretUpdatedAt: new Date(),
+        updatedAt: new Date(),
+        updatedBy: updatedBy || null,
+      },
+      $setOnInsert: { createdAt: new Date(), provider: 'razorpay' },
+    },
+    { upsert: true }
+  );
+
+  return getRazorpayConfig();
+}
+
+export async function clearRazorpayWebhookSecret(updatedBy?: string | null) {
+  const { db } = await connectToDatabase();
+
+  await db.collection('settings').updateOne(
+    { type: PAYMENT_SETTINGS_TYPE },
+    {
+      $unset: { razorpayWebhookSecret: '', webhookSecretUpdatedAt: '' },
+      $set: { updatedAt: new Date(), updatedBy: updatedBy || null },
+    }
+  );
+
+  return getRazorpayConfig();
+}
+
 /** Removes the admin managed keys so the environment fallback applies again. */
 export async function clearRazorpayConfig(updatedBy?: string | null) {
   const { db } = await connectToDatabase();
@@ -280,7 +364,7 @@ export async function verifyRazorpayCredentials(
   const auth = Buffer.from(keyId + ':' + keySecret).toString('base64');
 
   try {
-    const response = await fetch('https://api.razorpay.com/v1/payments?count=1', {
+    const response = await fetch(razorpayBaseUrl() + '/payments?count=1', {
       method: 'GET',
       headers: {
         Authorization: 'Basic ' + auth,

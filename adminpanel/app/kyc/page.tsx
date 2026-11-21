@@ -1,435 +1,485 @@
 'use client'
-import { useState, useEffect } from 'react'
-import Sidebar from '../../components/Sidebar'
-import { Bell, Search, Filter, ChevronDown, LogOut, User, Settings as SettingsIcon, UserCheck, RefreshCw, Eye, Check, X } from 'lucide-react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { Search } from 'lucide-react'
+import AdminShell from '@/components/AdminShell'
+import { Button, Card, ConfirmDialog, EmptyState, Modal, NoticeBar, Spinner, api, formatDate, inputClass, type Notice } from '@/components/ui'
+import {
+  AccountBadge,
+  Field,
+  HistoryList,
+  KYC_META,
+  KYC_ORDER,
+  KycBadge,
+  Pagination,
+  qs,
+  readQueryParam,
+  useDebounced,
+  type HistoryEntry,
+  type KycView,
+} from '@/components/artists/shared'
 
-interface KYCRecord {
-  _id: string;
-  phone: string;
-  name?: string;
-  email?: string;
-  city?: string;
-  aadharId?: string;
-  panId?: string;
-  aadharImage?: string;
-  panImage?: string;
-  kycStatus: string;
-  createdAt: string;
-  updatedAt: string;
-  role: 'artist' | 'organizer';
-  bio?: string;
-  genre?: string;
-  pricing?: string;
+type Role = 'artist' | 'organizer'
+type Decision = 'approve' | 'reject' | 'request_corrections' | 'reopen'
+
+interface Row {
+  _id: string
+  name: string
+  phone: string
+  email: string
+  city: string
+  kyc: KycView
+  kycCorrectionRequested: boolean
+  kycReviewedBy: string | null
+  kycReviewedAt: string | null
+  rejectionNotes: string
+  accountStatus: string
+  hasAadharImage: boolean
+  hasPanImage: boolean
+  aadharMasked: string
+  panMasked: string
+  createdAt: string | null
+  updatedAt: string | null
 }
 
-export default function KYCPage() {
-  const [kycRecords, setKycRecords] = useState<KYCRecord[]>([]);
-  const [filteredRecords, setFilteredRecords] = useState<KYCRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isProfileOpen, setIsProfileOpen] = useState(false)
-  const [selectedKYC, setSelectedKYC] = useState<KYCRecord | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<'all' | 'artist' | 'organizer'>('all');
+interface ListResponse {
+  items: Row[]
+  total: number
+  page: number
+  limit: number
+  counts: Record<Role, Record<KycView, number>>
+  canManage: boolean
+}
+
+interface RecordResponse {
+  record: Row & { aadharId: string; panId: string; aadharImage: string | null; panImage: string | null }
+  history: HistoryEntry[]
+  canManage: boolean
+}
+
+const ROLE_LABEL: Record<Role, string> = { artist: 'Artists', organizer: 'Organisers' }
+
+const EMPTY_HINT: Record<KycView, string> = {
+  pending: 'Nothing is waiting for review. A profile appears here when the person submits identity documents in the app.',
+  approved: 'No KYC has been approved yet.',
+  rejected: 'No KYC has been rejected or sent back for corrections.',
+  not_submitted: 'Everyone who registered has submitted documents.',
+}
+
+const DECISIONS: Record<Decision, { label: string; title: string; confirm: string; danger: boolean; message: string }> = {
+  approve: {
+    label: 'Approve',
+    title: 'Approve this KYC?',
+    confirm: 'Approve',
+    danger: false,
+    message: 'The profile is marked as verified.',
+  },
+  reject: {
+    label: 'Reject',
+    title: 'Reject this KYC?',
+    confirm: 'Reject',
+    danger: true,
+    message: 'The reason is shown to the person in the app, so write it for them.',
+  },
+  request_corrections: {
+    label: 'Request corrections',
+    title: 'Ask for corrected documents?',
+    confirm: 'Send back',
+    danger: false,
+    message:
+      'The person sees your note in the app and can submit the documents again. Until they do, the record is listed under Rejected, marked "Corrections requested".',
+  },
+  reopen: {
+    label: 'Move back to pending',
+    title: 'Move this KYC back to pending review?',
+    confirm: 'Move to pending',
+    danger: false,
+    message: 'The earlier decision is undone and the record returns to the review queue.',
+  },
+}
+
+/** Which decisions make sense from the current state. */
+function decisionsFor(record: { kyc: KycView; kycCorrectionRequested: boolean }): Decision[] {
+  switch (record.kyc) {
+    case 'pending':
+      return ['approve', 'request_corrections', 'reject']
+    case 'approved':
+      return ['reopen', 'request_corrections', 'reject']
+    case 'rejected':
+      return record.kycCorrectionRequested ? ['approve', 'reopen', 'reject'] : ['approve', 'reopen', 'request_corrections']
+    default:
+      return []
+  }
+}
+
+function DocumentImage({ label, src }: { label: string; src: string | null }) {
+  const [large, setLarge] = useState(false)
+  if (!src) {
+    return (
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-1">{label}</p>
+        <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center text-sm text-gray-500">No image uploaded</div>
+      </div>
+    )
+  }
+  return (
+    <div className={large ? 'sm:col-span-2' : ''}>
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+        <button onClick={() => setLarge(!large)} className="text-xs text-teal font-medium hover:underline">
+          {large ? 'Smaller' : 'Enlarge'}
+        </button>
+      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={label} className={`w-full ${large ? '' : 'max-h-56'} object-contain bg-gray-100 border border-gray-200 rounded-lg`} />
+    </div>
+  )
+}
+
+function RecordDialog({
+  role,
+  id,
+  onClose,
+  onChanged,
+}: {
+  role: Role
+  id: string
+  onClose: () => void
+  onChanged: (message: string) => void
+}) {
+  const [data, setData] = useState<RecordResponse | null>(null)
+  const [problem, setProblem] = useState('')
+  const [saved, setSaved] = useState('')
+  const [decision, setDecision] = useState<Decision | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async () => {
+    try {
+      setData(await api<RecordResponse>(`/api/admin/kyc/${role}/${id}`))
+      setProblem('')
+    } catch (error: any) {
+      setProblem(error.message || 'Could not load this record.')
+    }
+  }, [role, id])
 
   useEffect(() => {
-    fetchKYCRecords();
-  }, []);
+    load()
+  }, [load])
 
-  const fetchKYCRecords = async () => {
-    setLoading(true);
+  const record = data?.record
+  const decided = record ? record.kyc === 'approved' || record.kyc === 'rejected' : false
+
+  const submit = async (reason: string) => {
+    if (!decision) return
+    setBusy(true)
     try {
-      const [organizerResponse, artistResponse] = await Promise.all([
-        fetch('/api/kyc'),
-        fetch('/api/kyc?role=artist')
-      ]);
-      
-      const organizerData = await organizerResponse.json();
-      const artistData = await artistResponse.json();
-      
-      console.log('Organizer data:', organizerData);
-      console.log('Artist data:', artistData);
-      
-      const allRecords = [
-        ...(organizerData.success ? organizerData.kycRecords.map((record: any) => ({ ...record, role: 'organizer' as const })) : []),
-        ...(artistData.success ? artistData.kycRecords.map((record: any) => ({ ...record, role: 'artist' as const })) : [])
-      ];
-      
-      console.log('All records:', allRecords);
-      
-      setKycRecords(allRecords);
-      setFilteredRecords(allRecords);
-    } catch (error) {
-      console.error('Error fetching KYC records:', error);
+      await api('/api/kyc/update-status', { method: 'POST', body: { role, id, action: decision, reason } })
+      const done = DECISIONS[decision].label
+      setDecision(null)
+      await load()
+      const text = `${done}: saved for ${record?.name || record?.phone || 'this profile'}.`
+      setSaved(text)
+      onChanged(text)
+    } catch (error: any) {
+      setDecision(null)
+      setProblem(error.message || 'The decision could not be saved.')
     } finally {
-      setLoading(false);
+      setBusy(false)
     }
-  };
-
-  const updateKYCStatus = async (phone: string, status: string, role: string) => {
-    try {
-      const response = await fetch('/api/kyc/update-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, status, role })
-      });
-      
-      if (response.ok) {
-        fetchKYCRecords();
-        setShowModal(false);
-      }
-    } catch (error) {
-      console.error('Error updating KYC status:', error);
-    }
-  };
-
-  const filterRecords = (role: 'all' | 'artist' | 'organizer') => {
-    setSelectedRole(role);
-    if (role === 'all') {
-      setFilteredRecords(kycRecords);
-    } else {
-      setFilteredRecords(kycRecords.filter(record => record.role === role));
-    }
-  };
-
-  const viewKYC = (kyc: KYCRecord) => {
-    setSelectedKYC(kyc);
-    setShowModal(true);
-  };
+  }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
-      
-      <div className="flex-1 ml-64 transition-all duration-300 min-h-screen">
-        <header className="bg-white shadow-lg border-b border-gray-200 px-6 py-4 fixed top-0 right-0 left-64 z-40">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-deep-blue">KYC Management</h1>
-              <p className="text-slate-gray text-sm">Review and manage organizer KYC submissions.</p>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-gray w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search KYC records..."
-                  className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none transition-all"
-                />
-              </div>
-              
-              <button className="relative p-2 text-slate-gray hover:text-deep-blue hover:bg-teal/10 rounded-lg transition-all">
-                <Bell size={20} />
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald text-white text-xs rounded-full flex items-center justify-center animate-pulse">
-                  3
-                </span>
-              </button>
-              
-              <div className="relative">
-                <button
-                  onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className="flex items-center space-x-3 bg-gray-50 rounded-lg px-3 py-2 hover:bg-teal/10 transition-all cursor-pointer"
-                >
-                  <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-md">
-                    <span className="text-white text-sm font-bold">A</span>
-                  </div>
-                  <div className="hidden md:block text-left">
-                    <p className="text-sm font-medium text-deep-blue">Admin User</p>
-                    <p className="text-xs text-slate-gray">Super Admin</p>
-                  </div>
-                  <ChevronDown size={16} className={`text-slate-gray transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
-                </button>
-                
-                {isProfileOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <User size={16} className="mr-3 text-slate-gray" />
-                      Profile Settings
-                    </button>
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <SettingsIcon size={16} className="mr-3 text-slate-gray" />
-                      Account Settings
-                    </button>
-                    <hr className="my-2 border-gray-200" />
-                    <button 
-                      onClick={() => window.location.href = '/login'}
-                      className="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      <LogOut size={16} className="mr-3" />
-                      Logout
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
+    <Modal open wide title={record ? `KYC: ${record.name || record.phone}` : 'KYC record'} onClose={onClose}>
+      {problem && <NoticeBar notice={{ type: 'error', text: problem }} onClose={() => setProblem('')} />}
+      {saved && !problem && <NoticeBar notice={{ type: 'success', text: saved }} onClose={() => setSaved('')} />}
+      {!data || !record ? (
+        problem ? null : (
+          <Spinner />
+        )
+      ) : (
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <KycBadge kyc={record.kyc} correction={record.kycCorrectionRequested} />
+            <AccountBadge status={record.accountStatus} />
+            <Link href={`/${role === 'artist' ? 'artists' : 'organizers'}/${record._id}`} className="text-sm text-teal font-medium hover:underline ml-auto">
+              Open full profile
+            </Link>
           </div>
-        </header>
 
-        <main className="p-10 mt-24">
-          <div className="bg-white rounded-xl shadow-lg border border-gray-100">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <div className="flex items-center">
-                <UserCheck className="text-emerald mr-3" size={24} />
-                <h2 className="text-xl font-bold text-gray-900">KYC Submissions ({filteredRecords.length})</h2>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="flex bg-gray-100 rounded-lg p-1">
-                  <button
-                    onClick={() => filterRecords('all')}
-                    className={`px-3 py-1 text-sm rounded-md transition-all ${
-                      selectedRole === 'all' 
-                        ? 'bg-white text-emerald shadow-sm font-medium' 
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    All ({kycRecords.length})
-                  </button>
-                  <button
-                    onClick={() => filterRecords('organizer')}
-                    className={`px-3 py-1 text-sm rounded-md transition-all ${
-                      selectedRole === 'organizer' 
-                        ? 'bg-white text-emerald shadow-sm font-medium' 
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Organizers ({kycRecords.filter(r => r.role === 'organizer').length})
-                  </button>
-                  <button
-                    onClick={() => filterRecords('artist')}
-                    className={`px-3 py-1 text-sm rounded-md transition-all ${
-                      selectedRole === 'artist' 
-                        ? 'bg-white text-emerald shadow-sm font-medium' 
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Artists ({kycRecords.filter(r => r.role === 'artist').length})
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            {loading ? (
-              <div className="flex justify-center items-center py-20">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald"></div>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Documents</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredRecords.map((kyc) => (
-                      <tr key={kyc._id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-md">
-                              <span className="text-white font-semibold text-sm">
-                                {kyc.name ? kyc.name.charAt(0).toUpperCase() : 'O'}
-                              </span>
-                            </div>
-                            <div className="ml-4">
-                              <div className="text-sm font-medium text-gray-900">{kyc.name || 'Unnamed'}</div>
-                              <div className="text-sm text-gray-500">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  kyc.role === 'artist' 
-                                    ? 'bg-purple-100 text-purple-800' 
-                                    : 'bg-blue-100 text-blue-800'
-                                }`}>
-                                  {kyc.role}
-                                </span>
-                                <span className="ml-2">{kyc.city || 'No city'}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{kyc.phone}</div>
-                          <div className="text-sm text-gray-500">{kyc.email || 'No email'}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">Aadhar: {kyc.aadharId || 'N/A'}</div>
-                          <div className="text-sm text-gray-500">PAN: {kyc.panId || 'N/A'}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            kyc.kycStatus === 'approved' 
-                              ? 'bg-emerald/10 text-emerald border border-emerald/20' 
-                              : kyc.kycStatus === 'pending'
-                              ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                              : 'bg-red-100 text-red-800 border border-red-200'
-                          }`}>
-                            {kyc.kycStatus}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(kyc.updatedAt).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => viewKYC(kyc)}
-                              className="text-emerald hover:text-emerald/80 flex items-center"
-                            >
-                              <Eye size={16} className="mr-1" />
-                              View
-                            </button>
-                            {kyc.kycStatus === 'pending' && (
-                              <>
-                                <button
-                                  onClick={() => updateKYCStatus(kyc.phone, 'approved', kyc.role)}
-                                  className="text-green-600 hover:text-green-800 flex items-center"
-                                >
-                                  <Check size={16} className="mr-1" />
-                                  Accept
-                                </button>
-                                <button
-                                  onClick={() => updateKYCStatus(kyc.phone, 'rejected', kyc.role)}
-                                  className="text-red-600 hover:text-red-800 flex items-center"
-                                >
-                                  <X size={16} className="mr-1" />
-                                  Reject
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Name">{record.name}</Field>
+            <Field label="Phone">{record.phone}</Field>
+            <Field label="Email">{record.email}</Field>
+            <Field label="City">{record.city}</Field>
+            <Field label="Aadhaar number">{record.aadharId}</Field>
+            <Field label="PAN number">{record.panId}</Field>
+            <Field label="Reviewed by">{record.kycReviewedBy}</Field>
+            <Field label="Reviewed on">{record.kycReviewedAt ? formatDate(record.kycReviewedAt, true) : ''}</Field>
+            {record.rejectionNotes && (
+              <div className="sm:col-span-2">
+                <Field label="Note shown to the person in the app">{record.rejectionNotes}</Field>
               </div>
             )}
+          </dl>
 
-            {!loading && filteredRecords.length === 0 && (
-              <div className="text-center py-20">
-                <UserCheck className="mx-auto text-gray-400 mb-4" size={48} />
-                <p className="text-gray-500 text-lg font-medium">No KYC submissions found</p>
-                <p className="text-gray-400 text-sm">KYC submissions will appear here for review</p>
-              </div>
-            )}
-          </div>
-        </main>
-      </div>
+          {record.kyc === 'not_submitted' ? (
+            <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-4">
+              This profile has not submitted identity documents, so there is nothing to review yet.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <DocumentImage label="Aadhaar document" src={record.aadharImage} />
+              <DocumentImage label="PAN document" src={record.panImage} />
+            </div>
+          )}
 
-      {/* KYC Detail Modal */}
-      {showModal && selectedKYC && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-900">KYC Details - {selectedKYC.name}</h3>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X size={24} />
-                </button>
+          {data.canManage && decisionsFor(record).length > 0 && (
+            <div className="border-t border-gray-200 pt-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">
+                {decided ? 'Change the decision (a reason is required)' : 'Decision'}
+              </p>
+              <div className="flex flex-wrap gap-3">
+                {decisionsFor(record).map((key) => (
+                  <Button
+                    key={key}
+                    variant={key === 'approve' ? 'primary' : key === 'reject' ? 'danger' : 'secondary'}
+                    onClick={() => setDecision(key)}
+                  >
+                    {key === 'reject' && record.kyc === 'rejected' ? 'Reject finally' : DECISIONS[key].label}
+                  </Button>
+                ))}
               </div>
             </div>
-            
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h4>
-                  <div className="space-y-3">
-                    <div><span className="font-medium">Name:</span> {selectedKYC.name || 'N/A'}</div>
-                    <div><span className="font-medium">Phone:</span> {selectedKYC.phone}</div>
-                    <div><span className="font-medium">Email:</span> {selectedKYC.email || 'N/A'}</div>
-                    <div><span className="font-medium">City:</span> {selectedKYC.city || 'N/A'}</div>
-                    <div><span className="font-medium">Role:</span> 
-                      <span className={`ml-2 px-2 py-1 rounded text-xs font-medium ${
-                        selectedKYC.role === 'artist' 
-                          ? 'bg-purple-100 text-purple-800' 
-                          : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {selectedKYC.role}
-                      </span>
-                    </div>
-                    {selectedKYC.role === 'artist' && (
-                      <>
-                        {selectedKYC.bio && <div><span className="font-medium">Bio:</span> {selectedKYC.bio}</div>}
-                        {selectedKYC.genre && <div><span className="font-medium">Genre:</span> {selectedKYC.genre}</div>}
-                        {selectedKYC.pricing && <div><span className="font-medium">Pricing:</span> ₹{selectedKYC.pricing}</div>}
-                      </>
-                    )}
-                    <div><span className="font-medium">Status:</span> 
-                      <span className={`ml-2 px-2 py-1 rounded text-xs ${
-                        selectedKYC.kycStatus === 'approved' ? 'bg-green-100 text-green-800' :
-                        selectedKYC.kycStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {selectedKYC.kycStatus}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div>
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Document Information</h4>
-                  <div className="space-y-3">
-                    <div><span className="font-medium">Aadhar ID:</span> {selectedKYC.aadharId || 'N/A'}</div>
-                    <div><span className="font-medium">PAN ID:</span> {selectedKYC.panId || 'N/A'}</div>
-                    <div><span className="font-medium">Submitted:</span> {new Date(selectedKYC.updatedAt).toLocaleString()}</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-6">
-                <h4 className="text-lg font-semibold text-gray-900 mb-4">Document Images</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {selectedKYC.aadharImage && (
-                    <div>
-                      <h5 className="font-medium mb-2">Aadhar Card</h5>
-                      <img 
-                        src={`data:image/jpeg;base64,${selectedKYC.aadharImage}`}
-                        alt="Aadhar Card"
-                        className="w-full h-48 object-cover rounded-lg border"
-                      />
-                    </div>
-                  )}
-                  {selectedKYC.panImage && (
-                    <div>
-                      <h5 className="font-medium mb-2">PAN Card</h5>
-                      <img 
-                        src={`data:image/jpeg;base64,${selectedKYC.panImage}`}
-                        alt="PAN Card"
-                        className="w-full h-48 object-cover rounded-lg border"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              {selectedKYC.kycStatus === 'pending' && (
-                <div className="mt-6 flex space-x-4">
-                  <button
-                    onClick={() => updateKYCStatus(selectedKYC.phone, 'approved', selectedKYC.role)}
-                    className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                  >
-                    <Check size={16} className="mr-2" />
-                    Approve KYC
-                  </button>
-                  <button
-                    onClick={() => updateKYCStatus(selectedKYC.phone, 'rejected', selectedKYC.role)}
-                    className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                  >
-                    <X size={16} className="mr-2" />
-                    Reject KYC
-                  </button>
-                </div>
-              )}
+          )}
+
+          <div className="border-t border-gray-200 pt-4">
+            <p className="text-sm font-medium text-gray-700">Decision history</p>
+            <div className="-mx-5">
+              <HistoryList entries={data.history} empty="No decision has been recorded for this KYC yet." />
             </div>
           </div>
         </div>
       )}
-    </div>
+
+      {decision && record && (
+        <ConfirmDialog
+          open
+          title={DECISIONS[decision].title}
+          message={
+            <>
+              <p>{DECISIONS[decision].message}</p>
+              {decided && <p className="mt-2 font-medium">This reverses the earlier decision ({KYC_META[record.kyc].label.toLowerCase()}).</p>}
+            </>
+          }
+          confirmLabel={DECISIONS[decision].confirm}
+          danger={DECISIONS[decision].danger}
+          askReason
+          reasonRequired={decision !== 'approve' || decided}
+          busy={busy}
+          onConfirm={submit}
+          onClose={() => setDecision(null)}
+        />
+      )}
+    </Modal>
+  )
+}
+
+function KycQueue() {
+  const [role, setRole] = useState<Role>('artist')
+  const [status, setStatus] = useState<KycView>('pending')
+  const [search, setSearch] = useState('')
+  const q = useDebounced(search.trim())
+  const [page, setPage] = useState(1)
+  const [data, setData] = useState<ListResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [notice, setNotice] = useState<Notice>(null)
+  const [openId, setOpenId] = useState<{ role: Role; id: string } | null>(null)
+  const requestId = useRef(0)
+
+  // Links such as /kyc?role=organizer&id=... open that record directly.
+  useEffect(() => {
+    const wantedRole = readQueryParam('role')
+    const startRole: Role = wantedRole === 'organizer' ? 'organizer' : 'artist'
+    setRole(startRole)
+    const id = readQueryParam('id')
+    if (/^[a-f0-9]{24}$/i.test(id)) setOpenId({ role: startRole, id })
+  }, [])
+
+  useEffect(() => {
+    setPage(1)
+  }, [role, status, q])
+
+  const load = useCallback(async () => {
+    const current = ++requestId.current
+    setLoading(true)
+    try {
+      const result = await api<ListResponse>('/api/kyc?' + qs({ role, status, q, page, limit: 25 }))
+      if (current !== requestId.current) return
+      setData(result)
+    } catch (error: any) {
+      if (current !== requestId.current) return
+      setNotice({ type: 'error', text: error.message || 'Could not load the KYC queue.' })
+    } finally {
+      if (current === requestId.current) setLoading(false)
+    }
+  }, [role, status, q, page])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const counts = data?.counts
+
+  return (
+    <>
+      <NoticeBar notice={notice} onClose={() => setNotice(null)} />
+
+      <div className="flex gap-2 mb-4" role="tablist" aria-label="Account type">
+        {(['artist', 'organizer'] as Role[]).map((value) => (
+          <button
+            key={value}
+            role="tab"
+            aria-selected={role === value}
+            onClick={() => setRole(value)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+              role === value ? 'bg-deep-blue text-white border-deep-blue' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {ROLE_LABEL[value]}
+            {counts ? ` (${counts[value].pending} to review)` : ''}
+          </button>
+        ))}
+      </div>
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-3 border-b border-gray-200">
+          <div className="flex flex-wrap gap-1" role="tablist" aria-label="KYC status">
+            {KYC_ORDER.map((value) => (
+              <button
+                key={value}
+                role="tab"
+                aria-selected={status === value}
+                onClick={() => setStatus(value)}
+                className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
+                  status === value ? 'border-teal text-deep-blue' : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {KYC_META[value].label}
+                <span className="ml-2 text-xs bg-gray-100 text-gray-700 rounded-full px-2 py-0.5">{counts ? counts[role][value] : '…'}</span>
+              </button>
+            ))}
+          </div>
+          <div className="relative w-full sm:w-72 pb-3">
+            <label htmlFor="kyc-search" className="sr-only">
+              Search by name, phone, email or city
+            </label>
+            <Search size={16} className="absolute left-3 top-[11px] text-gray-400" />
+            <input
+              id="kyc-search"
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Name, phone, email or city"
+              className={inputClass + ' pl-9'}
+            />
+          </div>
+        </div>
+
+        {status === 'not_submitted' && (
+          <p className="px-4 py-3 text-sm text-gray-600 bg-gray-50 border-b border-gray-200">
+            These profiles registered but have not uploaded identity documents. They are not part of the review queue.
+          </p>
+        )}
+
+        {loading && !data ? (
+          <Spinner />
+        ) : !data || data.items.length === 0 ? (
+          <EmptyState title={q ? 'No records match this search' : `No ${ROLE_LABEL[role].toLowerCase()} here`} hint={q ? undefined : EMPTY_HINT[status]} />
+        ) : (
+          <div className={`overflow-x-auto ${loading ? 'opacity-60' : ''}`}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
+                  <th className="px-4 py-3 font-medium">{role === 'artist' ? 'Artist' : 'Organiser'}</th>
+                  <th className="px-4 py-3 font-medium">City</th>
+                  <th className="px-4 py-3 font-medium">Documents</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">{status === 'pending' ? 'Submitted' : status === 'not_submitted' ? 'Registered' : 'Reviewed'}</th>
+                  <th className="px-4 py-3 font-medium">
+                    <span className="sr-only">Open</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {data.items.map((row) => (
+                  <tr key={row._id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-deep-blue">{row.name || 'No name yet'}</p>
+                      <p className="text-xs text-gray-500">{row.phone || 'No phone'}</p>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{row.city || '—'}</td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {row.kyc === 'not_submitted' && !row.aadharMasked ? (
+                        'None'
+                      ) : (
+                        <>
+                          <p>
+                            Aadhaar {row.aadharMasked || 'not given'}
+                            {row.hasAadharImage ? '' : ' (no image)'}
+                          </p>
+                          <p>
+                            PAN {row.panMasked || 'not given'}
+                            {row.hasPanImage ? '' : ' (no image)'}
+                          </p>
+                        </>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <KycBadge kyc={row.kyc} correction={row.kycCorrectionRequested} />
+                    </td>
+                    <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                      {status === 'pending'
+                        ? formatDate(row.updatedAt || row.createdAt, true)
+                        : status === 'not_submitted'
+                        ? formatDate(row.createdAt)
+                        : row.kycReviewedAt
+                        ? `${formatDate(row.kycReviewedAt, true)}${row.kycReviewedBy ? ` by ${row.kycReviewedBy}` : ''}`
+                        : 'Reviewer not recorded'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button onClick={() => setOpenId({ role, id: row._id })} className="text-teal font-medium hover:underline">
+                        {status === 'pending' && data.canManage ? 'Review' : 'Open'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {data && <Pagination page={data.page} limit={data.limit} total={data.total} onPage={setPage} />}
+      </Card>
+
+      {openId && (
+        <RecordDialog
+          role={openId.role}
+          id={openId.id}
+          onClose={() => setOpenId(null)}
+          onChanged={(text) => {
+            setNotice({ type: 'success', text })
+            load()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+export default function KYCPage() {
+  return (
+    <AdminShell title="Applications & KYC" subtitle="Review identity documents submitted by artists and organisers">
+      <KycQueue />
+    </AdminShell>
   )
 }

@@ -1,425 +1,208 @@
 import 'package:flutter/material.dart';
-import 'dart:convert';
-import 'dart:async';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
-import '../services/api_service.dart';
 
+import '../models/event.dart';
+import '../services/api_client.dart';
+import '../services/api_service.dart';
+import '../utils/event_filter.dart';
+import '../utils/image_source.dart';
+import '../widgets/app_image.dart';
+import '../widgets/app_theme.dart';
+import '../widgets/event_card.dart';
+import 'organized_event_details_screen.dart';
+
+/// A public artist profile. Follow state and the follower count come from the
+/// server and belong to the signed-in user, not to this phone.
+/// Pops with the latest follow state (`bool`) so lists can update.
 class ArtistDetailScreen extends StatefulWidget {
+  const ArtistDetailScreen({super.key, required this.artist, this.events});
+
+  /// A record from `/artists` or an event's `artistDetails`.
   final Map<String, dynamic> artist;
 
-  const ArtistDetailScreen({super.key, required this.artist});
+  /// Loaded events, to list this artist's upcoming ones. Optional.
+  final List<EventModel>? events;
 
   @override
   State<ArtistDetailScreen> createState() => _ArtistDetailScreenState();
 }
 
 class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
-  late Map<String, dynamic> artist;
-  int followerCount = 0;
-  bool isFollowing = false;
+  bool? _following; // null until the server has answered
+  int? _followers;
+  bool _toggling = false;
+  String? _followError;
+
+  String get _id => (widget.artist['_id'] ?? widget.artist['id'] ?? '').toString();
+  String _text(String key) => widget.artist[key] is String ? (widget.artist[key] as String).trim() : '';
 
   @override
   void initState() {
     super.initState();
-    artist = Map.from(widget.artist);
-    followerCount = int.tryParse(artist['followersCount']?.toString() ?? '0') ?? 0;
-    _loadFollowStatus();
-    _loadRealFollowerCount();
-    _startPeriodicRefresh();
-  }
-  
-  void _startPeriodicRefresh() {
-    // Refresh follower count every 30 seconds
-    Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (mounted) {
-        _loadRealFollowerCount();
-      } else {
-        timer.cancel();
-      }
-    });
-  }
-  
-  Future<void> _loadFollowStatus() async {
-    try {
-      final userPhone = await ApiService.getUserPhone();
-      final artistId = artist['id'] ?? artist['_id'] ?? artist['phone'];
-      
-      if (userPhone != null && artistId != null) {
-        final result = await ApiService.checkFollowStatus(
-          artistId: artistId,
-          userPhone: userPhone,
-        );
-        
-        if (result['success'] == true) {
-          setState(() {
-            isFollowing = result['isFollowing'] ?? false;
-          });
-        }
-      }
-    } catch (e) {
-      print('Error loading follow status: $e');
-    }
-  }
-  
-  Future<void> _loadRealFollowerCount() async {
-    try {
-      final artistId = artist['id'] ?? artist['_id'] ?? artist['phone'];
-      if (artistId != null) {
-        final result = await ApiService.getArtistFollowerCount(artistId);
-        if (result['success'] == true) {
-          setState(() {
-            followerCount = result['followerCount'] ?? 0;
-          });
-        }
-      }
-    } catch (e) {
-      print('Error loading follower count: $e');
-    }
-  }
-  
-  Future<void> _saveFollowStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    final artistId = artist['id'] ?? artist['_id'] ?? artist['phone'];
-    if (artistId != null) {
-      await prefs.setBool('following_$artistId', isFollowing);
-    }
+    final count = widget.artist['followersCount'];
+    if (count is num) _followers = count.toInt();
+    _load();
   }
 
-  bool _isToggling = false;
-
-  Future<void> _toggleFollow() async {
-    // Prevent multiple simultaneous requests
-    if (_isToggling) return;
-    
+  Future<void> _load() async {
+    if (_id.isEmpty) return;
+    setState(() => _followError = null);
     try {
-      _isToggling = true;
-      final artistId = artist['id'] ?? artist['_id'] ?? artist['phone'];
-      final userPhone = await ApiService.getUserPhone();
-      
-      if (artistId == null || userPhone == null) {
-        print('Missing artist ID or user phone');
-        return;
-      }
-      
-      // Store original state for potential rollback
-      final originalFollowState = isFollowing;
-      final originalFollowerCount = followerCount;
-      final action = isFollowing ? 'unfollow' : 'follow';
-      
-      // Update UI optimistically
+      final results = await Future.wait([ApiService.isFollowing(_id), ApiService.getFollowerCount(_id)]);
+      if (!mounted) return;
       setState(() {
-        isFollowing = !isFollowing;
-        if (isFollowing) {
-          followerCount++;
-        } else {
-          followerCount = followerCount > 0 ? followerCount - 1 : 0;
-        }
+        _following = results[0] as bool;
+        _followers = results[1] as int;
       });
-      
-      // Save to backend
-      final result = await ApiService.toggleFollowArtist(
-        artistId: artistId,
-        userPhone: userPhone,
-        action: action,
-      );
-      
-      if (result['success'] == true) {
-        // Update with server response
-        setState(() {
-          followerCount = result['followerCount'] ?? followerCount;
-          isFollowing = result['isFollowing'] ?? isFollowing;
-        });
-        
-        // Save to local storage after successful API call
-        await _saveFollowStatus();
-      } else {
-        // Revert UI changes if API call failed
-        setState(() {
-          isFollowing = originalFollowState;
-          followerCount = originalFollowerCount;
-        });
-        print('Failed to update follow status: ${result['error']}');
-      }
-    } catch (e) {
-      print('Error toggling follow: $e');
-      // Reload current state from server on error
-      await _loadFollowStatus();
-      await _loadRealFollowerCount();
-    } finally {
-      _isToggling = false;
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _followError = e.message);
     }
   }
+
+  Future<void> _toggle() async {
+    final current = _following;
+    if (current == null || _toggling) return;
+    setState(() => _toggling = true);
+    try {
+      final result = await ApiService.setFollowing(_id, !current);
+      if (!mounted) return;
+      setState(() {
+        _following = result.isFollowing;
+        _followers = result.followerCount;
+        _toggling = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _toggling = false);
+      showMessage(context, e.message);
+    }
+  }
+
+  List<String> get _photos => [
+        if (widget.artist['media'] is List)
+          for (final item in widget.artist['media'] as List)
+            if (item is String && item.isNotEmpty)
+              item
+            else if (item is Map && item['data'] is String && !isVideoSource(item['data'] as String, item['type']?.toString()))
+              item['data'] as String,
+      ];
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SingleChildScrollView(
-        child: Column(
+    final name = _text('name').isEmpty ? 'Artist' : _text('name');
+    final banner = _text('bannerImage');
+    final details = [_text('genre'), _text('city')].where((s) => s.isNotEmpty).join(' • ');
+    final photos = _photos;
+    final events = widget.events == null
+        ? const <EventModel>[]
+        : filterEvents(widget.events!, EventFilter(artistId: _id), DateTime.now());
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) Navigator.of(context).pop(_following);
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: navyAppBar(name),
+        body: ListView(
+          padding: const EdgeInsets.only(bottom: 24),
           children: [
-            // Cover Image & Profile Picture
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  height: 200,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: artist['bannerImage'] == null
-                        ? const LinearGradient(
-                            colors: [Color(0xFF001F3F), Color(0xFF003366)],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          )
-                        : null,
-                    image: artist['bannerImage'] != null
-                        ? DecorationImage(
-                            image: MemoryImage(base64Decode(artist['bannerImage'])),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                  ),
-                ),
-                Positioned(
-                  top: 40,
-                  left: 16,
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
-                Positioned(
-                  bottom: -50,
-                  left: 20,
-                  child: Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 4),
-                      color: Colors.white,
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Colors.black26,
-                          blurRadius: 8,
-                          offset: Offset(0, 2),
-                        ),
+            if (banner.isNotEmpty) AppImage(banner, height: 160, width: double.infinity),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  AppAvatar(_text('profileImage'), radius: 40),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                        if (details.isNotEmpty) Text(details, style: TextStyle(color: Colors.grey.shade700)),
+                        if (_followers != null)
+                          Text('${_followers!} ${_followers == 1 ? 'follower' : 'followers'}', style: TextStyle(color: Colors.grey.shade700)),
                       ],
                     ),
-                    child: ClipOval(
-                      child: artist['imageBytes'] != null
-                          ? Image.memory(
-                              artist['imageBytes'],
-                              width: 100,
-                              height: 100,
-                              fit: BoxFit.cover,
-                            )
-                          : Container(
-                              width: 100,
-                              height: 100,
-                              color: const Color(0xFF001F3F),
-                              child: Center(
-                                child: Text(
-                                  artist['name'].substring(0, 1).toUpperCase(),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 40,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _followError != null
+                  ? Row(
+                      children: [
+                        Expanded(child: Text(_followError!, style: TextStyle(color: Colors.grey.shade700))),
+                        TextButton(onPressed: _load, child: const Text('Retry')),
+                      ],
+                    )
+                  : _following == true
+                      ? OutlinedButton.icon(
+                          onPressed: _toggling ? null : _toggle,
+                          icon: const Icon(Icons.check),
+                          label: const Text('Following'),
+                          style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+                        )
+                      : ElevatedButton.icon(
+                          onPressed: _following == null || _toggling ? null : _toggle,
+                          icon: const Icon(Icons.person_add_alt),
+                          label: Text(_following == null ? 'Loading…' : 'Follow'),
+                          style: primaryButtonStyle(),
+                        ),
+            ),
+            if (_text('bio').isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('About', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text(_text('bio'), style: const TextStyle(height: 1.4)),
+                  ],
+                ),
+              ),
+            if (photos.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+                child: Text('Photos', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+              ),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 6, mainAxisSpacing: 6),
+                itemCount: photos.length,
+                itemBuilder: (context, i) => GestureDetector(
+                  onTap: () => showDialog<void>(
+                    context: context,
+                    builder: (dialog) => Dialog(
+                      insetPadding: const EdgeInsets.all(12),
+                      child: InteractiveViewer(child: AppImage(photos[i], fit: BoxFit.contain)),
                     ),
+                  ),
+                  child: ClipRRect(borderRadius: BorderRadius.circular(6), child: AppImage(photos[i])),
+                ),
+              ),
+            ],
+            if (events.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+                child: Text('Upcoming events', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+              ),
+              for (final event in events)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: EventCard(
+                    event: event,
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => OrganizedEventDetailsScreen(event: event))),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 40),
-            
-            // Follower Counter - Right aligned
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Icon(
-                    Icons.people,
-                    size: 18,
-                    color: Colors.grey.shade600,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '$followerCount followers',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  
-                  // Name & Follow Button
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              artist['name'] ?? 'Artist Name',
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            if (artist['genre'] != null && artist['genre'].toString().isNotEmpty)
-                              Text(
-                                artist['genre'],
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: _isToggling ? null : _toggleFollow,
-                        icon: Icon(
-                          isFollowing ? Icons.person_remove : Icons.person_add,
-                          size: 16,
-                        ),
-                        label: Text(isFollowing ? 'Following' : 'Follow'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isFollowing 
-                              ? Colors.grey.shade800 
-                              : const Color(0xFF001F3F),
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  
-                  // Bio Section
-                  if (artist['bio'] != null && artist['bio'].toString().isNotEmpty)
-                    _buildSection(
-                      'Bio',
-                      artist['bio'],
-                    ),
-                  
-                  // Gallery Section
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Gallery',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      artist['media'] != null && artist['media'].isNotEmpty
-                          ? GridView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                crossAxisSpacing: 8,
-                                mainAxisSpacing: 8,
-                                childAspectRatio: 1,
-                              ),
-                              itemCount: artist['media'].length,
-                              itemBuilder: (context, index) {
-                                final media = artist['media'][index];
-                                return Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: media['type'] == 'image'
-                                      ? ClipRRect(
-                                          borderRadius: BorderRadius.circular(8),
-                                          child: Image.memory(
-                                            base64Decode(media['data']),
-                                            fit: BoxFit.cover,
-                                          ),
-                                        )
-                                      : Container(
-                                          decoration: BoxDecoration(
-                                            color: Colors.black87,
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: const Icon(
-                                            Icons.play_circle_fill,
-                                            color: Colors.white,
-                                            size: 30,
-                                          ),
-                                        ),
-                                );
-                              },
-                            )
-                          : Container(
-                              height: 120,
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.grey.shade300),
-                              ),
-                              child: const Center(
-                                child: Text(
-                                  'No media uploaded yet',
-                                  style: TextStyle(color: Colors.grey),
-                                ),
-                              ),
-                            ),
-                      const SizedBox(height: 24),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            ],
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildSection(String title, String? content, {Widget? child}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (content != null)
-          Text(
-            content,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade700,
-              height: 1.5,
-            ),
-          ),
-        if (child != null) child,
-        const SizedBox(height: 24),
-      ],
     );
   }
 }

@@ -1,135 +1,181 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { fetchCategories } from "@/lib/api"
-import type { FilterOptions } from "@/lib/types"
-import { useLanguage } from "@/lib/language-context"
+import type { EventTypeFilter, FilterOptions } from "@/lib/types"
 
 interface EventFiltersProps {
   filters: FilterOptions
   onFiltersChange: (filters: FilterOptions) => void
   onClear: () => void
-  events?: any[]
+  categories: string[]
 }
 
-export function EventFilters({ filters, onFiltersChange, onClear, events = [] }: EventFiltersProps) {
-  const { t, translateCategory } = useLanguage()
-  const [isOpen, setIsOpen] = useState(false)
-  
-  const categories = [...new Set(events.map((e: any) => e.category).filter(Boolean))]
+const TYPES: { value: EventTypeFilter; label: string }[] = [
+  { value: "all", label: "All events" },
+  { value: "free", label: "Free" },
+  { value: "paid", label: "Paid" },
+  { value: "offline", label: "In person" },
+  { value: "online", label: "Online" },
+]
 
-  const updateFilter = <K extends keyof FilterOptions>(key: K, value: FilterOptions[K]) => {
+function toPrice(value: string): number | null {
+  if (value.trim() === "") return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+
+export function EventFilters({ filters, onFiltersChange, onClear, categories }: EventFiltersProps) {
+  const [isOpen, setIsOpen] = useState(false)
+
+  const update = <K extends keyof FilterOptions>(key: K, value: FilterOptions[K]) => {
     onFiltersChange({ ...filters, [key]: value })
   }
 
+  const field =
+    "w-full px-3 py-2 bg-background rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 transition text-sm"
+
   return (
     <>
-      {/* Mobile Filter Button */}
-      <Button onClick={() => setIsOpen(!isOpen)} variant="outline" className="md:hidden w-full mb-4 rounded-lg">
-        {t("filters.title")}
+      <Button
+        onClick={() => setIsOpen(!isOpen)}
+        variant="outline"
+        className="md:hidden w-full mb-4 rounded-lg"
+        aria-expanded={isOpen}
+      >
+        {isOpen ? "Hide filters" : "Show filters"}
       </Button>
 
-      {/* Filter Panel */}
-      <Card className={`p-6 rounded-lg ${isOpen ? "block" : "hidden md:block"}`} suppressHydrationWarning>
-        <div className="flex items-center justify-between mb-6" suppressHydrationWarning>
-          <h3 className="font-bold text-lg">{t("filters.title")}</h3>
+      <Card className={`p-6 rounded-lg ${isOpen ? "block" : "hidden md:block"}`}>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="font-bold text-lg">Filters</h2>
           <Button variant="ghost" size="sm" onClick={onClear} className="text-xs">
-            {t("filters.clearAll")}
+            Clear all
           </Button>
         </div>
 
-        <div className="space-y-6" suppressHydrationWarning>
-          {/* Category Filter */}
-          <div suppressHydrationWarning>
-            <h4 className="font-semibold text-sm mb-3">{t("filters.category")}</h4>
-            <div className="flex flex-wrap gap-2" suppressHydrationWarning>
-              {categories.map((cat) => (
-                <Badge
-                  key={cat}
-                  variant={filters.category === cat ? "default" : "outline"}
-                  onClick={() => updateFilter("category", filters.category === cat ? "" : cat)}
-                  className="cursor-pointer rounded-md"
-                  suppressHydrationWarning
-                >
-                  {cat}
-                </Badge>
-              ))}
-            </div>
-          </div>
-
-          {/* Location Filter */}
-          <div suppressHydrationWarning>
-            <label className="font-semibold text-sm mb-3 block">{t("filters.location")}</label>
+        <div className="space-y-6">
+          <div>
+            <label htmlFor="filter-search" className="font-semibold text-sm mb-2 block">
+              Search
+            </label>
             <input
-              type="text"
-              placeholder={t("filters.locationPlaceholder")}
-              value={filters.location}
-              onChange={(e) => updateFilter("location", e.target.value)}
-              className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 transition text-sm"
+              id="filter-search"
+              type="search"
+              placeholder="Event, artist, venue..."
+              value={filters.search}
+              onChange={(e) => update("search", e.target.value)}
+              className={field}
             />
           </div>
 
-          {/* Price Range */}
-          <div suppressHydrationWarning>
-            <label className="font-semibold text-sm mb-3 block">{t("filters.priceRange")}</label>
-            <div className="flex gap-3 items-center" suppressHydrationWarning>
-              <div className="flex-1" suppressHydrationWarning>
-                <input
-                  type="number"
-                  placeholder={t("filters.min")}
-                  value={filters.priceRange[0]}
-                  onChange={(e) =>
-                    updateFilter("priceRange", [Number.parseInt(e.target.value) || 0, filters.priceRange[1]])
-                  }
-                  className="w-full px-4 py-2.5 bg-background rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 transition text-sm"
-                />
-              </div>
-              <span className="text-muted-foreground">-</span>
-              <div className="flex-1" suppressHydrationWarning>
-                <input
-                  type="number"
-                  placeholder={t("filters.max")}
-                  value={filters.priceRange[1]}
-                  onChange={(e) =>
-                    updateFilter("priceRange", [filters.priceRange[0], Number.parseInt(e.target.value) || 1000])
-                  }
-                  className="w-full px-4 py-2.5 bg-background rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 transition text-sm"
-                />
+          {categories.length > 0 && (
+            <div>
+              <h3 className="font-semibold text-sm mb-2">Category</h3>
+              <div className="flex flex-wrap gap-2">
+                {categories.map((category) => {
+                  const active = filters.category.toLowerCase() === category.toLowerCase()
+                  return (
+                    <button
+                      key={category}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => update("category", active ? "" : category)}
+                    >
+                      <Badge variant={active ? "default" : "outline"} className="cursor-pointer rounded-md">
+                        {category}
+                      </Badge>
+                    </button>
+                  )
+                })}
               </div>
             </div>
+          )}
+
+          <div>
+            <label htmlFor="filter-location" className="font-semibold text-sm mb-2 block">
+              Location
+            </label>
+            <input
+              id="filter-location"
+              type="text"
+              placeholder="City or venue"
+              value={filters.location}
+              onChange={(e) => update("location", e.target.value)}
+              className={field}
+            />
           </div>
 
-          {/* Event Type */}
-          <div suppressHydrationWarning>
-            <h4 className="font-semibold text-sm mb-3">{t("filters.eventType")}</h4>
-            <div className="space-y-2" suppressHydrationWarning>
-              {[
-                { value: "all", label: t("filters.allTypes") },
-                { value: "corporate", label: t("filters.corporate") },
-                { value: "social", label: t("filters.social") },
-                { value: "entertainment", label: t("filters.entertainment") },
-                { value: "education", label: t("filters.education") },
-                { value: "charity", label: t("filters.charity") },
-                { value: "virtual", label: t("filters.virtual") },
-                { value: "casting", label: t("filters.casting") },
-              ].map((type) => (
+          <div>
+            <label htmlFor="filter-date" className="font-semibold text-sm mb-2 block">
+              Date
+            </label>
+            <input
+              id="filter-date"
+              type="date"
+              value={filters.date}
+              onChange={(e) => update("date", e.target.value)}
+              className={field}
+            />
+          </div>
+
+          <fieldset>
+            <legend className="font-semibold text-sm mb-2">Ticket price (₹)</legend>
+            <div className="flex gap-3 items-center">
+              <input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                aria-label="Lowest price"
+                placeholder="Min"
+                value={filters.minPrice ?? ""}
+                onChange={(e) => update("minPrice", toPrice(e.target.value))}
+                className={field}
+              />
+              <span className="text-muted-foreground">-</span>
+              <input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                aria-label="Highest price"
+                placeholder="Any"
+                value={filters.maxPrice ?? ""}
+                onChange={(e) => update("maxPrice", toPrice(e.target.value))}
+                className={field}
+              />
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend className="font-semibold text-sm mb-2">Show</legend>
+            <div className="space-y-2">
+              {TYPES.map((type) => (
                 <label key={type.value} className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
-                    name="type"
+                    name="event-type"
                     value={type.value}
                     checked={filters.type === type.value}
-                    onChange={(e) => updateFilter("type", e.target.value as any)}
+                    onChange={() => update("type", type.value)}
                     className="w-4 h-4"
                   />
                   <span className="text-sm">{type.label}</span>
                 </label>
               ))}
             </div>
-          </div>
+          </fieldset>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filters.includePast}
+              onChange={(e) => update("includePast", e.target.checked)}
+              className="w-4 h-4"
+            />
+            <span className="text-sm">Include past events</span>
+          </label>
         </div>
       </Card>
     </>

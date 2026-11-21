@@ -1,17 +1,29 @@
 import 'package:flutter/material.dart';
-import 'event_details_screen.dart';
-import 'filter_screen.dart';
-import 'user_profile_menu_screen.dart';
-import 'category_events_screen.dart';
-import 'organized_event_details_screen.dart';
-import 'artist_detail_screen.dart';
-import 'my_bookings_screen.dart';
-import 'hire_professionals_screen.dart';
-import '../services/api_service.dart';
-import 'dart:convert';
-import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/event.dart';
+import '../services/api_client.dart';
+import '../services/api_service.dart';
+import '../services/session.dart';
+import '../utils/event_filter.dart';
+import '../widgets/app_image.dart';
+import '../widgets/app_theme.dart';
+import '../widgets/event_card.dart';
+import '../widgets/promo_carousel.dart';
+import '../widgets/state_views.dart';
+import 'artist_detail_screen.dart';
+import 'category_events_screen.dart';
+import 'filter_screen.dart';
+import 'hire_professionals_screen.dart';
+import 'my_bookings_screen.dart';
+import 'organized_event_details_screen.dart';
+import 'user_profile_menu_screen.dart';
+
+/// How many artists the home screen shows (and asks the follow state for).
+const int _homeArtistLimit = 12;
+
+/// The home screen. Everything on it comes from the backend: events, banners,
+/// ads, categories and artists. A section with nothing to show is left out or
+/// says so; nothing is filled in with sample content.
 class DiscoveryHomeScreen extends StatefulWidget {
   const DiscoveryHomeScreen({super.key});
 
@@ -20,2183 +32,714 @@ class DiscoveryHomeScreen extends StatefulWidget {
 }
 
 class _DiscoveryHomeScreenState extends State<DiscoveryHomeScreen> {
-  final TextEditingController _searchController = TextEditingController();
+  final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
+  final _artistsKey = GlobalKey();
 
-  int _currentBottomIndex = 0;
-  List<Map<String, dynamic>> filteredEvents = [];
-  Set<String> _togglingArtists = {};
+  // Events
+  List<EventModel> _events = [];
+  bool _loadingEvents = true;
+  String? _eventsError;
+
+  // Other sections: each fails on its own without blocking the rest.
+  List<Promo> _banners = [];
+  List<Promo> _ads = [];
+  List<Map<String, dynamic>> _categories = [];
+  List<Map<String, dynamic>> _artists = [];
+  bool _loadingArtists = true;
+  String? _artistsError;
+
+  /// artist id -> following? Absent while the server has not answered.
+  final Map<String, bool> _following = {};
+  final Set<String> _togglingFollow = {};
+
+  // The city the user picked (saved in their profile) and whether it is applied.
+  String _city = '';
+  bool _allCities = false;
+
+  EventFilter _filter = const EventFilter();
 
   @override
   void initState() {
     super.initState();
-    filteredEvents = nearbyEvents;
-    _searchController.addListener(_filterEvents);
-    _checkUserSession();
-    _loadArtists();
-    _loadOrganizedEvents();
-    _loadBanners();
-    _loadCategories();
-    _loadAds();
-  }
-  
-  Future<void> _checkUserSession() async {
-    final userPhone = await ApiService.getUserPhone();
-    if (userPhone == null) {
-      // User not logged in, redirect to login
-      Navigator.pushReplacementNamed(context, '/login');
-    }
-  }
-  
-  Future<void> _loadFollowStatus(List<Map<String, dynamic>> artistsList) async {
-    final prefs = await SharedPreferences.getInstance();
-    for (var artist in artistsList) {
-      final artistId = artist['id'];
-      if (artistId != null) {
-        artist['isFollowing'] = prefs.getBool('following_$artistId') ?? false;
-      }
-    }
-  }
-  
-  Future<void> _saveFollowStatus(String artistId, bool isFollowing) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('following_$artistId', isFollowing);
-  }
-  
-  Future<void> _loadArtists() async {
-    setState(() {
-      _isLoadingArtists = true;
-    });
-    
-    final result = await ApiService.getArtists();
-    
-    if (result['success'] == true && result['artists'] != null) {
-      final artistsList = (result['artists'] as List).map((artist) {
-        String imageUrl = 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(artist['name'] ?? 'Artist')}&size=200&background=001F3F&color=fff';
-        
-        if (artist['profileImage'] != null && artist['profileImage'].toString().isNotEmpty) {
-          final profileImage = artist['profileImage'].toString();
-          if (profileImage.startsWith('http')) {
-            imageUrl = profileImage;
-          } else {
-            // Base64 image
-            imageUrl = 'data:image/jpeg;base64,$profileImage';
-          }
-        }
-        
-        return {
-          'name': artist['name'] ?? 'Unknown Artist',
-          'image': imageUrl,
-          'imageBytes': (artist['profileImage'] != null && 
-                        !artist['profileImage'].toString().startsWith('http') &&
-                        artist['profileImage'].toString().isNotEmpty)
-              ? base64Decode(artist['profileImage'])
-              : null,
-          'bannerImage': artist['bannerImage'],
-          'bio': artist['bio'],
-          'genre': artist['genre'],
-          'media': artist['media'],
-          'followers': '0',
-          'isFollowing': false,
-          'id': artist['_id'],
-        };
-      }).toList();
-      
-      await _loadFollowStatus(artistsList);
-      
-      setState(() {
-        artists = artistsList;
-        _isLoadingArtists = false;
-      });
-    } else {
-      setState(() {
-        _isLoadingArtists = false;
-      });
-    }
-  }
-  
-  Future<void> _loadBanners() async {
-    print('Loading banners...');
-    setState(() {
-      _isLoadingBanners = true;
-    });
-    
-    try {
-      final bannersList = await ApiService.getBanners();
-      print('Received ${bannersList.length} banners');
-      
-      setState(() {
-        _banners = bannersList.map((banner) {
-          String title = banner['title']?.toString() ?? 'Banner';
-          String imageUrl = banner['image']?.toString() ?? '';
-          String link = banner['link']?.toString() ?? '';
-          
-          print('Banner: $title - Image: ${imageUrl.isNotEmpty ? 'Available' : 'Missing'} - Link: $link');
-          
-          return {
-            'title': title,
-            'image': imageUrl,
-            'link': link,
-            'id': banner['_id']?.toString() ?? '',
-          };
-        }).toList();
-        _isLoadingBanners = false;
-      });
-      if (_banners.isNotEmpty) {
-        _startBannerAutoScroll();
-      }
-    } catch (e) {
-      print('Error loading banners: $e');
-      setState(() {
-        _banners = [];
-        _isLoadingBanners = false;
-      });
-    }
-  }
-  
-  Future<void> _loadCategories() async {
-    setState(() {
-      _isLoadingCategories = true;
-    });
-    
-    try {
-      final categoriesList = await ApiService.getCategories();
-      setState(() {
-        _categories = categoriesList.map((category) {
-          return {
-            'name': category['name'] ?? 'Category',
-            'type': category['type'] ?? 'Event',
-            'image': category['image'] ?? 'assets/images/concert.jpg',
-            'subCategories': category['subCategories'] ?? [],
-            'id': category['_id'] ?? '',
-          };
-        }).toList();
-        _isLoadingCategories = false;
-      });
-    } catch (e) {
-      setState(() {
-        _categories = [];
-        _isLoadingCategories = false;
-      });
-    }
-  }
-  
-  Future<void> _loadAds() async {
-    setState(() {
-      _isLoadingAds = true;
-    });
-    
-    try {
-      final adsList = await ApiService.getAds();
-      setState(() {
-        final now = DateTime.now();
-        _ads = adsList.where((ad) {
-          if (ad['status'] != 'active') return false;
-          
-          // Check if ad is within date range
-          try {
-            final startDate = DateTime.parse(ad['startDate']);
-            final endDate = DateTime.parse(ad['endDate']);
-            return now.isAfter(startDate) && now.isBefore(endDate.add(Duration(days: 1)));
-          } catch (e) {
-            return true; // If date parsing fails, include the ad
-          }
-        }).map((ad) {
-          return {
-            'title': ad['title'] ?? 'Ad',
-            'image': ad['image'] ?? '',
-            'link': ad['link'] ?? '',
-            'sponsor': ad['sponsor'] ?? '',
-            'duration': ad['duration'] ?? 5, // Default 5 seconds if missing
-            'order': ad['order'] ?? 1,
-            'mediaType': ad['mediaType'] ?? 'image',
-            'id': ad['_id'] ?? '',
-          };
-        }).toList();
-        
-        // Sort ads by order
-        _ads.sort((a, b) {
-          final orderA = (a['order'] as int?) ?? 1;
-          final orderB = (b['order'] as int?) ?? 1;
-          return orderA.compareTo(orderB);
-        });
-        
-        print('Loaded ${_ads.length} ads:');
-        for (int i = 0; i < _ads.length; i++) {
-          final ad = _ads[i];
-          print('Ad $i: ${ad['title']} - Duration: ${ad['duration']}s - Order: ${ad['order']} - Link: ${ad['link']}');
-        }
-        
-        if (_ads.length == 1) {
-          print('WARNING: Only 1 ad found. Auto-rotation will still work but will show the same ad.');
-        }
-        _isLoadingAds = false;
-      });
-      if (_ads.isNotEmpty) {
-        print('Starting ad auto-scroll with ${_ads.length} ads');
-        _startAdAutoScroll();
-      } else {
-        print('No ads to display');
-      }
-    } catch (e) {
-      setState(() {
-        _ads = [];
-        _isLoadingAds = false;
-      });
-    }
-  }
-  
-  void _startAdAutoScroll() {
-    if (_ads.isNotEmpty) {
-      final currentAd = _ads[_currentAdIndex];
-      final duration = (currentAd['duration'] as int?) ?? 5;
-      
-      // Use set duration, minimum 3 seconds
-      final waitTime = duration > 0 ? duration : 5;
-      
-      print('Ad auto-scroll: Current ad $_currentAdIndex duration = $duration seconds, waiting $waitTime seconds');
-      print('Total ads: ${_ads.length}');
-      
-      Future.delayed(Duration(seconds: waitTime), () {
-        if (mounted && _ads.isNotEmpty) {
-          final nextIndex = (_currentAdIndex + 1) % _ads.length;
-          print('Switching from ad $_currentAdIndex to ad $nextIndex');
-          
-          setState(() {
-            _currentAdIndex = nextIndex;
-          });
-          
-          if (_adsController.hasClients) {
-            _adsController.animateToPage(
-              _currentAdIndex,
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeInOut,
-            );
-          }
-          
-          _startAdAutoScroll();
-        }
-      });
-    }
-  }
-  
-  void _startBannerAutoScroll() {
-    if (_banners.isNotEmpty) {
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted && _banners.isNotEmpty) {
-          final nextIndex = (_currentBannerIndex + 1) % _banners.length;
-          _currentBannerIndex = nextIndex;
-          if (_bannerController.hasClients) {
-            _bannerController.animateToPage(
-              _currentBannerIndex,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-            );
-          }
-          _startBannerAutoScroll();
-        }
-      });
-    }
-  }
-  
-  Future<void> _loadOrganizedEvents() async {
-    setState(() {
-      _isLoadingEvents = true;
-    });
-    
-    final result = await ApiService.getApprovedEvents();
-    print('Approved Events Result: $result');
-    print('API Response Success: ${result['success']}');
-    print('API Response Events: ${result['events']}');
-    
-    if (result['success'] == true && result['events'] != null) {
-      final events = result['events'] as List;
-      print('Number of events received: ${events.length}');
-      
-      if (events.isEmpty) {
-        print('No approved events found in database');
-      }
-      
-      setState(() {
-        _organizedEvents = events.map((event) {
-          print('Processing event: ${event['name'] ?? event['title']} - Status: ${event['status']} - ArtistResponse: ${event['artistResponse']}');
-          final startDate = event['startDate'] ?? '';
-          final startTime = event['startTime'] ?? '';
-          final dateDisplay = startDate.isNotEmpty && startTime.isNotEmpty 
-            ? '$startDate • $startTime' 
-            : 'TBA';
-          
-          String imageUrl = 'assets/images/concert.jpg';
-          if (event['media'] != null && event['media']['bannerImage'] != null && event['media']['bannerImage'].toString().isNotEmpty) {
-            final bannerImage = event['media']['bannerImage'];
-            // Check if it's a base64 string or URL
-            if (bannerImage.toString().startsWith('http')) {
-              imageUrl = bannerImage;
-            } else {
-              // It's base64, convert to data URL
-              imageUrl = 'data:image/jpeg;base64,$bannerImage';
-            }
-          } else if (event['eventImage'] != null && event['eventImage'].toString().isNotEmpty) {
-            imageUrl = event['eventImage'];
-          } else if (event['image'] != null && event['image'].toString().isNotEmpty) {
-            imageUrl = event['image'];
-          }
-          
-          // Get price from tickets array
-          String price = '₹0';
-          if (event['tickets'] != null && event['tickets'] is List && (event['tickets'] as List).isNotEmpty) {
-            final tickets = event['tickets'] as List;
-            final firstTicket = tickets[0];
-            if (firstTicket is Map && firstTicket['price'] != null) {
-              String rawPrice = firstTicket['price'].toString();
-              rawPrice = rawPrice.replaceAll('₹', '').replaceAll('Rs.', '').replaceAll('Rs', '').trim();
-              if (rawPrice.contains('.')) {
-                rawPrice = rawPrice.split('.')[0];
-              }
-              price = '₹$rawPrice';
-            }
-          } else if (event['ticketPrice'] != null) {
-            price = '₹${event['ticketPrice']}';
-          } else if (event['price'] != null) {
-            price = '₹${event['price']}';
-          }
-          
-          return {
-            'title': event['name'] ?? event['title'] ?? 'Event',
-            'date': dateDisplay,
-            'time': startTime,
-            'description': event['description'] ?? '',
-            'price': price,
-            'image': imageUrl,
-            'id': event['_id'],
-            'venue': event['venue'],
-            'category': event['category'] ?? 'Event',
-            'type': event['type'] ?? 'event',
-            'tickets': event['tickets'] ?? [],
-          };
-        }).toList();
-        _isLoadingEvents = false;
-      });
-    } else {
-      print('Failed to load events: ${result['error']}');
-      setState(() {
-        _isLoadingEvents = false;
-      });
-    }
-  }
-
-  String _getArtistName(Map<String, dynamic> event) {
-    if (event['organizer'] != null) {
-      if (event['organizer'] is String) {
-        return event['organizer'].toString();
-      } else if (event['organizer'] is Map && event['organizer']['name'] != null) {
-        return event['organizer']['name'].toString();
-      }
-    }
-    if (event['artist'] != null) {
-      if (event['artist'] is String) {
-        return event['artist'].toString();
-      } else if (event['artist'] is Map && event['artist']['name'] != null) {
-        return event['artist']['name'].toString();
-      }
-    }
-    return 'Artist';
-  }
-
-  Map<String, dynamic> _appliedFilters = {};
-
-  void _filterEvents() {
-    String query = _searchController.text.toLowerCase();
-    List<Map<String, dynamic>> allEvents = [...nearbyEvents, ..._organizedEvents];
-    
-    setState(() {
-      filteredEvents = allEvents.where((event) {
-        // Text search
-        String venueName = '';
-        if (event['venue'] is Map) {
-          venueName = event['venue']['name'] ?? '';
-        } else if (event['venueDetails'] is Map) {
-          venueName = event['venueDetails']['name'] ?? '';
-        } else if (event['venue'] is String) {
-          venueName = event['venue'];
-        }
-        
-        bool matchesSearch = query.isEmpty || 
-          event['title'].toLowerCase().contains(query) ||
-          _getArtistName(event).toLowerCase().contains(query) ||
-          venueName.toLowerCase().contains(query) ||
-          (event['category'] ?? '').toLowerCase().contains(query);
-        
-        if (!matchesSearch) return false;
-        
-        // Apply filters
-        if (_appliedFilters.isNotEmpty) {
-          // Artist filter
-          if (_appliedFilters['artists'] != null && (_appliedFilters['artists'] as List).isNotEmpty) {
-            bool matchesArtist = (_appliedFilters['artists'] as List).contains(_getArtistName(event));
-            if (!matchesArtist) return false;
-          }
-          
-          // Event title filter
-          if (_appliedFilters['events'] != null && (_appliedFilters['events'] as List).isNotEmpty) {
-            bool matchesEvent = (_appliedFilters['events'] as List).contains(event['title']);
-            if (!matchesEvent) return false;
-          }
-          
-          // Venue filter
-          if (_appliedFilters['venues'] != null && (_appliedFilters['venues'] as List).isNotEmpty) {
-            String venueName = '';
-            if (event['venue'] is Map) {
-              venueName = event['venue']['name'] ?? '';
-            } else if (event['venueDetails'] is Map) {
-              venueName = event['venueDetails']['name'] ?? '';
-            } else if (event['venue'] is String) {
-              venueName = event['venue'];
-            }
-            bool matchesVenue = (_appliedFilters['venues'] as List).contains(venueName);
-            if (!matchesVenue) return false;
-          }
-          
-          // Price filter
-          if (_appliedFilters['priceRanges'] != null && (_appliedFilters['priceRanges'] as List).isNotEmpty) {
-            int eventPrice = _extractEventPrice(event);
-            bool matchesPrice = false;
-            for (var range in _appliedFilters['priceRanges']) {
-              if (eventPrice >= range['min'] && eventPrice <= range['max']) {
-                matchesPrice = true;
-                break;
-              }
-            }
-            if (!matchesPrice) return false;
-          }
-          
-          // Date filter
-          if (_appliedFilters['startDate'] != null || _appliedFilters['endDate'] != null) {
-            // For now, skip date filtering as event dates need proper parsing
-          }
-        }
-        
-        return true;
-      }).toList();
-    });
-  }
-  
-  int _extractEventPrice(Map<String, dynamic> event) {
-    if (event['tickets'] != null && event['tickets'] is List && (event['tickets'] as List).isNotEmpty) {
-      final tickets = event['tickets'] as List;
-      final firstTicket = tickets[0];
-      if (firstTicket is Map && firstTicket['price'] != null) {
-        return int.tryParse(firstTicket['price'].toString().replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-      }
-    }
-    String priceStr = event['price']?.toString() ?? '0';
-    return int.tryParse(priceStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-  }
-  
-  bool _hasActiveFilters() {
-    if (_appliedFilters.isEmpty) return false;
-    
-    return (_appliedFilters['artists']?.isNotEmpty ?? false) ||
-           (_appliedFilters['events']?.isNotEmpty ?? false) ||
-           (_appliedFilters['venues']?.isNotEmpty ?? false) ||
-           (_appliedFilters['priceRanges']?.isNotEmpty ?? false) ||
-           _appliedFilters['startDate'] != null ||
-           _appliedFilters['endDate'] != null;
-  }
-  
-  int _getFilterCount() {
-    int count = 0;
-    if (_appliedFilters['artists']?.isNotEmpty ?? false) count += (_appliedFilters['artists'] as List).length;
-    if (_appliedFilters['events']?.isNotEmpty ?? false) count += (_appliedFilters['events'] as List).length;
-    if (_appliedFilters['venues']?.isNotEmpty ?? false) count += (_appliedFilters['venues'] as List).length;
-    if (_appliedFilters['priceRanges']?.isNotEmpty ?? false) count += (_appliedFilters['priceRanges'] as List).length;
-    if (_appliedFilters['startDate'] != null) count++;
-    if (_appliedFilters['endDate'] != null) count++;
-    return count;
-  }
-  
-
-  
-
-
-  final List<Map<String, dynamic>> nearbyEvents = [
-    {
-      'title': 'Classical Music Evening',
-      'artist': 'Pandit Jasraj',
-      'venue': '69381db0886654af332b8bfb', // Use the venue ID from database
-      'date': 'Dec 30, 2024',
-      'time': '7:00 PM',
-      'price': '₹1,200',
-      'distance': '2.5 km',
-      'category': 'Concerts',
-      'type': 'concert',
-      'address': 'NCPA, Nariman Point, Mumbai 400021',
-      'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=200&h=120&fit=crop',
-      'description': 'Experience the mesmerizing classical music performance by the legendary Pandit Jasraj.',
-      'tickets': [
-        {'name': 'VIP', 'price': '1000.00', 'quantity': '10'},
-        {'name': 'Gold', 'price': '1500.00', 'quantity': '90'},
-      ],
-      'artists': [
-        {'name': 'Pandit Jasraj', 'role': 'Main Artist', 'image': 'https://via.placeholder.com/100'},
-      ],
-    },
-    {
-      'title': 'Shakespeare Drama',
-      'artist': 'Mumbai Theatre Group',
-      'venue': 'Prithvi Theatre',
-      'date': 'Jan 2, 2025',
-      'time': '8:00 PM',
-      'price': '₹800',
-      'distance': '3.2 km',
-      'category': 'Theatre',
-      'type': 'theatre',
-      'address': 'Janki Kutir, Juhu Church Road, Mumbai 400049',
-      'image': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=120&fit=crop',
-      'description': 'A captivating adaptation of Shakespeare\'s timeless classic.',
-      'artists': [
-        {'name': 'Lead Actor', 'role': 'Protagonist', 'image': 'https://via.placeholder.com/100'},
-      ],
-    },
-    {
-      'title': 'Folk Dance Festival',
-      'artist': 'Gujarat Folk Artists',
-      'venue': 'Shanmukhananda Hall',
-      'date': 'Jan 5, 2025',
-      'time': '6:30 PM',
-      'price': '₹600',
-      'distance': '4.1 km',
-      'category': 'Jatra',
-      'type': 'jatra',
-      'address': 'Sion East, Mumbai 400022',
-      'image': 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=200&h=120&fit=crop',
-      'description': 'Celebrate the rich cultural heritage of Gujarat with traditional folk dances.',
-      'committee': 'Gujarat Cultural Association Mumbai',
-      'organizer': 'Folk Arts Society',
-      'contact': '+91 98765-43210',
-      'story': 'A traditional folk performance showcasing the vibrant culture of Gujarat.',
-      'cast': [
-        {'name': 'Meera Patel', 'role': 'Lead Dancer', 'character': 'Village Belle'},
-        {'name': 'Ravi Shah', 'role': 'Male Lead', 'character': 'Folk Hero'},
-      ],
-      'artists': [
-        {'name': 'Gujarat Folk Troupe', 'role': 'Main Performance', 'image': 'https://via.placeholder.com/100'},
-      ],
-    },
-  ];
-
-  final List<Map<String, String>> _dateOptions = [
-    {'title': 'This Weekend', 'subtitle': 'Nov 29 - 30'},
-    {'title': 'Today', 'subtitle': 'Nov 28'},
-    {'title': 'Tomorrow', 'subtitle': 'Nov 29'},
-    {'title': 'This Week', 'subtitle': 'Nov 25 - Dec 1'},
-    {'title': 'Next Weekend', 'subtitle': 'Dec 6 - 7'},
-    {'title': 'Next Week', 'subtitle': 'Dec 2 - 8'},
-    {'title': 'This Month', 'subtitle': 'November'},
-    {'title': 'Custom', 'subtitle': 'Pick dates'},
-  ];
-
-  List<Map<String, dynamic>> _organizedEvents = [];
-  bool _isLoadingEvents = false;
-  List<Map<String, dynamic>> _banners = [];
-  bool _isLoadingBanners = false;
-  PageController _bannerController = PageController();
-  int _currentBannerIndex = 0;
-  
-  List<Map<String, dynamic>> _categories = [];
-  bool _isLoadingCategories = false;
-  PageController _categoryController = PageController();
-  
-  List<Map<String, dynamic>> _ads = [];
-  bool _isLoadingAds = false;
-  PageController _adsController = PageController();
-  int _currentAdIndex = 0;
-
-  Widget _buildCategoryCard(Map<String, dynamic> category) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => CategoryEventsScreen(
-              categoryName: category['name'],
-              categoryImage: category['image'],
-              subcategories: category['subCategories'] != null 
-                  ? List<Map<String, dynamic>>.from(category['subCategories'])
-                  : null,
-            ),
-          ),
-        );
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Stack(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: category['image'].toString().startsWith('http')
-                ? Image.network(
-                    category['image'],
-                    width: double.infinity,
-                    height: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        color: Colors.grey.shade300,
-                        child: const Icon(Icons.image, color: Colors.grey),
-                      );
-                    },
-                  )
-                : category['image'].toString().startsWith('data:image')
-                  ? Image.memory(
-                      base64Decode(category['image'].toString().split(',')[1]),
-                      width: double.infinity,
-                      height: double.infinity,
-                      fit: BoxFit.cover,
-                    )
-                  : Image.asset(
-                      category['image'],
-                      width: double.infinity,
-                      height: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          color: Colors.grey.shade300,
-                          child: const Icon(Icons.image, color: Colors.grey),
-                        );
-                      },
-                    ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                color: Colors.black.withOpacity(0.4),
-              ),
-            ),
-            Center(
-              child: Text(
-                category['name'],
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  List<Map<String, dynamic>> artists = [];
-  bool _isLoadingArtists = false;
-
-  // Scroll + quick-access support (NEW)
-  final ScrollController _scrollController = ScrollController();
-  final GlobalKey _artistsSectionKey = GlobalKey();
-
-  final List<Map<String, dynamic>> _quickAccess = [
-    {'label': 'Discover Artists', 'icon': Icons.people_alt_outlined},
-    {'label': 'Bhakti', 'icon': Icons.self_improvement},
-    {'label': 'Customized Wishes/Greetings', 'icon': Icons.card_giftcard},
-    {'label': 'E-Learning', 'icon': Icons.school_outlined},
-  ];
-
-  // Featured event = first organized event, else first nearby event
-  Map<String, dynamic>? get _featuredEvent {
-    if (_organizedEvents.isNotEmpty) return _organizedEvents.first;
-    if (filteredEvents.isNotEmpty) return filteredEvents.first;
-    return null;
-  }
-
-  void _onQuickTap(String label) {
-    switch (label) {
-      case 'Discover Artists':
-        final ctx = _artistsSectionKey.currentContext;
-        if (ctx != null) {
-          Scrollable.ensureVisible(
-            ctx,
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeInOut,
-          );
-        }
-        break;
-      case 'Bhakti':
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => CategoryEventsScreen(
-              categoryName: 'Bhakti',
-              categoryImage: 'assets/images/concert.jpg',
-              subcategories: null,
-            ),
-          ),
-        );
-        break;
-      default:
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$label — coming soon'), duration: const Duration(seconds: 2)),
-        );
-    }
-  }
-
-  Widget _eventImage(String image) {
-    if (image.startsWith('http')) {
-      return Image.network(image, fit: BoxFit.cover,
-          errorBuilder: (c, e, s) => Image.asset('assets/images/concert.jpg', fit: BoxFit.cover));
-    } else if (image.startsWith('data:image')) {
-      return Image.memory(base64Decode(image.split(',')[1]), fit: BoxFit.cover,
-          errorBuilder: (c, e, s) => Image.asset('assets/images/concert.jpg', fit: BoxFit.cover));
-    }
-    return Image.asset(image.isNotEmpty ? image : 'assets/images/concert.jpg', fit: BoxFit.cover,
-        errorBuilder: (c, e, s) => Image.asset('assets/images/concert.jpg', fit: BoxFit.cover));
-  }
-
-  void _openEvent(Map<String, dynamic> event) {
-    if (_organizedEvents.contains(event)) {
-      Navigator.push(context, MaterialPageRoute(builder: (context) => OrganizedEventDetailsScreen(event: event)));
-    } else {
-      Navigator.push(context, MaterialPageRoute(builder: (context) => EventDetailsScreen(event: event)));
-    }
-  }
-
-  Widget _buildQuickAccessChips() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: SizedBox(
-        height: 44,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          itemCount: _quickAccess.length,
-          itemBuilder: (context, index) {
-            final item = _quickAccess[index];
-            return Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: ActionChip(
-                avatar: Icon(item['icon'] as IconData, size: 18, color: const Color(0xFF001F3F)),
-                label: Text(item['label'] as String),
-                labelStyle: const TextStyle(color: Color(0xFF001F3F), fontWeight: FontWeight.w600, fontSize: 13),
-                backgroundColor: Colors.white,
-                side: BorderSide(color: Colors.grey.shade300),
-                onPressed: () => _onQuickTap(item['label'] as String),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFeaturedSection() {
-    final event = _featuredEvent;
-    if (event == null) return const SizedBox.shrink();
-    final image = (event['image'] ?? '').toString();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-      child: GestureDetector(
-        onTap: () => _openEvent(event),
-        child: Container(
-          height: 180,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: const Color(0xFF001F3F).withOpacity(0.25), blurRadius: 12, offset: const Offset(0, 6))],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                _eventImage(image),
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Colors.black.withOpacity(0.75)],
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: const Color(0xFFF5A623), borderRadius: BorderRadius.circular(20)),
-                    child: const Text('FEATURED', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 14,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        (event['title'] ?? 'Featured Event').toString(),
-                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(Icons.calendar_today, color: Colors.white70, size: 13),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              (event['date'] ?? 'TBA').toString(),
-                              style: const TextStyle(color: Colors.white70, fontSize: 12),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Text((event['price'] ?? '').toString(),
-                              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTrendingSection() {
-    final List<Map<String, dynamic>> trending =
-        _organizedEvents.isNotEmpty ? _organizedEvents : filteredEvents;
-    if (trending.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 0, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: const [
-              Icon(Icons.local_fire_department, color: Color(0xFFFF5722), size: 24),
-              SizedBox(width: 6),
-              Text('Trending Now', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 170,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: trending.length,
-              itemBuilder: (context, index) {
-                final event = trending[index];
-                final image = (event['image'] ?? '').toString();
-                return GestureDetector(
-                  onTap: () => _openEvent(event),
-                  child: Container(
-                    width: 250,
-                    margin: const EdgeInsets.only(right: 14),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          _eventImage(image),
-                          Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: 12,
-                            right: 12,
-                            bottom: 10,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  (event['title'] ?? 'Event').toString(),
-                                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 2),
-                                Text((event['price'] ?? '').toString(),
-                                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHireSection() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: const LinearGradient(
-            colors: [Color(0xFF001F3F), Color(0xFF01346B)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Hire a Professional',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            const Text('Book photographers & videographers for your event',
-                style: TextStyle(color: Colors.white70, fontSize: 13)),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(child: _hireButton(Icons.camera_alt, 'Photographer')),
-                const SizedBox(width: 12),
-                Expanded(child: _hireButton(Icons.videocam, 'Videographer')),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _hireButton(IconData icon, String label) {
-    return ElevatedButton.icon(
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => HireProfessionalsScreen(
-              type: label == 'Videographer' ? 'videographer' : 'photographer',
-            ),
-          ),
-        );
-      },
-      icon: Icon(icon, size: 18),
-      label: Text(label, style: const TextStyle(fontSize: 13)),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF001F3F),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        elevation: 0,
-      ),
-    );
+    _loadAll();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /* ------------------------------ Loading ------------------------------ */
+
+  Future<void> _loadAll() async {
+    await Future.wait([_loadEvents(), _loadCity(), _loadPromos(), _loadCategories(), _loadArtists()]);
+  }
+
+  Future<void> _loadEvents() async {
+    setState(() {
+      _loadingEvents = true;
+      _eventsError = null;
+    });
+    try {
+      final events = await ApiService.getEvents();
+      if (!mounted) return;
+      setState(() {
+        _events = events;
+        _loadingEvents = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingEvents = false;
+        _eventsError = e.message;
+      });
+    }
+  }
+
+  Future<void> _loadCity() async {
+    try {
+      final user = await ApiService.getProfile();
+      final all = await Session.showAllCities();
+      if (!mounted) return;
+      setState(() {
+        _city = (user['city'] ?? '').toString().trim();
+        _allCities = all;
+      });
+    } on ApiException {
+      // Without the profile the home screen simply shows every city.
+    }
+  }
+
+  Future<void> _loadPromos() async {
+    // Banners and ads are decoration: when they fail the section is left out.
+    try {
+      final banners = await ApiService.getBanners();
+      if (mounted) setState(() => _banners = banners.map(Promo.fromJson).where((p) => p.media.isNotEmpty).toList());
+    } on ApiException {
+      if (mounted) setState(() => _banners = []);
+    }
+    try {
+      final ads = await ApiService.getAds();
+      if (mounted) setState(() => _ads = ads.map(Promo.fromJson).where((p) => p.media.isNotEmpty).toList());
+    } on ApiException {
+      if (mounted) setState(() => _ads = []);
+    }
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final categories = await ApiService.getCategories();
+      if (mounted) setState(() => _categories = categories.where((c) => (c['name'] ?? '').toString().trim().isNotEmpty).toList());
+    } on ApiException {
+      if (mounted) setState(() => _categories = []);
+    }
+  }
+
+  Future<void> _loadArtists() async {
+    setState(() {
+      _loadingArtists = true;
+      _artistsError = null;
+    });
+    try {
+      final artists = await ApiService.getArtists();
+      if (!mounted) return;
+      setState(() {
+        _artists = artists;
+        _loadingArtists = false;
+      });
+      _loadFollowStates(artists.take(_homeArtistLimit));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingArtists = false;
+        _artistsError = e.message;
+      });
+    }
+  }
+
+  /// Follow state per user, from the server. A failed check leaves the button
+  /// in its "unknown" state rather than guessing.
+  Future<void> _loadFollowStates(Iterable<Map<String, dynamic>> artists) async {
+    await Future.wait([
+      for (final artist in artists)
+        () async {
+          final id = (artist['_id'] ?? '').toString();
+          if (id.isEmpty) return;
+          try {
+            final following = await ApiService.isFollowing(id);
+            if (mounted) setState(() => _following[id] = following);
+          } on ApiException {
+            // left unknown
+          }
+        }(),
+    ]);
+  }
+
+  Future<void> _toggleFollow(Map<String, dynamic> artist) async {
+    final id = (artist['_id'] ?? '').toString();
+    final current = _following[id];
+    if (current == null || _togglingFollow.contains(id)) return;
+    setState(() => _togglingFollow.add(id));
+    try {
+      final result = await ApiService.setFollowing(id, !current);
+      if (!mounted) return;
+      setState(() {
+        _following[id] = result.isFollowing;
+        artist['followersCount'] = result.followerCount;
+        _togglingFollow.remove(id);
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _togglingFollow.remove(id));
+      showMessage(context, e.message);
+    }
+  }
+
+  /* ------------------------------ Derived ------------------------------ */
+
+  String get _activeCity => _allCities ? '' : _city;
+
+  EventFilter get _effectiveFilter => _filter.copyWith(query: _searchController.text, city: _activeCity);
+
+  Map<String, String> get _artistNames => {
+        for (final artist in _artists)
+          if ((artist['_id'] ?? '').toString().isNotEmpty) artist['_id'].toString(): (artist['name'] ?? '').toString(),
+      };
+
+  /* ------------------------------ Actions ------------------------------ */
+
+  void _openEvent(EventModel event) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => OrganizedEventDetailsScreen(event: event)));
+  }
+
+  Future<void> _openArtist(Map<String, dynamic> artist) async {
+    final following = await Navigator.push<bool?>(
+      context,
+      MaterialPageRoute(builder: (_) => ArtistDetailScreen(artist: artist, events: _events)),
+    );
+    final id = (artist['_id'] ?? '').toString();
+    if (following != null && mounted) setState(() => _following[id] = following);
+  }
+
+  Future<void> _openFilters() async {
+    final result = await Navigator.push<EventFilter>(
+      context,
+      MaterialPageRoute(builder: (_) => FilterScreen(initial: _filter, events: _events, artistNames: _artistNames)),
+    );
+    if (result != null && mounted) setState(() => _filter = result);
+  }
+
+  Future<void> _pickCity() async {
+    final cities = citiesOf(_events);
+    if (_city.isNotEmpty && !cities.any((c) => sameCity(c, _city))) cities.insert(0, _city);
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      builder: (sheet) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
           children: [
-            Row(
-              children: const [
-                Icon(Icons.location_on, color: Color(0xFF2ECC71), size: 18),
-                SizedBox(width: 4),
-                Text('Location', style: TextStyle(color: Color(0xFF2ECC71), fontSize: 18, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            const SizedBox(height: 2),
             const Padding(
-              padding: EdgeInsets.only(left: 22),
-              child: Text('Mumbai, India', style: TextStyle(color: Colors.white70, fontSize: 13)),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text('Show events in', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.public),
+              title: const Text('All cities'),
+              trailing: _activeCity.isEmpty ? const Icon(Icons.check, color: AppColors.navy) : null,
+              onTap: () => Navigator.pop(sheet, ''),
+            ),
+            for (final city in cities)
+              ListTile(
+                leading: const Icon(Icons.location_city_outlined),
+                title: Text(city),
+                trailing: sameCity(city, _activeCity) ? const Icon(Icons.check, color: AppColors.navy) : null,
+                onTap: () => Navigator.pop(sheet, city),
+              ),
+            if (cities.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('No event lists a city yet.', style: TextStyle(color: Colors.grey.shade700)),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    if (choice.isEmpty) {
+      await Session.setShowAllCities(true);
+      if (mounted) setState(() => _allCities = true);
+      return;
+    }
+    try {
+      // The chosen city is part of the user's profile, so it follows them to another phone.
+      await ApiService.updateProfile(city: choice);
+      await Session.setShowAllCities(false);
+      if (!mounted) return;
+      setState(() {
+        _city = choice;
+        _allCities = false;
+      });
+    } on ApiException catch (e) {
+      if (mounted) showMessage(context, 'Your city was not saved. ${e.message}');
+    }
+  }
+
+  void _clearFilters() => setState(() {
+        _filter = const EventFilter();
+        _searchController.clear();
+      });
+
+  /* -------------------------------- UI -------------------------------- */
+
+  @override
+  Widget build(BuildContext context) {
+    final filter = _effectiveFilter;
+    final now = DateTime.now();
+    final browsing = filter.query.trim().isEmpty && _filter.activeCount == 0;
+    final shown = filterEvents(_events, filter, now);
+
+    return Scaffold(
+      backgroundColor: Colors.grey.shade100,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _header(),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _loadAll,
+                child: ListView(
+                  controller: _scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.only(bottom: 24),
+                  children: browsing ? _browseSections(shown, now) : _resultSections(shown),
+                ),
+              ),
             ),
           ],
         ),
-        actions: [
-          IconButton(icon: const Icon(Icons.notifications_outlined, color: Colors.white), onPressed: () {}),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Fixed Search Section
-          Container(
-            color: const Color(0xFF001F3F),
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8, offset: const Offset(0, 2))],
-              ),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search events, artists, venues...',
-                  hintStyle: TextStyle(color: Colors.grey.shade500),
-                  prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
-                  suffixIcon: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_hasActiveFilters())
-                        Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF001F3F),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            _getFilterCount().toString(),
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.tune, 
-                          color: _hasActiveFilters() ? const Color(0xFF001F3F) : Colors.grey.shade600
-                        ),
-                        onPressed: () {
-                          Navigator.push(
-                            context, 
-                            MaterialPageRoute(
-                              builder: (context) => FilterScreen(
-                                onFiltersApplied: (filters) {
-                                  setState(() {
-                                    _appliedFilters = filters;
-                                  });
-                                  _filterEvents();
-                                }
-                              )
-                            )
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                ),
-              ),
-            ),
-          ),
-          
-          
-          // Scrollable Content
-          Expanded(
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-            
-            // Quick Access Chips (NEW - Discover Artists / Bhakti / Wishes / E-Learning)
-            _buildQuickAccessChips(),
-
-            // Featured Event hero card (NEW)
-            _buildFeaturedSection(),
-
-            // Banner Carousel (Home screen banner)
-            if (_banners.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 20),
-                child: SizedBox(
-                  height: 160,
-                  child: _isLoadingBanners
-                    ? const Center(child: CircularProgressIndicator())
-                    : PageView.builder(
-                        controller: _bannerController,
-                        itemCount: _banners.length,
-                        onPageChanged: (index) {
-                          _currentBannerIndex = index;
-                        },
-                        itemBuilder: (context, index) {
-                          final banner = _banners[index];
-                          return GestureDetector(
-                            onTap: () {
-                              final link = banner['link']?.toString() ?? '';
-                              if (link.isNotEmpty) {
-                                // Copy link to clipboard and show message
-                                Clipboard.setData(ClipboardData(text: link));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Link copied to clipboard: $link'),
-                                    duration: const Duration(seconds: 3),
-                                    action: SnackBarAction(
-                                      label: 'OK',
-                                      onPressed: () {},
-                                    ),
-                                  ),
-                                );
-                              }
-                            },
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 20),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: [BoxShadow(color: const Color(0xFF001F3F).withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))],
-                              ),
-                              child: Stack(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(16),
-                                    child: banner['image'].toString().startsWith('http')
-                                      ? Image.network(
-                                          banner['image'],
-                                          width: double.infinity,
-                                          height: double.infinity,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) {
-                                            return Container(
-                                              color: Colors.grey.shade300,
-                                              child: const Icon(Icons.image, color: Colors.grey),
-                                            );
-                                          },
-                                        )
-                                      : banner['image'].toString().startsWith('data:image')
-                                        ? Image.memory(
-                                            base64Decode(banner['image'].toString().split(',')[1]),
-                                            width: double.infinity,
-                                            height: double.infinity,
-                                            fit: BoxFit.cover,
-                                          )
-                                        : Container(
-                                            color: Colors.grey.shade300,
-                                            child: const Icon(Icons.image, color: Colors.grey),
-                                          ),
-                                  ),
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(16),
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [Colors.transparent, const Color(0xFF001F3F).withOpacity(0.6)],
-                                      ),
-                                    ),
-                                    child: Stack(
-                                      children: [
-                                        Center(
-                                          child: Text(
-                                            banner['title'],
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 24,
-                                              fontWeight: FontWeight.bold,
-                                              shadows: [
-                                                Shadow(
-                                                  offset: Offset(1, 1),
-                                                  blurRadius: 3,
-                                                  color: Colors.black54,
-                                                ),
-                                              ],
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ),
-
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ),
-            
-            // Explore Categories Section
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'Explore Categories',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (_categories.length > 4)
-                        const Icon(
-                          Icons.arrow_forward_ios,
-                          color: Colors.blue,
-                          size: 20,
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  _isLoadingCategories
-                    ? const Center(child: CircularProgressIndicator())
-                    : _categories.isEmpty
-                      ? const Center(child: Text('No categories available'))
-                      : Container(
-                          height: 220,
-                          child: _categories.length <= 4
-                            ? GridView.count(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                crossAxisCount: 2,
-                                crossAxisSpacing: 16,
-                                mainAxisSpacing: 16,
-                                childAspectRatio: 1.8,
-                                children: _categories.map((category) => _buildCategoryCard(category)).toList(),
-                              )
-                            : PageView.builder(
-                                controller: _categoryController,
-                                itemCount: _categories.length,
-                                itemBuilder: (context, pageIndex) {
-                                  List<Map<String, dynamic>> displayCategories = [];
-                                  
-                                  for (int i = 0; i < 4; i++) {
-                                    int index = (pageIndex + i) % _categories.length;
-                                    displayCategories.add(_categories[index]);
-                                  }
-                                  
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                                    child: GridView.count(
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      crossAxisCount: 2,
-                                      crossAxisSpacing: 16,
-                                      mainAxisSpacing: 16,
-                                      childAspectRatio: 1.8,
-                                      children: displayCategories.map((category) => _buildCategoryCard(category)).toList(),
-                                    ),
-                                  );
-                                },
-                              ),
-                        ),
-                ],
-              ),
-            ),
-            
-            // Trending Now (NEW)
-            _buildTrendingSection(),
-
-            // Hire Photographer / Videographer (NEW)
-            _buildHireSection(),
-
-            // Ads Section (Video / Sponsored Ads)
-            if (_ads.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 12),
-                      child: Text('Sponsored', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
-                    ),
-                    _isLoadingAds
-                      ? const Center(child: CircularProgressIndicator())
-                      : SizedBox(
-                          height: 120,
-                          child: PageView.builder(
-                            controller: _adsController,
-                            itemCount: _ads.length,
-                            onPageChanged: (index) {
-                              print('PageView onPageChanged: $index');
-                              _currentAdIndex = index;
-                            },
-                            itemBuilder: (context, index) {
-                              final ad = _ads[index];
-                              return GestureDetector(
-                                onTap: () {
-                                  final link = ad['link']?.toString() ?? '';
-                                  if (link.isNotEmpty) {
-                                    // Copy link to clipboard and show message
-                                    Clipboard.setData(ClipboardData(text: link));
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Link copied to clipboard: $link'),
-                                        duration: const Duration(seconds: 3),
-                                        action: SnackBarAction(
-                                          label: 'OK',
-                                          onPressed: () {},
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                },
-                                child: Container(
-                                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.grey.withOpacity(0.2),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: Stack(
-                                      children: [
-                                        ad['mediaType'] == 'video'
-                                          ? Container(
-                                              width: double.infinity,
-                                              height: double.infinity,
-                                              color: Colors.black,
-                                              child: const Center(
-                                                child: Icon(
-                                                  Icons.play_circle_fill,
-                                                  color: Colors.white,
-                                                  size: 40,
-                                                ),
-                                              ),
-                                            )
-                                          : ad['image'].toString().startsWith('http')
-                                            ? Image.network(
-                                                ad['image'],
-                                                width: double.infinity,
-                                                height: double.infinity,
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (context, error, stackTrace) {
-                                                  return Container(
-                                                    color: Colors.grey.shade300,
-                                                    child: const Icon(Icons.image, color: Colors.grey),
-                                                  );
-                                                },
-                                              )
-                                            : ad['image'].toString().startsWith('data:image')
-                                              ? Image.memory(
-                                                  base64Decode(ad['image'].toString().split(',')[1]),
-                                                  width: double.infinity,
-                                                  height: double.infinity,
-                                                  fit: BoxFit.cover,
-                                                )
-                                              : Container(
-                                                  color: Colors.grey.shade300,
-                                                  child: const Icon(Icons.image, color: Colors.grey),
-                                                ),
-                                        Positioned(
-                                          bottom: 8,
-                                          left: 8,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black.withOpacity(0.7),
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                            child: Text(
-                                              'Sponsored by ${ad['sponsor']}',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-
-
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                  ],
-                ),
-              ),
-            
-            // Artists
-            Padding(
-              key: _artistsSectionKey,
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Artists', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
-                  const SizedBox(height: 16),
-                  _isLoadingArtists
-                    ? const Center(child: CircularProgressIndicator())
-                    : artists.isEmpty
-                      ? const Center(child: Text('No artists available'))
-                      : SizedBox(
-                    height: 240,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: artists.length,
-                      itemBuilder: (context, index) {
-                        final artist = artists[index];
-                        return GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => ArtistDetailScreen(artist: artist),
-                              ),
-                            );
-                          },
-                          child: Container(
-                          width: 160,
-                          margin: const EdgeInsets.only(right: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.grey.withOpacity(0.1),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Column(
-                                  children: [
-                                    Container(
-                                      width: 110,
-                                      height: 110,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        border: Border.all(color: Colors.grey.shade300, width: 2),
-                                        color: Colors.grey.shade200,
-                                      ),
-                                      child: ClipOval(
-                                        child: artist['imageBytes'] != null
-                                          ? Image.memory(
-                                              artist['imageBytes'],
-                                              fit: BoxFit.cover,
-                                              width: 110,
-                                              height: 110,
-                                            )
-                                          : Image.network(
-                                              artist['image'],
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (context, error, stackTrace) {
-                                                return Container(
-                                                  color: const Color(0xFF001F3F),
-                                                  child: Center(
-                                                    child: Text(
-                                                      artist['name'].substring(0, 1).toUpperCase(),
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 40,
-                                                        fontWeight: FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      artist['name'],
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black87,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 8),
-                                  ],
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  height: 32,
-                                  child: ElevatedButton(
-                                    onPressed: _togglingArtists.contains(artists[index]['id']) ? null : () async {
-                                      final artistId = artists[index]['id'];
-                                      final userPhone = await ApiService.getUserPhone();
-                                      
-                                      if (artistId == null || userPhone == null) return;
-                                      
-                                      // Prevent multiple simultaneous requests
-                                      if (_togglingArtists.contains(artistId)) return;
-                                      
-                                      setState(() {
-                                        _togglingArtists.add(artistId);
-                                      });
-                                      
-                                      try {
-                                        final wasFollowing = artists[index]['isFollowing'];
-                                        final action = wasFollowing ? 'unfollow' : 'follow';
-                                        
-                                        // Update UI optimistically
-                                        setState(() {
-                                          artists[index]['isFollowing'] = !artists[index]['isFollowing'];
-                                        });
-                                        
-                                        // Save to backend
-                                        final result = await ApiService.toggleFollowArtist(
-                                          artistId: artistId,
-                                          userPhone: userPhone,
-                                          action: action,
-                                        );
-                                        
-                                        if (result['success'] == true) {
-                                          // Update with server response
-                                          setState(() {
-                                            artists[index]['isFollowing'] = result['isFollowing'] ?? artists[index]['isFollowing'];
-                                          });
-                                          
-                                          await _saveFollowStatus(artistId, artists[index]['isFollowing']);
-                                        } else {
-                                          // Revert on failure
-                                          setState(() {
-                                            artists[index]['isFollowing'] = wasFollowing;
-                                          });
-                                          await _saveFollowStatus(artistId, wasFollowing);
-                                        }
-                                      } catch (e) {
-                                        print('Error toggling follow: $e');
-                                        // Reload artist data on error
-                                        await _loadArtists();
-                                      } finally {
-                                        setState(() {
-                                          _togglingArtists.remove(artistId);
-                                        });
-                                      }
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: artist['isFollowing'] 
-                                          ? Colors.grey.shade800 
-                                          : const Color(0xFF001F3F),
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      elevation: 0,
-                                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    ),
-                                    child: FittedBox(
-                                      child: Text(
-                                        artist['isFollowing'] ? 'Following' : 'Follow',
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Events Near Me
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  const Icon(Icons.near_me, color: Color(0xFF001F3F), size: 24),
-                  const SizedBox(width: 8),
-                  const Text('Events Near Me', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
-                  const Spacer(),
-                  TextButton(onPressed: () {}, child: const Text('View All', style: TextStyle(color: Color(0xFF001F3F), fontWeight: FontWeight.w600))),
-                ],
-              ),
-            ),
-            
-            // Nearby Events Horizontal Scroll
-            Padding(
-              padding: const EdgeInsets.fromLTRB(0, 20, 0, 40),
-              child: SizedBox(
-                height: 220,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: filteredEvents.length,
-                  itemBuilder: (context, index) {
-                    final event = filteredEvents[index];
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => EventDetailsScreen(event: event)));
-                      },
-                      child: Container(
-                        width: 180,
-                        margin: const EdgeInsets.only(right: 16),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: Container(
-                                width: double.infinity,
-                                decoration: BoxDecoration(
-                                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
-                                  image: DecorationImage(image: NetworkImage(event['image']), fit: BoxFit.cover),
-                                ),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [Colors.transparent, const Color(0xFF001F3F).withOpacity(0.7)],
-                                    ),
-                                  ),
-                                  child: Stack(
-                                    children: [
-                                      Positioned(
-                                        top: 8, right: 8,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(8)),
-                                          child: Text(event['distance'], style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF001F3F))),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              flex: 2,
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(8),
-                                decoration: const BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.only(bottomLeft: Radius.circular(12), bottomRight: Radius.circular(12)),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(event['title'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                    const SizedBox(height: 1),
-                                    Text(event['artist'], style: TextStyle(fontSize: 11, color: Colors.grey.shade600), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Flexible(child: Text(event['price'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF001F3F)))),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                          decoration: BoxDecoration(color: const Color(0xFF001F3F), borderRadius: BorderRadius.circular(10)),
-                                          child: const Text('Book', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            
-            // Pick a Date Section
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Pick a Date, Find an Event',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    height: 80,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _dateOptions.length,
-                      itemBuilder: (context, index) {
-                        final dateOption = _dateOptions[index];
-                        return GestureDetector(
-                          onTap: () {
-                            // Handle date selection
-                            print('Selected: ${dateOption['title']}');
-                          },
-                          child: Container(
-                            width: 140,
-                            margin: const EdgeInsets.only(right: 12),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.grey.shade300,
-                                width: 1,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.grey.withOpacity(0.1),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        dateOption['title'] ?? '',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFF001F3F),
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        dateOption['subtitle'] ?? '',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                const Icon(
-                                  Icons.calendar_today,
-                                  color: Color(0xFF001F3F),
-                                  size: 24,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Organized Events Section
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'Organized Events',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const Spacer(),
-                      const Icon(
-                        Icons.arrow_forward_ios,
-                        color: Colors.blue,
-                        size: 20,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _isLoadingEvents
-                    ? const Center(child: CircularProgressIndicator())
-                    : _organizedEvents.isEmpty
-                      ? Container(
-                          height: 100,
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.event_busy, size: 40, color: Colors.grey.shade400),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'No organized events available',
-                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-                                ),
-                                Text(
-                                  'Events need admin approval and artist acceptance',
-                                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : SizedBox(
-                    height: 260,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _organizedEvents.length,
-                      itemBuilder: (context, index) {
-                        final event = _organizedEvents[index];
-                        return GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => OrganizedEventDetailsScreen(event: event),
-                              ),
-                            );
-                          },
-                          child: Container(
-                          width: 180,
-                          margin: const EdgeInsets.only(right: 16),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.grey.withOpacity(0.2),
-                                blurRadius: 8,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                flex: 2,
-                                child: Container(
-                                  width: double.infinity,
-                                  decoration: BoxDecoration(
-                                    borderRadius: const BorderRadius.only(
-                                      topLeft: Radius.circular(12),
-                                      topRight: Radius.circular(12),
-                                    ),
-                                    color: Colors.grey.shade200,
-                                  ),
-                                  child: Stack(
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: const BorderRadius.only(
-                                          topLeft: Radius.circular(12),
-                                          topRight: Radius.circular(12),
-                                        ),
-                                        child: event['image'].toString().startsWith('http')
-                                          ? Image.network(
-                                              event['image'],
-                                              width: double.infinity,
-                                              height: double.infinity,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (context, error, stackTrace) {
-                                                return Image.asset(
-                                                  'assets/images/concert.jpg',
-                                                  fit: BoxFit.cover,
-                                                );
-                                              },
-                                            )
-                                          : event['image'].toString().startsWith('data:image')
-                                            ? Image.memory(
-                                                base64Decode(event['image'].toString().split(',')[1]),
-                                                width: double.infinity,
-                                                height: double.infinity,
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (context, error, stackTrace) {
-                                                  return Image.asset(
-                                                    'assets/images/concert.jpg',
-                                                    fit: BoxFit.cover,
-                                                  );
-                                                },
-                                              )
-                                            : Image.asset(
-                                                event['image'] ?? 'assets/images/concert.jpg',
-                                                fit: BoxFit.cover,
-                                              ),
-                                      ),
-                                      Positioned(
-                                        top: 8,
-                                        right: 8,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(6),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.white,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.star_border,
-                                            size: 16,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                flex: 2,
-                                child: Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: const BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.only(
-                                      bottomLeft: Radius.circular(12),
-                                      bottomRight: Radius.circular(12),
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        event['date'] ?? '',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        event['title'] ?? '',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black87,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        event['description'] ?? '',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            event['price'] ?? '',
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.bold,
-                                              color: Color(0xFF001F3F),
-                                            ),
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF001F3F),
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                            child: const Text(
-                                              'Book',
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Events Near You Section
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Events Near You',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    height: 80,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        _buildDistanceCard('5 kms', 'Events nearby', Icons.location_on, Colors.orange),
-                        _buildDistanceCard('10 kms', 'Wider Area', Icons.route, Colors.orange),
-                        _buildDistanceCard('20 kms', 'Wider Area', Icons.warning, Colors.red),
-                        _buildDistanceCard('Custom', 'Pick distance', Icons.tune, Colors.blue),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         backgroundColor: Colors.white,
-        selectedItemColor: const Color(0xFF001F3F),
+        selectedItemColor: AppColors.navy,
         unselectedItemColor: Colors.grey,
-        currentIndex: _currentBottomIndex,
+        currentIndex: 0,
         onTap: (index) {
-          if (index == 1) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => MyBookingsScreen()),
-            );
-          } else if (index == 2) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const UserProfileMenuScreen()),
-            );
-          } else {
-            setState(() {
-              _currentBottomIndex = index;
+          if (index == 1) Navigator.push(context, MaterialPageRoute(builder: (_) => const MyBookingsScreen()));
+          if (index == 2) {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const UserProfileMenuScreen())).then((_) {
+              if (mounted) _loadCity();
             });
           }
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.confirmation_number), label: 'Ticket'),
+          BottomNavigationBarItem(icon: Icon(Icons.confirmation_number), label: 'Tickets'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
     );
   }
 
-  Widget _buildDistanceCard(String distance, String subtitle, IconData icon, Color iconColor) {
+  Widget _header() {
+    final filterCount = _filter.activeCount;
     return Container(
-      width: 180,
-      margin: const EdgeInsets.only(right: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300, width: 1),
-      ),
-      child: Row(
+      color: AppColors.navy,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            icon,
-            size: 24,
-            color: iconColor,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  distance,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF001F3F),
+          InkWell(
+            onTap: _pickCity,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.location_on, color: AppColors.green, size: 20),
+                  const SizedBox(width: 6),
+                  Text(
+                    _activeCity.isEmpty ? 'All cities' : _activeCity,
+                    style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
                   ),
-                ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+                  const Icon(Icons.arrow_drop_down, color: Colors.white),
+                ],
+              ),
             ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: 'Search events, venues, cities',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchController.text.isEmpty
+                        ? null
+                        : IconButton(icon: const Icon(Icons.clear), onPressed: () => setState(_searchController.clear)),
+                    filled: true,
+                    fillColor: Colors.white,
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Badge(
+                isLabelVisible: filterCount > 0,
+                label: Text('$filterCount'),
+                child: IconButton.filled(
+                  tooltip: 'Filters',
+                  style: IconButton.styleFrom(backgroundColor: Colors.white, foregroundColor: AppColors.navy),
+                  onPressed: _loadingEvents ? null : _openFilters,
+                  icon: const Icon(Icons.tune),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _bannerController.dispose();
-    _categoryController.dispose();
-    _adsController.dispose();
-    _scrollController.dispose();
-    super.dispose();
+  Widget _sectionTitle(String title, {VoidCallback? onViewAll}) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 22, 8, 10),
+        child: Row(
+          children: [
+            Expanded(child: Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
+            if (onViewAll != null) TextButton(onPressed: onViewAll, child: const Text('View all')),
+          ],
+        ),
+      );
+
+  /// Search or filters are active: one list of matching events.
+  List<Widget> _resultSections(List<EventModel> shown) {
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                _loadingEvents ? 'Searching…' : '${shown.length} ${shown.length == 1 ? 'event' : 'events'} found',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+            TextButton(onPressed: _clearFilters, child: const Text('Clear')),
+          ],
+        ),
+      ),
+      if (_filter.dates != null)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: InputChip(
+              avatar: const Icon(Icons.date_range, size: 18),
+              label: Text(_filter.dates!.label),
+              onDeleted: () => setState(() => _filter = _filter.copyWith(clearDates: true)),
+            ),
+          ),
+        ),
+      if (_loadingEvents)
+        const Padding(padding: EdgeInsets.all(40), child: LoadingView())
+      else if (_eventsError != null)
+        ErrorView(message: _eventsError!, onRetry: _loadEvents)
+      else if (shown.isEmpty)
+        EmptyView(
+          icon: Icons.search_off,
+          title: 'No events match',
+          subtitle: _activeCity.isEmpty ? 'Try a different search or fewer filters.' : 'Only events in $_activeCity are shown. Try "All cities".',
+        )
+      else
+        for (final event in shown)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: EventCard(event: event, imageHeight: 170, onTap: () => _openEvent(event)),
+          ),
+    ];
   }
+
+  List<Widget> _browseSections(List<EventModel> shown, DateTime now) {
+    final presets = datePresets(now);
+    return [
+      if (_banners.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 16), child: PromoCarousel(items: _banners)),
+
+      // Quick access: each chip opens something that exists.
+      SizedBox(
+        height: 56,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(16, 14, 8, 2),
+          children: [
+            _quickChip(Icons.people_alt_outlined, 'Artists', () {
+              final ctx = _artistsKey.currentContext;
+              if (ctx != null) Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400), curve: Curves.easeInOut);
+            }),
+            _quickChip(Icons.event_outlined, 'All events',
+                () => Navigator.push(context, MaterialPageRoute(builder: (_) => CategoryEventsScreen(preloaded: _events)))),
+            _quickChip(Icons.camera_alt_outlined, 'Photographers',
+                () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HireProfessionalsScreen(type: 'photographer')))),
+            _quickChip(Icons.videocam_outlined, 'Videographers',
+                () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HireProfessionalsScreen(type: 'videographer')))),
+          ],
+        ),
+      ),
+
+      _sectionTitle('When'),
+      SizedBox(
+        height: 30 + MediaQuery.textScalerOf(context).scale(36),
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          children: [
+            for (final preset in presets)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _dateCard(preset.title, preset.range.label, () => setState(() => _filter = _filter.copyWith(dates: preset.range))),
+              ),
+            _dateCard('Pick dates', 'Choose a range', () async {
+              final picked = await showDateRangePicker(
+                context: context,
+                firstDate: DateTime(now.year, now.month, now.day),
+                lastDate: DateTime(now.year + 2, now.month, now.day),
+              );
+              if (picked != null && mounted) setState(() => _filter = _filter.copyWith(dates: DayRange(picked.start, picked.end)));
+            }),
+          ],
+        ),
+      ),
+
+      if (_categories.isNotEmpty) ...[
+        _sectionTitle('Categories'),
+        SizedBox(
+          height: 84 + MediaQuery.textScalerOf(context).scale(36),
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _categories.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (_, i) => _categoryCard(_categories[i]),
+          ),
+        ),
+      ],
+
+      _sectionTitle(
+        _activeCity.isEmpty ? 'Upcoming events' : 'Upcoming in $_activeCity',
+        onViewAll: shown.length > 1
+            ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => CategoryEventsScreen(preloaded: shown)))
+            : null,
+      ),
+      if (_loadingEvents)
+        const SizedBox(height: 160, child: LoadingView())
+      else if (_eventsError != null)
+        ErrorView(message: _eventsError!, onRetry: _loadEvents, compact: true)
+      else if (shown.isEmpty)
+        EmptyView(
+          compact: true,
+          icon: Icons.event_busy,
+          title: _activeCity.isEmpty ? 'No upcoming events yet' : 'No upcoming events in $_activeCity',
+          subtitle: _activeCity.isEmpty ? 'New events will appear here.' : null,
+          action: _activeCity.isEmpty
+              ? null
+              : OutlinedButton(
+                  onPressed: () async {
+                    await Session.setShowAllCities(true);
+                    if (mounted) setState(() => _allCities = true);
+                  },
+                  child: const Text('Show all cities'),
+                ),
+        )
+      else ...[
+        // The soonest event gets the large card.
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: EventCard(event: shown.first, imageHeight: 190, onTap: () => _openEvent(shown.first)),
+        ),
+        if (shown.length > 1)
+          SizedBox(
+            // Room for the picture plus four lines of text at the user's text size.
+            height: 176 + MediaQuery.textScalerOf(context).scale(110),
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              itemCount: shown.length - 1 > 10 ? 10 : shown.length - 1,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (_, i) => EventCard(event: shown[i + 1], width: 230, imageHeight: 120, onTap: () => _openEvent(shown[i + 1])),
+            ),
+          ),
+      ],
+
+      if (_ads.isNotEmpty) ...[
+        _sectionTitle('Sponsored'),
+        PromoCarousel(items: _ads, height: 150, showSponsor: true),
+      ],
+
+      KeyedSubtree(key: _artistsKey, child: _sectionTitle('Artists')),
+      if (_loadingArtists)
+        const SizedBox(height: 120, child: LoadingView())
+      else if (_artistsError != null)
+        ErrorView(message: _artistsError!, onRetry: _loadArtists, compact: true)
+      else if (_artists.isEmpty)
+        const EmptyView(compact: true, icon: Icons.people_outline, title: 'No artists to show yet')
+      else
+        SizedBox(
+          height: 170 + MediaQuery.textScalerOf(context).scale(40),
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _artists.length > _homeArtistLimit ? _homeArtistLimit : _artists.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (_, i) => _artistCard(_artists[i]),
+          ),
+        ),
+
+      _sectionTitle('Hire for your own event'),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            Expanded(child: _hireCard(Icons.camera_alt_outlined, 'Photographers', 'photographer')),
+            const SizedBox(width: 12),
+            Expanded(child: _hireCard(Icons.videocam_outlined, 'Videographers', 'videographer')),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  Widget _quickChip(IconData icon, String label, VoidCallback onTap) => Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: ActionChip(
+          avatar: Icon(icon, size: 18, color: AppColors.navy),
+          label: Text(label),
+          backgroundColor: Colors.white,
+          onPressed: onTap,
+        ),
+      );
+
+  Widget _dateCard(String title, String subtitle, VoidCallback onTap) => Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 110),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Widget _categoryCard(Map<String, dynamic> category) {
+    final name = (category['name'] ?? '').toString().trim();
+    final subs = <String>[
+      if (category['subCategories'] is List)
+        for (final sub in category['subCategories'] as List)
+          if (sub is Map && sub['name'] is String) sub['name'] as String else if (sub is String) sub,
+    ];
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => CategoryEventsScreen(categoryName: name, subcategories: subs, preloaded: _eventsError == null && !_loadingEvents ? _events : null)),
+      ),
+      child: SizedBox(
+        width: 92,
+        child: Column(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: AppImage(category['image'] is String ? category['image'] as String : null, width: 84, height: 72, placeholderIcon: Icons.category_outlined),
+            ),
+            const SizedBox(height: 6),
+            Text(name, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _artistCard(Map<String, dynamic> artist) {
+    final id = (artist['_id'] ?? '').toString();
+    final following = _following[id];
+    final busy = _togglingFollow.contains(id);
+    final genre = artist['genre'] is String ? (artist['genre'] as String).trim() : '';
+    return SizedBox(
+      width: 140,
+      child: Card(
+        margin: EdgeInsets.zero,
+        color: Colors.white,
+        surfaceTintColor: Colors.white,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _openArtist(artist),
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              children: [
+                AppAvatar(artist['profileImage'] is String ? artist['profileImage'] as String : null, radius: 34),
+                const SizedBox(height: 8),
+                Text((artist['name'] ?? 'Artist').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(genre, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                const Spacer(),
+                SizedBox(
+                  width: double.infinity,
+                  height: 34,
+                  child: following == true
+                      ? OutlinedButton(
+                          onPressed: busy ? null : () => _toggleFollow(artist),
+                          style: OutlinedButton.styleFrom(padding: EdgeInsets.zero),
+                          child: const Text('Following'),
+                        )
+                      : ElevatedButton(
+                          onPressed: following == null || busy ? null : () => _toggleFollow(artist),
+                          style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy, foregroundColor: Colors.white, padding: EdgeInsets.zero),
+                          child: const Text('Follow'),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _hireCard(IconData icon, String label, String type) => Card(
+        margin: EdgeInsets.zero,
+        color: Colors.white,
+        surfaceTintColor: Colors.white,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => HireProfessionalsScreen(type: type))),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            child: Column(
+              children: [
+                Icon(icon, color: AppColors.navy, size: 30),
+                const SizedBox(height: 6),
+                Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ),
+      );
 }

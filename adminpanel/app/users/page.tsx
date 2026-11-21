@@ -1,251 +1,252 @@
 'use client'
-import { useState, useEffect } from 'react'
-import Sidebar from '../../components/Sidebar'
-import { Search, Filter, UserCheck, UserX, Eye, Users, Shield, Clock, Bell, ChevronDown, LogOut, User, Settings as SettingsIcon, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { Download, Search } from 'lucide-react'
+import AdminShell, { useCan } from '@/components/AdminShell'
+import { Card, EmptyState, NoticeBar, Spinner, api, formatDate, inputClass, type Notice } from '@/components/ui'
+import {
+  CountTabs,
+  Pager,
+  SignupBadge,
+  UserActionDialog,
+  UserStatusBadge,
+  type PendingAction,
+  type UserRow,
+} from '@/components/users/shared'
 
-interface UserType {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  city?: string;
-  genres?: string[];
-  isActive: boolean;
-  createdAt: string;
+const VIEWS = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+  { value: 'suspended', label: 'Suspended' },
+  { value: 'blocked', label: 'Blocked' },
+]
+
+const EMPTY_HINTS: Record<string, string> = {
+  all: 'Users appear here when they sign up in the Mookalaa app or website.',
+  active: 'Users who completed their profile and are not restricted appear here.',
+  inactive: 'Users who signed up but have not completed their profile appear here.',
+  suspended: 'No account is suspended. Suspend an account from its row or its detail page.',
+  blocked: 'No account is blocked. Block an account from its row or its detail page.',
 }
 
-export default function UserManagement() {
-  const [isProfileOpen, setIsProfileOpen] = useState(false)
-  const [users, setUsers] = useState<UserType[]>([])
-  const [loading, setLoading] = useState(true)
-  
-  useEffect(() => {
-    fetchUsers()
-  }, [])
-  
-  const fetchUsers = async () => {
-    try {
-      const response = await fetch('/api/users')
-      const data = await response.json()
-      if (data.success) {
-        setUsers(data.users)
-      }
-    } catch (error) {
-      console.error('Error fetching users:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-  
-  const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
-    try {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'toggle' })
-      })
-      
-      if (response.ok) {
-        setUsers(users.map(user => 
-          user.id === userId ? { ...user, isActive: !currentStatus } : user
-        ))
-      }
-    } catch (error) {
-      console.error('Error toggling user status:', error)
-    }
-  }
-  
-  const deleteUser = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this user?')) return
-    
-    try {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: 'DELETE'
-      })
-      
-      if (response.ok) {
-        setUsers(users.filter(user => user.id !== userId))
-      }
-    } catch (error) {
-      console.error('Error deleting user:', error)
-    }
-  }
-  
-  const formatDate = (dateString: string) => {
-    if (!dateString) return 'N/A'
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short', 
-      day: 'numeric'
-    })
-  }
-  
-  return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
-      
-      <div className="flex-1 ml-64 transition-all duration-300 min-h-screen">
-        <header className="bg-white/95 backdrop-blur-md shadow-xl border-b border-gray-100 px-8 py-6 fixed top-0 right-0 left-64 z-40">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-deep-blue to-indigo bg-clip-text text-transparent">User Management</h1>
-              <p className="text-slate-gray text-base mt-1">Manage user accounts, KYC approvals, and user activities</p>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-gray w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search users..."
-                  className="pl-10 pr-4 py-3 w-80 border border-gray-200 rounded-xl bg-gray-50/50 focus:ring-2 focus:ring-teal/20 focus:border-teal focus:bg-white outline-none transition-all duration-200"
-                />
-              </div>
-              
-              {/* Notifications */}
-              <button className="relative p-3 text-slate-gray hover:text-deep-blue hover:bg-teal/10 rounded-xl transition-all duration-200">
-                <Bell size={20} />
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald text-white text-xs rounded-full flex items-center justify-center animate-pulse">
-                  3
-                </span>
-              </button>
-              
-              {/* Profile Dropdown */}
-              <div className="relative">
-                <button
-                  onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className="flex items-center space-x-3 bg-gray-50/80 rounded-xl px-4 py-3 hover:bg-teal/10 hover:shadow-md transition-all duration-200 cursor-pointer border border-gray-100"
-                >
-                  <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-md">
-                    <span className="text-white text-sm font-bold">A</span>
-                  </div>
-                  <div className="hidden md:block text-left">
-                    <p className="text-sm font-medium text-deep-blue">Admin User</p>
-                    <p className="text-xs text-slate-gray">Super Admin</p>
-                  </div>
-                  <ChevronDown size={16} className={`text-slate-gray transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
-                </button>
-                
-                {/* Dropdown Menu */}
-                {isProfileOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <User size={16} className="mr-3 text-slate-gray" />
-                      Profile Settings
-                    </button>
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <SettingsIcon size={16} className="mr-3 text-slate-gray" />
-                      Account Settings
-                    </button>
-                    <hr className="my-2 border-gray-200" />
-                    <button 
-                      onClick={() => window.location.href = '/login'}
-                      className="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      <LogOut size={16} className="mr-3" />
-                      Logout
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </header>
+const PAGE_SIZE = 25
 
-        <main className="p-10 mt-24">
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-gray-100 mb-8">
-            <div className="p-8 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900">All Users</h2>
-                <div className="flex space-x-2">
-                  <span className="px-3 py-1 bg-emerald/10 text-emerald rounded-full text-sm">
-                    {users.filter(u => u.isActive).length} Active
-                  </span>
-                  <span className="px-3 py-1 bg-red-100 text-red-600 rounded-full text-sm">
-                    {users.filter(u => !u.isActive).length} Inactive
-                  </span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="overflow-x-auto p-4">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location & Activity</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Joined</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                        Loading users...
-                      </td>
-                    </tr>
-                  ) : users.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                        No users found
-                      </td>
-                    </tr>
-                  ) : (
-                    users.map((user) => (
-                      <tr key={user.id} className="hover:bg-teal/5 h-20 transition-all duration-200">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center">
-                            <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center">
-                              <Users className="text-white w-5 h-5" />
-                            </div>
-                            <div className="ml-4">
-                              <button 
-                                onClick={() => window.location.href = `/users/${user.id}`}
-                                className="text-sm font-medium text-gray-900 hover:text-teal cursor-pointer"
-                              >
-                                {user.name}
-                              </button>
-                              <div className="text-sm text-gray-500">Phone: {user.phone}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900">{user.email}</div>
-                          <div className="text-sm text-gray-500">{user.phone}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900">{user.city || 'N/A'}</div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500">{formatDate(user.createdAt)}</td>
-                        <td className="px-6 py-4">
-                          <div className="flex space-x-2">
-                            <button 
-                              onClick={() => toggleUserStatus(user.id, user.isActive)}
-                              className={`p-1 rounded ${user.isActive ? 'text-emerald hover:bg-emerald/10' : 'text-gray-400 hover:bg-gray-100'}`} 
-                              title={user.isActive ? 'Deactivate User' : 'Activate User'}
-                            >
-                              {user.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                            </button>
-                            <button 
-                              onClick={() => deleteUser(user.id)}
-                              className="p-1 text-red-600 hover:bg-red-50 rounded" 
-                              title="Delete User"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </main>
+interface ListResponse {
+  users: UserRow[]
+  total: number
+  page: number
+  pages: number
+  counts: Record<string, number>
+}
+
+function UsersList() {
+  const canManage = useCan('users:manage')
+  const [view, setView] = useState('all')
+  const [searchText, setSearchText] = useState('')
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [data, setData] = useState<ListResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [notice, setNotice] = useState<Notice>(null)
+  const [pending, setPending] = useState<PendingAction | null>(null)
+  const requestId = useRef(0)
+
+  // Search as the admin types, after a short pause.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQuery(searchText.trim())
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchText])
+
+  const queryString = useCallback(
+    (extra: Record<string, string> = {}) => {
+      const params = new URLSearchParams({ view, ...extra })
+      if (query) params.set('q', query)
+      return params.toString()
+    },
+    [view, query]
+  )
+
+  const load = useCallback(async () => {
+    const id = ++requestId.current
+    setLoading(true)
+    try {
+      const result = await api<ListResponse>(
+        '/api/users?' + queryString({ page: String(page), limit: String(PAGE_SIZE) })
+      )
+      if (id !== requestId.current) return
+      // An action can empty the last page: step back instead of showing nothing.
+      if (result.users.length === 0 && result.total > 0 && page > result.pages) {
+        setPage(result.pages)
+        return
+      }
+      setData(result)
+    } catch (e: any) {
+      if (id !== requestId.current) return
+      setNotice({ type: 'error', text: e?.message || 'Could not load users.' })
+    } finally {
+      if (id === requestId.current) setLoading(false)
+    }
+  }, [queryString, page])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const users = data?.users || []
+
+  return (
+    <>
+      <div className="flex flex-wrap justify-end gap-3 mb-4">
+        <a
+          href={'/api/users?' + queryString({ format: 'csv' })}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+        >
+          <Download size={16} />
+          Export CSV
+        </a>
       </div>
-    </div>
+
+      <NoticeBar notice={notice} onClose={() => setNotice(null)} />
+
+      <Card>
+        <CountTabs
+          label="User views"
+          tabs={VIEWS}
+          active={view}
+          counts={data?.counts || null}
+          onChange={(value) => {
+            setView(value)
+            setPage(1)
+          }}
+        />
+
+        <div className="p-4 border-b border-gray-200">
+          <label htmlFor="user-search" className="sr-only">
+            Search users by name, phone or email
+          </label>
+          <div className="relative max-w-md">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              id="user-search"
+              type="search"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Search by name, phone or email"
+              className={inputClass + ' pl-9'}
+            />
+          </div>
+        </div>
+
+        {loading && !data ? (
+          <Spinner label="Loading users..." />
+        ) : users.length === 0 ? (
+          <EmptyState
+            title={query ? `No users match "${query}" in this view` : 'No users in this view'}
+            hint={query ? 'Try a different name, phone number or email, or switch to the All tab.' : EMPTY_HINTS[view]}
+          />
+        ) : (
+          <div className={`overflow-x-auto ${loading ? 'opacity-60' : ''}`}>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th scope="col" className="px-4 py-3">User</th>
+                  <th scope="col" className="px-4 py-3">Contact</th>
+                  <th scope="col" className="px-4 py-3">City</th>
+                  <th scope="col" className="px-4 py-3">Status</th>
+                  <th scope="col" className="px-4 py-3">Signup</th>
+                  <th scope="col" className="px-4 py-3">Joined</th>
+                  <th scope="col" className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {users.map((user) => (
+                  <tr key={user.id} className="hover:bg-gray-50 align-top">
+                    <td className="px-4 py-3">
+                      <Link href={`/users/${user.id}`} className="font-medium text-deep-blue hover:underline">
+                        {user.name || 'Name not provided'}
+                      </Link>
+                      {user.verifiedByAdmin && <div className="text-xs text-green-700 mt-0.5">Verified by admin</div>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      <div>{user.phone || '—'}</div>
+                      <div className="text-xs text-gray-500">{user.email || 'No email'}</div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{user.city || '—'}</td>
+                    <td className="px-4 py-3">
+                      <UserStatusBadge user={user} />
+                      {user.accountStatus !== 'active' && user.accountStatusReason && (
+                        <div className="text-xs text-gray-500 mt-1 max-w-[16rem] truncate" title={user.accountStatusReason}>
+                          {user.accountStatusReason}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <SignupBadge status={user.status} />
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(user.createdAt)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap justify-end gap-x-3 gap-y-1 text-sm font-medium">
+                        <Link href={`/users/${user.id}`} className="text-deep-blue hover:underline">
+                          View
+                        </Link>
+                        {canManage && user.accountStatus === 'active' && (
+                          <>
+                            <button type="button" className="text-amber-700 hover:underline" onClick={() => setPending({ action: 'suspend', user })}>
+                              Suspend
+                            </button>
+                            <button type="button" className="text-red-700 hover:underline" onClick={() => setPending({ action: 'block', user })}>
+                              Block
+                            </button>
+                          </>
+                        )}
+                        {canManage && user.accountStatus === 'suspended' && (
+                          <button type="button" className="text-red-700 hover:underline" onClick={() => setPending({ action: 'block', user })}>
+                            Block
+                          </button>
+                        )}
+                        {canManage && user.accountStatus !== 'active' && (
+                          <button type="button" className="text-green-700 hover:underline" onClick={() => setPending({ action: 'reactivate', user })}>
+                            Reactivate
+                          </button>
+                        )}
+                        {canManage && (
+                          <button type="button" className="text-red-700 hover:underline" onClick={() => setPending({ action: 'delete', user })}>
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {data && <Pager page={data.page} pages={data.pages} total={data.total} onPage={setPage} />}
+      </Card>
+
+      <UserActionDialog
+        pending={pending}
+        onClose={() => setPending(null)}
+        onDone={(message) => {
+          setPending(null)
+          setNotice({ type: 'success', text: message })
+          load()
+        }}
+      />
+    </>
+  )
+}
+
+export default function UsersPage() {
+  return (
+    <AdminShell title="Users" subtitle="Customer accounts, their status and account restrictions">
+      <UsersList />
+    </AdminShell>
   )
 }

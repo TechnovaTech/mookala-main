@@ -1,579 +1,425 @@
-import 'package:flutter/material.dart';
-import 'edit_user_profile_screen.dart';
-import '../services/auth_service.dart';
 import 'dart:convert';
-import 'dart:typed_data';
-import 'package:image_picker/image_picker.dart';
 
+import 'package:flutter/material.dart';
+
+import '../app_flow.dart';
+import '../services/api.dart';
+import '../services/api_client.dart';
+import '../services/session.dart';
+import '../utils/image_utils.dart';
+import '../widgets/common.dart';
+import 'artist_fill_profile_screen.dart';
+import 'kyc_verification_screen.dart';
+import 'support_screen.dart';
+
+/// The artist's own profile: details, photos, gallery and account actions.
 class ArtistProfileScreen extends StatefulWidget {
-  const ArtistProfileScreen({super.key});
+  const ArtistProfileScreen({super.key, this.embedded = false});
+
+  /// Shown as a tab of the dashboard (no back arrow).
+  final bool embedded;
 
   @override
   State<ArtistProfileScreen> createState() => _ArtistProfileScreenState();
 }
 
 class _ArtistProfileScreenState extends State<ArtistProfileScreen> {
-  Map<String, dynamic> _userProfile = {};
-  bool _isLoading = true;
-  List<Map<String, dynamic>> _mediaList = [];
+  /// Artist media is stored inside the artist record: 3 MB per photo.
+  static const int _maxGalleryChars = 4000000;
+
+  Map<String, dynamic>? _profile;
+  String? _error;
+  String? _busy; // 'profile' | 'cover' | 'gallery' | 'switch'
 
   @override
   void initState() {
     super.initState();
-    _loadUserProfile();
+    _load();
   }
 
-  Future<void> _loadUserProfile() async {
-    final userData = await AuthService.getUserData();
-    final phone = userData['phone'];
-    final role = userData['role'];
-    
-    if (phone != null && role != null) {
-      final result = await AuthService.getUserProfile(phone, role);
-      
-      if (result['success'] == true) {
-        setState(() {
-          _userProfile = result['user'] ?? {};
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    } else {
+  Future<void> _load() async {
+    try {
+      final user = await Api.profile('artist');
+      if (!mounted) return;
       setState(() {
-        _isLoading = false;
+        _profile = user;
+        _error = null;
       });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (_profile == null) {
+        setState(() => _error = e.message);
+      } else {
+        showMessage(context, e.message, error: true);
+      }
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+  /// Picks a resized photo and uploads it. [kind] is 'profile', 'cover' or 'gallery'.
+  Future<void> _uploadPhoto(String kind) async {
+    if (_busy != null) return;
+    final bytes = await () async {
+      try {
+        return await ImageUtils.pick();
+      } catch (_) {
+        if (mounted) {
+          showMessage(context, 'Could not open the photo. Check the photo permission and try again.', error: true);
+        }
+        return null;
+      }
+    }();
+    if (bytes == null || !mounted) return;
+    final problem = kind == 'gallery'
+        ? ImageUtils.sizeProblem(bytes, maxChars: _maxGalleryChars)
+        : ImageUtils.sizeProblem(bytes);
+    if (problem != null) {
+      showMessage(context, problem, error: true);
+      return;
     }
+    setState(() => _busy = kind);
+    try {
+      final encoded = base64Encode(bytes);
+      if (kind == 'gallery') {
+        await Api.uploadArtistImage(encoded);
+      } else {
+        await Api.saveArtistProfile({kind == 'profile' ? 'profileImage' : 'bannerImage': encoded});
+      }
+      if (!mounted) return;
+      showMessage(
+        context,
+        kind == 'gallery'
+            ? 'Photo uploaded. It is waiting for review by the Mookalaa team.'
+            : kind == 'profile'
+                ? 'Profile photo updated'
+                : 'Cover photo updated',
+      );
+      await _load();
+    } on ApiException catch (e) {
+      // Includes the server's 413 "too large" message.
+      if (mounted) showMessage(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+  }
 
-    return Scaffold(
-      body: SingleChildScrollView(
-      child: Column(
+  void _explainVideo() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Video upload is not available yet'),
+        content: const Text(
+          'Videos cannot be uploaded from the app. The platform has no file store for videos yet, '
+          'and they are too large to save any other way. You can add photos to your gallery.',
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('OK'))],
+      ),
+    );
+  }
+
+  Future<void> _edit() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const ArtistFillProfileScreen(editing: true)));
+    if (mounted) _load();
+  }
+
+  Future<void> _switchRole() async {
+    if (_busy != null) return;
+    setState(() => _busy = 'switch');
+    try {
+      await AppFlow.openRoleSwitcher(context);
+    } on ApiException catch (e) {
+      if (mounted) showMessage(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+  }
+
+  Future<void> _signOut() async {
+    final sure = await confirm(context, title: 'Sign out', message: 'Sign out of this device?', yes: 'Sign out', danger: true);
+    if (sure) await AppFlow.signOut();
+  }
+
+  static String _text(dynamic v) => (v ?? '').toString().trim();
+
+  Widget _detail(IconData icon, String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 18, color: AppColors.navy),
+            const SizedBox(width: 10),
+            SizedBox(width: 70, child: Text(label, style: const TextStyle(color: Colors.black54))),
+            Expanded(child: Text(value.isEmpty ? 'Not set' : value, style: const TextStyle(height: 1.3))),
+          ],
+        ),
+      );
+
+  Widget _header(Map<String, dynamic> user) {
+    return SizedBox(
+      height: 210,
+      child: Stack(
         children: [
-          // Cover Image & Profile Picture
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              GestureDetector(
-                onTap: () => _showImageSourceDialog(context, 'banner'),
-                child: Container(
-                  height: 200,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: _userProfile['bannerImage'] == null
-                        ? LinearGradient(
-                            colors: [Color(0xFF001F3F), Color(0xFF003366)],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          )
-                        : null,
-                    image: _userProfile['bannerImage'] != null
-                        ? DecorationImage(
-                            image: MemoryImage(base64Decode(_userProfile['bannerImage'])),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                  ),
-                  child: Stack(
-                    children: [
-                      Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.camera_alt, color: Colors.white54, size: 40),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Tap to change cover',
-                              style: TextStyle(color: Colors.white70, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Positioned(
-                        top: 16,
-                        right: 16,
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.black26,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Icon(Icons.edit, color: Colors.white, size: 16),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: -50,
-                left: 20,
-                child: GestureDetector(
-                  onTap: () => _showImageSourceDialog(context, 'profile'),
-                  child: Stack(
-                    children: [
-                      Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 4),
-                          color: Colors.white,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black26,
-                              blurRadius: 8,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: ClipOval(
-                          child: _userProfile['profileImage'] != null
-                              ? Image.memory(
-                                  base64Decode(_userProfile['profileImage']),
-                                  width: 100,
-                                  height: 100,
-                                  fit: BoxFit.cover,
-                                )
-                              : Container(
-                                  width: 100,
-                                  height: 100,
-                                  color: Colors.grey.shade300,
-                                  child: Icon(Icons.person, size: 50, color: Colors.grey.shade600),
-                                ),
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF001F3F),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          child: const Icon(Icons.camera_alt, color: Colors.white, size: 14),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          Positioned.fill(
+            bottom: 50,
+            child: StoredImage(user['bannerImage'], placeholderIcon: Icons.panorama_outlined),
           ),
-          const SizedBox(height: 60),
-          
-          Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Name & Edit Button
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _userProfile['name'] ?? 'Artist Name',
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            _userProfile['genre'] ?? 'Artist',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
+          Positioned(
+            right: 10,
+            top: 10,
+            child: _busy == 'cover'
+                ? const CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.black54,
+                    child: SizedBox(
+                        width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                  )
+                : Material(
+                    color: Colors.black54,
+                    shape: const StadiumBorder(),
+                    child: InkWell(
+                      customBorder: const StadiumBorder(),
+                      onTap: () => _uploadPhoto('cover'),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.camera_alt, size: 15, color: Colors.white),
+                            SizedBox(width: 6),
+                            Text('Cover photo', style: TextStyle(color: Colors.white, fontSize: 12)),
+                          ],
+                        ),
                       ),
                     ),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const EditUserProfileScreen(),
-                          ),
-                        ).then((_) => _loadUserProfile());
-                      },
-                      icon: Icon(Icons.edit, size: 16),
-                      label: Text('Edit'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xFF001F3F),
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                
-                // Bio Section
-                if (_userProfile['bio'] != null && _userProfile['bio'].toString().isNotEmpty)
-                  _buildSection(
-                    'Bio',
-                    _userProfile['bio'],
                   ),
-                
-                // Genres/Skills
-                if (_userProfile['genre'] != null && _userProfile['genre'].toString().isNotEmpty)
-                  _buildSection(
-                    'Genres & Skills',
-                    null,
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [_userProfile['genre']]
-                          .map((skill) => Chip(
-                                label: Text(skill),
-                                backgroundColor: const Color(0xFF001F3F).withOpacity(0.1),
-                                labelStyle: const TextStyle(color: Color(0xFF001F3F)),
-                              ))
-                          .toList(),
+          ),
+          Positioned(
+            left: 16,
+            bottom: 0,
+            child: GestureDetector(
+              onTap: () => _uploadPhoto('profile'),
+              child: Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                    ),
+                    child: ClipOval(
+                      child: StoredImage(user['profileImage'], width: 96, height: 96, placeholderIcon: Icons.person),
                     ),
                   ),
-                
-                
-                // Gallery Section
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Gallery',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => _showMediaSourceDialog(context),
-                          child: Icon(
-                            Icons.add,
-                            color: Color(0xFF001F3F),
-                            size: 24,
-                          ),
-                        ),
-                      ],
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: CircleAvatar(
+                      radius: 15,
+                      backgroundColor: AppColors.navy,
+                      child: _busy == 'profile'
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.camera_alt, size: 15, color: Colors.white),
                     ),
-                    const SizedBox(height: 8),
-                    _userProfile['media'] != null && _userProfile['media'].isNotEmpty
-                        ? GridView.builder(
-                            shrinkWrap: true,
-                            physics: NeverScrollableScrollPhysics(),
-                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3,
-                              crossAxisSpacing: 8,
-                              mainAxisSpacing: 8,
-                              childAspectRatio: 1,
-                            ),
-                            itemCount: _userProfile['media'].length,
-                            itemBuilder: (context, index) {
-                              final media = _userProfile['media'][index];
-                              return Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: media['type'] == 'image'
-                                    ? ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.memory(
-                                          base64Decode(media['data']),
-                                          fit: BoxFit.cover,
-                                        ),
-                                      )
-                                    : Container(
-                                        decoration: BoxDecoration(
-                                          color: Colors.black87,
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Icon(
-                                          Icons.play_circle_fill,
-                                          color: Colors.white,
-                                          size: 30,
-                                        ),
-                                      ),
-                              );
-                            },
-                          )
-                        : Container(
-                            height: 120,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.grey.shade300),
-                            ),
-                            child: const Center(
-                              child: Text(
-                                'No media uploaded yet',
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            ),
-                          ),
-                    const SizedBox(height: 24),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
       ),
-      ),
     );
   }
 
-  Widget _buildSection(String title, String? content, {Widget? child}) {
+  Widget _gallery(Map<String, dynamic> user) {
+    final media = user['media'] is List
+        ? (user['media'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList()
+        : <Map<String, dynamic>>[];
+    final images = media.where((m) => m['type'] == 'image').toList();
+    final videos = media.where((m) => m['type'] == 'video').length;
+    const reviewLabels = {'pending': 'Waiting for review', 'approved': 'Approved', 'rejected': 'Rejected'};
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
-          ),
+        Row(
+          children: [
+            const Expanded(child: SectionTitle('Gallery')),
+            TextButton.icon(
+              onPressed: _busy != null ? null : () => _uploadPhoto('gallery'),
+              icon: _busy == 'gallery'
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.add_photo_alternate_outlined, size: 18),
+              label: const Text('Add photo'),
+            ),
+            TextButton.icon(
+              onPressed: _explainVideo,
+              icon: const Icon(Icons.videocam_outlined, size: 18),
+              label: const Text('Add video'),
+              style: TextButton.styleFrom(foregroundColor: Colors.black54),
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
-        if (content != null)
-          Text(
-            content,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade700,
-              height: 1.5,
+        if (images.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('No photos yet. Photos are resized before upload and reviewed by the Mookalaa team.',
+                style: TextStyle(color: Colors.black54)),
+          )
+        else
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            itemCount: images.length,
+            itemBuilder: (context, index) {
+              final item = images[index];
+              final review = _text(item['reviewStatus']);
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    StoredImage(item['data']),
+                    if (review.isNotEmpty && review != 'approved')
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          width: double.infinity,
+                          color: review == 'rejected' ? Colors.red.withValues(alpha: 0.8) : Colors.black54,
+                          padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
+                          child: Text(reviewLabels[review] ?? review,
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontSize: 10)),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        if (videos > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              '$videos video${videos == 1 ? '' : 's'} uploaded earlier ${videos == 1 ? 'is' : 'are'} stored on your profile. Videos cannot be played or added in the app.',
+              style: const TextStyle(color: Colors.black54, fontSize: 12),
             ),
           ),
-        if (child != null) child,
-        const SizedBox(height: 24),
       ],
     );
   }
 
-  void _showImageSourceDialog(BuildContext context, String type) {
-    showModalBottomSheet(
-      context: context,
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Wrap(
+  Widget _action(IconData icon, String label, VoidCallback onTap, {Color? color, bool busy = false}) => ListTile(
+        leading: Icon(icon, color: color ?? AppColors.navy),
+        title: Text(label, style: TextStyle(color: color)),
+        trailing: busy
+            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.chevron_right),
+        onTap: onTap,
+      );
+
+  Widget _content(Map<String, dynamic> user) {
+    final name = _text(user['name']);
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        _header(user),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ListTile(
-                leading: Icon(Icons.photo_library),
-                title: Text('Gallery'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.gallery, type);
-                },
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(name.isEmpty ? 'Artist' : name,
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.navy)),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _edit,
+                    icon: const Icon(Icons.edit, size: 16),
+                    label: const Text('Edit details'),
+                    style: OutlinedButton.styleFrom(foregroundColor: AppColors.navy),
+                  ),
+                ],
               ),
-              ListTile(
-                leading: Icon(Icons.photo_camera),
-                title: Text('Camera'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.camera, type);
-                },
+              Text('+91 ${Session.phone ?? _text(user['phone'])}', style: const TextStyle(color: Colors.black54)),
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  child: Column(
+                    children: [
+                      _detail(Icons.music_note, 'Genre', _text(user['genre'])),
+                      _detail(Icons.location_city, 'City', _text(user['city'])),
+                      _detail(Icons.email_outlined, 'Email', _text(user['email'])),
+                      _detail(Icons.payments_outlined, 'Fee', _text(user['pricing'])),
+                      _detail(Icons.notes, 'About', _text(user['bio'])),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _gallery(user),
+              const SizedBox(height: 16),
+              Card(
+                child: Column(
+                  children: [
+                    _action(
+                      Icons.verified_user_outlined,
+                      'KYC status',
+                      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const KYCVerificationScreen())),
+                    ),
+                    const Divider(height: 1),
+                    _action(Icons.swap_horiz, 'Switch role', _switchRole, busy: _busy == 'switch'),
+                    const Divider(height: 1),
+                    _action(
+                      Icons.support_agent,
+                      'Help & Support',
+                      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportScreen())),
+                    ),
+                    const Divider(height: 1),
+                    _action(Icons.logout, 'Sign out', _signOut, color: Colors.red.shade700),
+                  ],
+                ),
               ),
             ],
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 
-  void _showMediaSourceDialog(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Wrap(
-            children: [
-              ListTile(
-                leading: Icon(Icons.photo_library),
-                title: Text('Photo Gallery'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.gallery, 'media');
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.photo_camera),
-                title: Text('Camera'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.camera, 'media');
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.videocam),
-                title: Text('Video'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickVideo();
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _pickImage(ImageSource source, String type) async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: source);
-    
-    if (pickedFile != null) {
-      final bytes = await pickedFile.readAsBytes();
-      final base64Image = base64Encode(bytes);
-      
-      if (type == 'profile') {
-        await _updateProfileImage(base64Image);
-      } else if (type == 'banner') {
-        await _updateBannerImage(base64Image);
-      } else if (type == 'media') {
-        await _uploadMedia(base64Image, 'image');
-      }
+  @override
+  Widget build(BuildContext context) {
+    final user = _profile;
+    Widget body;
+    if (user == null) {
+      body = _error != null
+          ? Column(
+              children: [
+                Expanded(child: StateView.error(_error!, onRetry: _load)),
+                TextButton(
+                  onPressed: _signOut,
+                  child: Text('Sign out', style: TextStyle(color: Colors.red.shade700)),
+                ),
+                const SizedBox(height: 12),
+              ],
+            )
+          : const LoadingView();
+    } else {
+      body = RefreshIndicator(onRefresh: _load, child: _content(user));
     }
-  }
-
-  Future<void> _pickVideo() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickVideo(source: ImageSource.gallery);
-    
-    if (pickedFile != null) {
-      final bytes = await pickedFile.readAsBytes();
-      final base64Video = base64Encode(bytes);
-      await _uploadMedia(base64Video, 'video');
-    }
-  }
-
-  Future<void> _uploadMedia(String base64Data, String type) async {
-    final userData = await AuthService.getUserData();
-    final phone = userData['phone'];
-    final role = userData['role'];
-    
-    if (phone != null && role != null) {
-      final result = await AuthService.uploadMedia({
-        'phone': phone,
-        'role': role,
-        'mediaData': base64Data,
-        'mediaType': type,
-      });
-      
-      if (result['success'] == true) {
-        _showSnackBar('${type == 'image' ? 'Photo' : 'Video'} uploaded successfully!');
-        _loadUserProfile();
-      } else {
-        _showSnackBar('Failed to upload ${type == 'image' ? 'photo' : 'video'}');
-      }
-    }
-  }
-
-  Future<void> _updateProfileImage(String base64Image) async {
-    final userData = await AuthService.getUserData();
-    final phone = userData['phone'];
-    
-    if (phone != null) {
-      final result = await AuthService.updateArtistProfile(
-        phone,
-        _userProfile['name'] ?? '',
-        _userProfile['email'] ?? '',
-        _userProfile['city'] ?? '',
-        _userProfile['bio'] ?? '',
-        _userProfile['genre'] ?? '',
-        _userProfile['pricing'],
-        base64Image,
-      );
-      
-      if (result['success'] == true) {
-        _showSnackBar('Profile image updated successfully!');
-        _loadUserProfile();
-      } else {
-        _showSnackBar('Failed to update profile image');
-      }
-    }
-  }
-
-  Future<void> _updateBannerImage(String base64Image) async {
-    final userData = await AuthService.getUserData();
-    final phone = userData['phone'];
-    
-    if (phone != null) {
-      final result = await AuthService.updateArtistProfile(
-        phone,
-        _userProfile['name'] ?? '',
-        _userProfile['email'] ?? '',
-        _userProfile['city'] ?? '',
-        _userProfile['bio'] ?? '',
-        _userProfile['genre'] ?? '',
-        _userProfile['pricing'],
-        null, // profileImage
-        base64Image, // bannerImage
-      );
-      
-      if (result['success'] == true) {
-        _showSnackBar('Cover image updated successfully!');
-        _loadUserProfile();
-      } else {
-        _showSnackBar('Failed to update cover image');
-      }
-    }
-  }
-
-  void _showSnackBar(String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
-    }
-  }
-
-  Widget _buildSourceOption(
-    BuildContext context,
-    String title,
-    IconData icon,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 32, color: Color(0xFF001F3F)),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return Scaffold(
+      appBar: appBar('My profile', showBack: !widget.embedded),
+      body: SafeArea(child: body),
     );
   }
 }

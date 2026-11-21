@@ -1,353 +1,322 @@
 'use client'
-import { useState, useEffect } from 'react'
-import Sidebar from '../../components/Sidebar'
-import { Tag, Plus, Edit2, Trash2, Bell, Search, ChevronDown, LogOut, User, Settings as SettingsIcon, X, Upload } from 'lucide-react'
-
-interface SubCategory {
-  name: string
-}
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Edit2, Plus, Trash2, X } from 'lucide-react'
+import AdminShell, { useCan } from '@/components/AdminShell'
+import ResourcePage from '@/components/ResourcePage'
+import { Badge, Button, Card, ConfirmDialog, EmptyState, Modal, NoticeBar, Spinner, api, inputClass, type Notice } from '@/components/ui'
+import { Field, MediaUpload, SearchInput, TabButtons, matches } from '@/components/catalogue/shared'
 
 interface Category {
-  _id?: string
+  _id: string
   name: string
   type: string
-  image?: string
-  subCategories: SubCategory[]
+  image?: string | null
+  subCategories?: { name: string }[]
 }
 
-export default function CategoryManager() {
-  const [categories, setCategories] = useState<Category[]>([])
-  const [isProfileOpen, setIsProfileOpen] = useState(false)
-  const [showModal, setShowModal] = useState(false)
-  const [categoryName, setCategoryName] = useState('')
-  const [categoryType, setCategoryType] = useState('')
-  const [categoryImage, setCategoryImage] = useState<string | null>(null)
-  const [subCategories, setSubCategories] = useState<SubCategory[]>([])
-  const [editingId, setEditingId] = useState<string | null>(null)
+type Tab = 'categories' | 'genres' | 'languages'
 
-  useEffect(() => {
-    fetchCategories()
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'categories', label: 'Event categories' },
+  { key: 'genres', label: 'Genres' },
+  { key: 'languages', label: 'Languages' },
+]
+
+const EMPTY = { name: '', type: '', image: '', subCategories: [] as string[] }
+
+function CategoryList() {
+  const canManage = useCan('categories:manage')
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading, setLoading] = useState(true)
+  const [notice, setNotice] = useState<Notice>(null)
+  const [search, setSearch] = useState('')
+
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState<Category | null>(null)
+  const [form, setForm] = useState(EMPTY)
+  const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const [pendingDelete, setPendingDelete] = useState<Category | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api<Category[]>('/api/categories')
+      setCategories(Array.isArray(data) ? data : [])
+    } catch (error: any) {
+      setNotice({ type: 'error', text: error.message || 'Could not load categories.' })
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  const fetchCategories = async () => {
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const visible = useMemo(
+    () => categories.filter((c) => matches(search, c.name, c.type, (c.subCategories || []).map((s) => s.name).join(' '))),
+    [categories, search]
+  )
+  const types = useMemo(() => Array.from(new Set(categories.map((c) => c.type).filter(Boolean))).sort(), [categories])
+
+  const openForm = (category: Category | null) => {
+    setEditing(category)
+    setForm(
+      category
+        ? {
+            name: category.name || '',
+            type: category.type || '',
+            image: category.image || '',
+            subCategories: (category.subCategories || []).map((s) => s.name),
+          }
+        : EMPTY
+    )
+    setFormError('')
+    setShowForm(true)
+  }
+
+  const save = async () => {
+    if (!form.name.trim()) return setFormError('Enter the category name.')
+    if (!form.type.trim()) return setFormError('Enter the category type.')
+
+    const body: Record<string, any> = {
+      name: form.name.trim(),
+      type: form.type.trim(),
+      subCategories: form.subCategories.map((name) => name.trim()).filter(Boolean).map((name) => ({ name })),
+    }
+    // An unchanged picture is not sent again.
+    if (!editing || form.image !== (editing.image || '')) body.image = form.image || null
+
+    setSaving(true)
+    setFormError('')
     try {
-      const res = await fetch('/api/categories')
-      const data = await res.json()
-      setCategories(Array.isArray(data) ? data : [])
-    } catch (error) {
-      console.error('Failed to fetch categories')
-      setCategories([])
+      await api(editing ? `/api/categories?id=${editing._id}` : '/api/categories', { method: editing ? 'PUT' : 'POST', body })
+      setNotice({ type: 'success', text: `"${body.name}" was ${editing ? 'updated' : 'added'}.` })
+      setShowForm(false)
+      await load()
+    } catch (error: any) {
+      setFormError(error.message || 'Could not save the category.')
+    } finally {
+      setSaving(false)
     }
   }
 
-  const handleAddSubCategory = () => {
-    setSubCategories([...subCategories, { name: '' }])
-  }
-
-  const handleSubCategoryChange = (index: number, value: string) => {
-    const updated = [...subCategories]
-    updated[index].name = value
-    setSubCategories(updated)
-  }
-
-  const handleDeleteSubCategory = (index: number) => {
-    setSubCategories(subCategories.filter((_, i) => i !== index))
-  }
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setCategoryImage(reader.result as string)
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  const handleSaveCategory = async () => {
-    if (!categoryName || !categoryType) {
-      alert('Please fill all required fields')
-      return
-    }
-
+  const remove = async (reason: string) => {
+    if (!pendingDelete) return
+    setBusy(true)
     try {
-      const url = editingId ? `/api/categories?id=${editingId}` : '/api/categories'
-      const method = editingId ? 'PUT' : 'POST'
-      
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: categoryName,
-          type: categoryType,
-          image: categoryImage,
-          subCategories: subCategories.filter(sc => sc.name.trim() !== '')
-        })
+      const data = await api<{ eventsUsingCategory?: number }>(`/api/categories?id=${pendingDelete._id}`, { method: 'DELETE', body: { reason } })
+      const used = data.eventsUsingCategory || 0
+      setNotice({
+        type: 'success',
+        text: `"${pendingDelete.name}" was deleted.${used ? ` ${used} existing event${used === 1 ? ' still carries' : 's still carry'} this category name.` : ''}`,
       })
-
-      if (res.ok) {
-        fetchCategories()
-        setShowModal(false)
-        setCategoryName('')
-        setCategoryType('')
-        setCategoryImage(null)
-        setSubCategories([])
-        setEditingId(null)
-      }
-    } catch (error) {
-      console.error('Failed to save category')
-    }
-  }
-
-  const handleEditCategory = (category: Category) => {
-    setEditingId(category._id!)
-    setCategoryName(category.name)
-    setCategoryType(category.type)
-    setCategoryImage(category.image || null)
-    setSubCategories(category.subCategories || [])
-    setShowModal(true)
-  }
-
-  const handleDeleteCategory = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this category?')) return
-
-    try {
-      await fetch(`/api/categories?id=${id}`, { method: 'DELETE' })
-      fetchCategories()
-    } catch (error) {
-      console.error('Failed to delete category')
+      setPendingDelete(null)
+      await load()
+    } catch (error: any) {
+      setNotice({ type: 'error', text: `"${pendingDelete.name}" was not deleted. ${error.message || ''}` })
+      setPendingDelete(null)
+    } finally {
+      setBusy(false)
     }
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
-      
-      <div className="flex-1 ml-64 transition-all duration-300 min-h-screen">
-        <header className="bg-white shadow-lg border-b border-gray-200 px-6 py-4 fixed top-0 right-0 left-64 z-40">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-deep-blue">Category Manager</h1>
-              <p className="text-slate-gray text-sm">Manage event categories and genres</p>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-gray w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search categories..."
-                  className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none transition-all"
-                />
-              </div>
-              
-              <button className="relative p-2 text-slate-gray hover:text-deep-blue hover:bg-teal/10 rounded-lg transition-all">
-                <Bell size={20} />
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald text-white text-xs rounded-full flex items-center justify-center animate-pulse">
-                  3
-                </span>
-              </button>
-              
-              <div className="relative">
-                <button
-                  onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className="flex items-center space-x-3 bg-gray-50 rounded-lg px-3 py-2 hover:bg-teal/10 transition-all cursor-pointer"
-                >
-                  <div className="w-10 h-10 bg-gradient-to-r from-emerald to-teal rounded-full flex items-center justify-center shadow-md">
-                    <span className="text-white text-sm font-bold">A</span>
-                  </div>
-                  <div className="hidden md:block text-left">
-                    <p className="text-sm font-medium text-deep-blue">Admin User</p>
-                    <p className="text-xs text-slate-gray">Super Admin</p>
-                  </div>
-                  <ChevronDown size={16} className={`text-slate-gray transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
-                </button>
-                
-                {isProfileOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <User size={16} className="mr-3 text-slate-gray" />
-                      Profile Settings
-                    </button>
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <SettingsIcon size={16} className="mr-3 text-slate-gray" />
-                      Account Settings
-                    </button>
-                    <hr className="my-2 border-gray-200" />
-                    <button 
-                      onClick={() => window.location.href = '/login'}
-                      className="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      <LogOut size={16} className="mr-3" />
-                      Logout
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </header>
+    <>
+      <NoticeBar notice={notice} onClose={() => setNotice(null)} />
 
-        <main className="p-10 mt-24">
-          <div className="flex items-center justify-between mb-6">
-            <button 
-              onClick={() => setShowModal(true)}
-              className="bg-gradient-to-r from-emerald to-teal text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:shadow-lg transition-all"
-            >
-              <Plus size={20} />
-              Add Category
-            </button>
-          </div>
+      <Card>
+        <div className="p-4 border-b border-gray-200 flex flex-wrap gap-3">
+          <SearchInput id="category-search" value={search} onChange={setSearch} placeholder="Search by category, type or sub-category..." />
+          {canManage && (
+            <Button onClick={() => openForm(null)}>
+              <Plus size={16} />
+              Add category
+            </Button>
+          )}
+        </div>
 
-          {showModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between p-6 border-b">
-                  <h2 className="text-2xl font-bold text-gray-900">{editingId ? 'Edit Category' : 'Add New Category'}</h2>
-                  <button onClick={() => { setShowModal(false); setEditingId(null); setCategoryName(''); setCategoryType(''); setCategoryImage(null); setSubCategories([]); }} className="text-gray-500 hover:text-gray-700">
-                    <X size={24} />
-                  </button>
-                </div>
-
-                <div className="p-6 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Category Image</label>
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                      {categoryImage ? (
-                        <img src={categoryImage} alt="Preview" className="w-full h-32 object-cover rounded-lg mb-2" />
+        {loading ? (
+          <Spinner />
+        ) : visible.length === 0 ? (
+          <EmptyState
+            title={categories.length === 0 ? 'No categories yet' : 'No categories match this search'}
+            hint={categories.length === 0 ? 'Categories are shown in the apps and on the website, and organisers choose one for each event.' : undefined}
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Category</th>
+                  <th className="px-4 py-3 font-medium">Type</th>
+                  <th className="px-4 py-3 font-medium">Sub-categories</th>
+                  {canManage && <th className="px-4 py-3 font-medium text-right">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {visible.map((category) => (
+                  <tr key={category._id} className="align-top hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {category.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={category.image} alt="" className="h-10 w-10 rounded-lg object-cover bg-gray-100" />
+                        ) : (
+                          <div className="h-10 w-10 rounded-lg bg-gray-100" aria-hidden="true" />
+                        )}
+                        <span className="font-medium text-deep-blue">{category.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">{category.type || '—'}</td>
+                    <td className="px-4 py-3">
+                      {(category.subCategories || []).length === 0 ? (
+                        <span className="text-gray-500">None</span>
                       ) : (
-                        <div className="py-8">
-                          <Upload className="mx-auto text-gray-400 mb-2" size={32} />
-                          <p className="text-sm text-gray-500">Upload category image</p>
-                        </div>
+                        <ul className="flex flex-wrap gap-1.5">
+                          {(category.subCategories || []).map((sub, index) => (
+                            <li key={index}>
+                              <Badge tone="gray">{sub.name}</Badge>
+                            </li>
+                          ))}
+                        </ul>
                       )}
-                      <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" id="category-upload" />
-                      <label htmlFor="category-upload" className="cursor-pointer text-sm text-teal hover:text-teal/80">
-                        {categoryImage ? 'Change Image' : 'Upload Image'}
-                      </label>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Category Name *</label>
-                    <input
-                      type="text"
-                      value={categoryName}
-                      onChange={(e) => setCategoryName(e.target.value)}
-                      placeholder="Enter category name"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
-                    <input
-                      type="text"
-                      value={categoryType}
-                      onChange={(e) => setCategoryType(e.target.value)}
-                      placeholder="e.g., Event, Genre, etc."
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-medium text-gray-700">Sub Categories</label>
-                      <button
-                        onClick={handleAddSubCategory}
-                        className="flex items-center gap-1 text-sm text-teal hover:text-teal/80"
-                      >
-                        <Plus size={16} />
-                        Add Sub Category
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {subCategories.map((sub, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={sub.name}
-                            onChange={(e) => handleSubCategoryChange(index, e.target.value)}
-                            placeholder="Sub category name"
-                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal focus:border-teal outline-none"
-                          />
+                    </td>
+                    {canManage && (
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                          <button onClick={() => openForm(category)} aria-label={`Edit ${category.name}`} title="Edit" className="p-2 rounded-lg text-gray-600 hover:bg-gray-100">
+                            <Edit2 size={16} />
+                          </button>
                           <button
-                            onClick={() => handleDeleteSubCategory(index)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                            onClick={() => setPendingDelete(category)}
+                            aria-label={`Delete ${category.name}`}
+                            title="Delete"
+                            className="p-2 rounded-lg text-red-600 hover:bg-red-50"
                           >
-                            <Trash2 size={18} />
+                            <Trash2 size={16} />
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end gap-3 p-6 border-t">
-                  <button
-                    onClick={() => { setShowModal(false); setEditingId(null); setCategoryName(''); setCategoryType(''); setCategoryImage(null); setSubCategories([]); }}
-                    className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveCategory}
-                    className="px-6 py-2 bg-gradient-to-r from-emerald to-teal text-white rounded-lg hover:shadow-lg"
-                  >
-                    {editingId ? 'Update Category' : 'Save Category'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {categories && categories.length > 0 ? categories.map((category) => (
-              <div key={category._id} className="bg-gradient-to-br from-gray-50 to-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-lg transition-all">
-                {category.image ? (
-                  <img src={category.image} alt={category.name} className="w-full h-48 object-cover" />
-                ) : (
-                  <div className="w-full h-48 bg-gradient-to-r from-emerald to-teal flex items-center justify-center">
-                    <Tag size={48} className="text-white" />
-                  </div>
-                )}
-                <div className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-lg font-bold text-deep-blue">{category.name}</h3>
-                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-emerald/10 text-emerald border border-emerald/20">
-                      {category.type}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-gray mb-3">Sub Categories: {category.subCategories?.length || 0}</p>
-                  <div className="flex space-x-3">
-                    <button
-                      onClick={() => handleEditCategory(category)}
-                      className="flex items-center text-blue-600 hover:text-blue-800 text-sm"
-                    >
-                      <Edit2 size={14} className="mr-1" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteCategory(category._id!)}
-                      className="flex items-center text-red-600 hover:text-red-800 text-sm"
-                    >
-                      <Trash2 size={14} className="mr-1" />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )) : (
-              <div className="col-span-full bg-white rounded-xl shadow-lg border border-gray-100 p-12 text-center">
-                <Tag size={48} className="mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500 text-lg">No categories found. Click "Add Category" to create one.</p>
-              </div>
-            )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </main>
-      </div>
-    </div>
+        )}
+      </Card>
+
+      <Modal
+        open={showForm}
+        title={editing ? `Edit ${editing.name}` : 'Add category'}
+        onClose={() => setShowForm(false)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowForm(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={save} loading={saving}>
+              {editing ? 'Save changes' : 'Add category'}
+            </Button>
+          </>
+        }
+      >
+        {formError && <NoticeBar notice={{ type: 'error', text: formError }} />}
+        <div className="space-y-4">
+          <Field label="Category name" htmlFor="category-name" required>
+            <input id="category-name" type="text" value={form.name} maxLength={120} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} />
+          </Field>
+          {editing && form.name.trim() !== editing.name && (
+            <p className="text-xs text-amber-700 -mt-2">
+              Events store the category by name. Events already created under &quot;{editing.name}&quot; keep the old name.
+            </p>
+          )}
+          <Field label="Type" htmlFor="category-type" required help="A grouping label the apps show with the category, for example Event.">
+            <input
+              id="category-type"
+              type="text"
+              list="category-types"
+              value={form.type}
+              maxLength={60}
+              onChange={(e) => setForm({ ...form, type: e.target.value })}
+              className={inputClass}
+            />
+            <datalist id="category-types">
+              {types.map((type) => (
+                <option key={type} value={type} />
+              ))}
+            </datalist>
+          </Field>
+
+          <div>
+            <p className="block text-sm font-medium text-gray-700 mb-1">Sub-categories</p>
+            <div className="space-y-2">
+              {form.subCategories.map((name, index) => (
+                <div key={index} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={name}
+                    maxLength={120}
+                    aria-label={`Sub-category ${index + 1}`}
+                    onChange={(e) => setForm({ ...form, subCategories: form.subCategories.map((s, i) => (i === index ? e.target.value : s)) })}
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, subCategories: form.subCategories.filter((_, i) => i !== index) })}
+                    aria-label={`Remove sub-category ${name || index + 1}`}
+                    className="p-2 rounded-lg text-red-600 hover:bg-red-50"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <Button type="button" variant="secondary" className="mt-2" onClick={() => setForm({ ...form, subCategories: [...form.subCategories, ''] })}>
+              <Plus size={16} />
+              Add sub-category
+            </Button>
+          </div>
+
+          <MediaUpload id="category-image" label="Category image" value={form.image} onChange={(image) => setForm({ ...form, image })} onError={setFormError} />
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title={pendingDelete ? `Delete ${pendingDelete.name}` : ''}
+        message="The category disappears from the apps and the website straight away. Events already created under it keep the category name but can no longer be found by browsing this category."
+        confirmLabel="Delete"
+        danger
+        askReason
+        busy={busy}
+        onConfirm={remove}
+        onClose={() => setPendingDelete(null)}
+      />
+    </>
+  )
+}
+
+export default function CategoriesPage() {
+  const [tab, setTab] = useState<Tab>('categories')
+  const tabs = <TabButtons tabs={TABS} current={tab} onChange={setTab} />
+
+  if (tab === 'genres' || tab === 'languages') {
+    // key forces a fresh list when switching between the two managed lists.
+    return (
+      <ResourcePage key={tab} resource={tab}>
+        {tabs}
+      </ResourcePage>
+    )
+  }
+
+  return (
+    <AdminShell title="Event Categories" subtitle="Categories, sub-categories, genres and languages offered in the apps">
+      {tabs}
+      <CategoryList />
+    </AdminShell>
   )
 }

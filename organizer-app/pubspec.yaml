@@ -1,5 +1,5 @@
 name: organizer_app
-description: "A new Flutter project."
+description: "Mookalaa Organizer: the app for event organisers, artists and gate staff of the Mookalaa ticketing platform."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -34,7 +34,6 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.2
-  file_picker: ^10.3.7
   http: ^1.1.0
   shared_preferences: ^2.2.2
   image_picker: ^1.0.4
@@ -67,10 +66,6 @@ flutter:
     - assets/images/logo_image.png
     - assets/images/login.png
     - assets/images/otp.png
-    - assets/images/avtar_login.png
-    - assets/images/concert.jpg
-    - assets/images/theatre.jpg
-    - assets/images/folk.jpg
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware

@@ -1,42 +1,37 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import type React from "react"
+import { useEffect, useRef, useState } from "react"
 import type { Event } from "@/lib/types"
 import { EventCard } from "./event-card"
 
-
-interface FeaturedSliderProps {
-  events: Event[]
-}
-
-export function FeaturedSlider({ events }: FeaturedSliderProps) {
+export function FeaturedSlider({ events }: { events: Event[] }) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [autoPlay, setAutoPlay] = useState(true)
   const touchStartX = useRef(0)
   const touchEndX = useRef(0)
+  const count = events.length
 
   useEffect(() => {
-    if (!autoPlay) return
-
-    const interval = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % events.length)
-    }, 5000)
-
+    if (!autoPlay || count < 2) return
+    const interval = setInterval(() => setCurrentIndex((prev) => (prev + 1) % count), 5000)
     return () => clearInterval(interval)
-  }, [autoPlay, events.length])
+  }, [autoPlay, count])
 
-  const goToPrevious = () => {
-    setAutoPlay(false)
-    setCurrentIndex((prev) => (prev - 1 + events.length) % events.length)
-  }
+  useEffect(() => {
+    if (currentIndex >= count) setCurrentIndex(0)
+  }, [count, currentIndex])
 
-  const goToNext = () => {
+  if (count === 0) return null
+
+  const move = (step: number) => {
     setAutoPlay(false)
-    setCurrentIndex((prev) => (prev + 1) % events.length)
+    setCurrentIndex((prev) => (prev + step + count) % count)
   }
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.targetTouches[0].clientX
+    touchEndX.current = 0
   }
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -45,54 +40,48 @@ export function FeaturedSlider({ events }: FeaturedSliderProps) {
 
   const handleTouchEnd = () => {
     if (!touchStartX.current || !touchEndX.current) return
-    
     const distance = touchStartX.current - touchEndX.current
-    const isLeftSwipe = distance > 50
-    const isRightSwipe = distance < -50
-
-    if (isLeftSwipe) {
-      goToNext()
-    }
-    if (isRightSwipe) {
-      goToPrevious()
-    }
+    if (distance > 50) move(1)
+    if (distance < -50) move(-1)
   }
 
   return (
     <div className="relative" onMouseEnter={() => setAutoPlay(false)} onMouseLeave={() => setAutoPlay(true)}>
-      <div 
-        className="relative h-[450px] overflow-hidden rounded-2xl"
+      <div
+        className="relative overflow-hidden rounded-2xl"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
         <div
-          className="flex h-full transition-transform duration-500"
+          className="flex transition-transform duration-500"
           style={{ transform: `translateX(-${currentIndex * 100}%)` }}
         >
           {events.map((event) => (
-            <div key={event.id} className="min-w-full h-full">
+            <div key={event.id} className="min-w-full">
               <EventCard event={event} variant="featured" />
             </div>
           ))}
         </div>
       </div>
 
-
-
-      {/* Indicators */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
-        {events.map((_, index) => (
-          <button
-            key={index}
-            onClick={() => {
-              setAutoPlay(false)
-              setCurrentIndex(index)
-            }}
-            className={`w-2 h-2 rounded-full transition-all ${index === currentIndex ? "bg-white w-8" : "bg-white/50"}`}
-          />
-        ))}
-      </div>
+      {count > 1 && (
+        <div className="flex justify-center gap-2 mt-4">
+          {events.map((event, index) => (
+            <button
+              key={event.id}
+              type="button"
+              aria-label={`Show ${event.title}`}
+              aria-current={index === currentIndex}
+              onClick={() => {
+                setAutoPlay(false)
+                setCurrentIndex(index)
+              }}
+              className={`h-2 rounded-full transition-all ${index === currentIndex ? "bg-primary w-8" : "bg-muted-foreground/40 w-2"}`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

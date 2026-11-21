@@ -1,95 +1,55 @@
-// Toast notification system
-export const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-  // Remove existing toast
-  const existingToast = document.getElementById('toast-notification')
-  if (existingToast) {
-    existingToast.remove()
-  }
+type ToastType = "success" | "error" | "info"
 
-  // Create toast element
-  const toast = document.createElement('div')
-  toast.id = 'toast-notification'
-  toast.className = `fixed top-4 right-4 z-50 px-6 py-4 rounded-lg shadow-lg text-white font-medium transform transition-all duration-300 translate-x-full`
-  
-  // Set background color based on type
-  const colors = {
-    success: 'bg-green-500',
-    error: 'bg-red-500',
-    info: 'bg-blue-500'
-  }
-  toast.classList.add(colors[type])
-  
-  // Add icon based on type
-  const icons = {
-    success: '✓',
-    error: '✕',
-    info: 'ℹ'
-  }
-  
-  toast.innerHTML = `
-    <div class="flex items-center gap-3">
-      <span class="text-lg">${icons[type]}</span>
-      <span>${message}</span>
-    </div>
-  `
-  
-  // Add to document
-  document.body.appendChild(toast)
-  
-  // Animate in
-  setTimeout(() => {
-    toast.classList.remove('translate-x-full')
-  }, 100)
-  
-  // Auto remove after 3 seconds
-  setTimeout(() => {
-    toast.classList.add('translate-x-full')
-    setTimeout(() => {
-      if (toast.parentNode) {
-        toast.remove()
-      }
-    }, 300)
-  }, 3000)
+const COLOURS: Record<ToastType, string> = {
+  success: "#16a34a",
+  error: "#dc2626",
+  info: "#2563eb",
 }
 
-// Confirmation dialog
-export const showConfirmation = (message: string, onConfirm: () => void) => {
-  const modal = document.createElement('div')
-  modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'
-  modal.innerHTML = `
-    <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
-      <h3 class="text-lg font-semibold mb-4 text-gray-900">Confirm Action</h3>
-      <p class="text-gray-600 mb-6">${message}</p>
-      <div class="flex gap-3">
-        <button id="confirm-cancel" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
-          Cancel
-        </button>
-        <button id="confirm-ok" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-          Confirm
-        </button>
-      </div>
-    </div>
-  `
-  
-  document.body.appendChild(modal)
-  
-  // Handle buttons
-  const cancelBtn = modal.querySelector('#confirm-cancel')
-  const okBtn = modal.querySelector('#confirm-ok')
-  
-  cancelBtn?.addEventListener('click', () => {
-    modal.remove()
+/**
+ * A short message in the corner of the page. The text is set with
+ * `textContent`, never as HTML, so a message that quotes an event or venue
+ * name cannot inject markup.
+ */
+export function showToast(message: string, type: ToastType = "info") {
+  if (typeof document === "undefined") return
+  document.getElementById("toast-notification")?.remove()
+
+  const toast = document.createElement("div")
+  toast.id = "toast-notification"
+  toast.setAttribute("role", type === "error" ? "alert" : "status")
+  toast.setAttribute("aria-live", type === "error" ? "assertive" : "polite")
+  toast.textContent = message
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "5.5rem",
+    right: "1rem",
+    zIndex: "100",
+    maxWidth: "min(24rem, calc(100vw - 2rem))",
+    padding: "0.875rem 1.25rem",
+    borderRadius: "0.5rem",
+    boxShadow: "0 10px 25px rgba(0,0,0,0.35)",
+    color: "#ffffff",
+    fontWeight: "500",
+    fontSize: "0.95rem",
+    lineHeight: "1.4",
+    background: COLOURS[type],
+    transition: "opacity 0.25s ease, transform 0.25s ease",
+    opacity: "0",
+    transform: "translateY(-0.5rem)",
   })
-  
-  okBtn?.addEventListener('click', () => {
-    modal.remove()
-    onConfirm()
+  document.body.appendChild(toast)
+
+  requestAnimationFrame(() => {
+    toast.style.opacity = "1"
+    toast.style.transform = "translateY(0)"
   })
-  
-  // Close on backdrop click
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.remove()
-    }
-  })
+
+  window.setTimeout(
+    () => {
+      toast.style.opacity = "0"
+      window.setTimeout(() => toast.remove(), 300)
+    },
+    type === "error" ? 6000 : 4000,
+  )
 }

@@ -1,394 +1,193 @@
-import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'kyc_verification_screen.dart';
-import '../services/auth_service.dart';
 
-class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+import 'package:flutter/material.dart';
+
+import '../app_flow.dart';
+import '../logic/validators.dart';
+import '../services/api.dart';
+import '../services/api_client.dart';
+import '../utils/image_utils.dart';
+import '../widgets/common.dart';
+
+/// The organiser's profile form: used once after registration and again for
+/// editing. It only shows the fields `POST /organizer/profile` stores.
+class OrganizerProfileScreen extends StatefulWidget {
+  const OrganizerProfileScreen({super.key, this.editing = false});
+
+  final bool editing;
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  State<OrganizerProfileScreen> createState() => _OrganizerProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  String? _selectedCity;
-  bool _isLoading = false;
-  Uint8List? _profileImage;
-  String? _profileImageBase64;
-  final ImagePicker _picker = ImagePicker();
+class _OrganizerProfileScreenState extends State<OrganizerProfileScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _email = TextEditingController();
+  final _city = TextEditingController();
+  Uint8List? _newImage;
+  dynamic _storedImage;
+  bool _loading = false;
+  bool _saving = false;
+  String? _loadError;
 
-  final List<String> _cities = [
-    'Mumbai',
-    'Delhi',
-    'Bangalore',
-    'Chennai',
-    'Kolkata',
-    'Hyderabad',
-    'Pune',
-    'Ahmedabad',
-    'Surat',
-    'Jaipur',
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
 
-  void _saveProfile() async {
-    if (_nameController.text.isEmpty || _emailController.text.isEmpty || _selectedCity == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields')),
-      );
-      return;
-    }
+  @override
+  void dispose() {
+    _name.dispose();
+    _email.dispose();
+    _city.dispose();
+    super.dispose();
+  }
 
+  Future<void> _load() async {
     setState(() {
-      _isLoading = true;
+      _loading = true;
+      _loadError = null;
     });
-
-    final userData = await AuthService.getUserData();
-    final phone = userData['phone'];
-    
-    if (phone != null) {
-      final result = await AuthService.updateOrganizerProfile(
-        phone,
-        _nameController.text,
-        _emailController.text,
-        _selectedCity!,
-        _profileImageBase64,
-      );
-      
-      setState(() {
-        _isLoading = false;
-      });
-      
-      if (result['success'] == true) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => KYCVerificationScreen(phone: phone),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['error'] ?? 'Failed to save profile')),
-        );
-      }
-    } else {
-      setState(() {
-        _isLoading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User session not found')),
-      );
+    try {
+      final user = await Api.profile('organizer');
+      if (!mounted) return;
+      _name.text = (user['name'] ?? '').toString();
+      _email.text = (user['email'] ?? '').toString();
+      _city.text = (user['city'] ?? '').toString();
+      _storedImage = user['profileImage'];
+    } on ApiException catch (e) {
+      // A first-time form can be filled in without the stored copy.
+      if (mounted && widget.editing) _loadError = e.message;
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  void _selectPhoto() {
-    showModalBottomSheet(
-      context: context,
-      builder: (BuildContext context) {
-        return Container(
-          height: 150,
-          child: Column(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Choose from Gallery'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.gallery);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.camera_alt),
-                title: const Text('Take Photo'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.camera);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-  
-  Future<void> _pickImage(ImageSource source) async {
+  Future<void> _pickImage() async {
     try {
-      final XFile? image = await _picker.pickImage(
-        source: source,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 80,
+      final bytes = await ImageUtils.pick();
+      if (bytes == null || !mounted) return;
+      final problem = ImageUtils.sizeProblem(bytes);
+      if (problem != null) {
+        showMessage(context, problem, error: true);
+        return;
+      }
+      setState(() => _newImage = bytes);
+    } catch (_) {
+      if (mounted) showMessage(context, 'Could not open the photo. Check the photo permission and try again.', error: true);
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      await Api.saveOrganizerProfile(
+        name: _name.text.trim(),
+        email: _email.text.trim(),
+        city: _city.text.trim(),
+        profileImage: _newImage == null ? null : base64Encode(_newImage!),
       );
-      
-      if (image != null) {
-        final bytes = await image.readAsBytes();
-        final base64Image = base64Encode(bytes);
-        
-        if (mounted) {
-          setState(() {
-            _profileImage = bytes;
-            _profileImageBase64 = base64Image;
-          });
-        }
+      if (!mounted) return;
+      if (widget.editing) {
+        showMessage(context, 'Profile updated');
+        Navigator.pop(context, true);
+      } else {
+        await AppFlow.refreshAndRoute(preferredRole: 'organizer');
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error picking image: $e')),
-        );
-      }
+    } on ApiException catch (e) {
+      if (mounted) showMessage(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Profile',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        centerTitle: false,
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-            const SizedBox(height: 40),
-            // Avatar with Gallery Option
-            GestureDetector(
-              onTap: _selectPhoto,
-              child: Stack(
-                children: [
-                  Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFF001F3F), width: 3),
-                    ),
-                    child: _profileImage != null
-                        ? ClipOval(
-                            child: Image.memory(
-                              _profileImage!,
-                              width: 120,
-                              height: 120,
-                              fit: BoxFit.cover,
-                            ),
-                          )
-                        : Icon(
-                            Icons.person,
-                            size: 60,
-                            color: Colors.grey.shade600,
-                          ),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      width: 35,
-                      height: 35,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF001F3F),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: const Icon(
-                        Icons.camera_alt,
-                        size: 18,
-                        color: Colors.white,
+    Widget body;
+    if (_loading) {
+      body = const LoadingView();
+    } else if (_loadError != null) {
+      body = StateView.error(_loadError!, onRetry: _load);
+    } else {
+      body = Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Center(
+              child: GestureDetector(
+                onTap: _pickImage,
+                child: Stack(
+                  children: [
+                    ClipOval(
+                      child: SizedBox(
+                        width: 104,
+                        height: 104,
+                        child: _newImage != null
+                            ? Image.memory(_newImage!, fit: BoxFit.cover)
+                            : StoredImage(_storedImage, placeholderIcon: Icons.person),
                       ),
                     ),
-                  ),
-                ],
+                    const Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: AppColors.navy,
+                        child: Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 50),
-            // Name Field
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Name',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _nameController,
-                  decoration: InputDecoration(
-                    hintText: 'Enter your name',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF001F3F), width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            const SizedBox(height: 6),
+            const Center(child: Text('Profile photo (optional)', style: TextStyle(color: Colors.black54))),
             const SizedBox(height: 20),
-            // Email Field
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Email',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    hintText: 'Enter your email',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF001F3F), width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
-                ),
-              ],
+            TextFormField(
+              controller: _name,
+              textCapitalization: TextCapitalization.words,
+              maxLength: 120,
+              decoration: fieldDecoration('Name or organisation', icon: Icons.person).copyWith(counterText: ''),
+              validator: (v) => Validators.requiredText(v ?? '', 'Name'),
             ),
-            const SizedBox(height: 20),
-            // City Field
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'City',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  value: _selectedCity,
-                  decoration: InputDecoration(
-                    hintText: 'Select your city',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF001F3F), width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
-                  items: _cities.map((String city) {
-                    return DropdownMenuItem<String>(
-                      value: city,
-                      child: Text(city),
-                    );
-                  }).toList(),
-                  onChanged: (String? newValue) {
-                    setState(() {
-                      _selectedCity = newValue;
-                    });
-                  },
-                ),
-              ],
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              decoration: fieldDecoration('Email', icon: Icons.email),
+              validator: (v) => Validators.email(v ?? ''),
             ),
-            const SizedBox(height: 40),
-            // Continue Button
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _saveProfile,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF001F3F),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  elevation: 0,
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _city,
+              textCapitalization: TextCapitalization.words,
+              maxLength: 120,
+              decoration: fieldDecoration('City', icon: Icons.location_city).copyWith(counterText: ''),
+              validator: (v) => Validators.requiredText(v ?? '', 'City'),
+            ),
+            const SizedBox(height: 24),
+            PrimaryButton(label: widget.editing ? 'Save changes' : 'Continue', loading: _saving, onPressed: _save),
+            if (!widget.editing) ...[
+              const SizedBox(height: 8),
+              Center(
+                child: TextButton(
+                  onPressed: _saving ? null : () => AppFlow.signOut(),
+                  child: const Text('Sign out', style: TextStyle(color: AppColors.navy)),
                 ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text(
-                            'SAVE',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.arrow_forward, size: 20),
-                        ],
-                      ),
               ),
-            ),
-            const SizedBox(height: 20),
             ],
-          ),
+          ],
         ),
-      ),
+      );
+    }
+    return Scaffold(
+      appBar: appBar(widget.editing ? 'Edit profile' : 'Organiser profile', showBack: widget.editing),
+      body: SafeArea(child: body),
     );
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    super.dispose();
   }
 }

@@ -1,619 +1,877 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'dart:convert';
+import 'package:flutter/services.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
+
+import '../config/app_config.dart';
+import '../models/booking.dart';
+import '../models/event.dart';
+import '../services/api_client.dart';
 import '../services/api_service.dart';
-import 'my_bookings_screen.dart';
-import 'dart:typed_data';
-import 'package:http/http.dart' as http;
+import '../services/session.dart';
+import '../utils/booking_logic.dart';
+import '../utils/formats.dart';
+import '../widgets/app_image.dart';
+import '../widgets/app_theme.dart';
+import 'ticket_screen.dart';
 
+/// Where the booking is in the order -> Checkout -> verify sequence.
+enum _Stage {
+  /// Choosing tickets.
+  selecting,
+
+  /// `POST /payment/order` is running.
+  creatingOrder,
+
+  /// The server holds the seats; waiting for the customer to pay.
+  awaitingPayment,
+
+  /// Razorpay reported success; `POST /payment/verify` is running (or being retried).
+  verifying,
+
+  /// The server answered 202: the bank approved, the capture is not in yet.
+  processing,
+
+  /// The payment did not become a ticket. [_failure] says why.
+  failed,
+}
+
+class _Line {
+  _Line(this.draft);
+  final TicketLineDraft draft;
+  final Key key = UniqueKey();
+  final TextEditingController from = TextEditingController();
+  final TextEditingController to = TextEditingController();
+
+  void dispose() {
+    from.dispose();
+    to.dispose();
+  }
+}
+
+/// Booking, exactly as the backend contract describes it:
+///   1. `POST /payment/order` with the chosen tickets only (the server prices them).
+///   2. Free event  -> already confirmed, show the ticket.
+///      Paid event  -> show the server's amount and the hold countdown, then
+///                     open Razorpay Checkout with the server's order.
+///   3. `POST /payment/verify` after Checkout succeeds; poll while it is processing.
+/// Nothing is ever recorded as paid or confirmed by this app.
 class BookingScreen extends StatefulWidget {
-  final Map<String, dynamic> event;
+  const BookingScreen({super.key, required this.event});
 
-  const BookingScreen({Key? key, required this.event}) : super(key: key);
+  final EventModel event;
 
   @override
   State<BookingScreen> createState() => _BookingScreenState();
 }
 
 class _BookingScreenState extends State<BookingScreen> {
-  List<Map<String, dynamic>> selectedTickets = [];
-  List<Map<String, dynamic>> availableBlocks = [];
-  Map<String, dynamic>? venueData;
-  
-  // Image viewer state
-  double _imageScale = 1.0;
-  final TransformationController _transformationController = TransformationController();
-  
-  // Payment
-  String _razorpayKeyId = '';
-  
+  late EventModel _event = widget.event;
+  final List<_Line> _lines = [];
+
+  PaymentConfig? _config;
+  String? _configError;
+  String _layoutImage = '';
+
+  _Stage _stage = _Stage.selecting;
+  String? _notice; // shown above the button; never a fake success
+  String? _failure;
+
+  OrderResult? _order;
+  Timer? _holdTimer;
+  Duration _holdLeft = Duration.zero;
+
+  Razorpay? _razorpay;
+  String? _paymentId;
+  String? _signature;
+  Timer? _verifyTimer;
+  int _verifyAttempts = 0;
+  bool _verifyPaused = false;
+
+  List<TicketType> get _tickets => _event.tickets;
+
   @override
   void initState() {
     super.initState();
-    _loadVenueBlocks();
-    _addTicketSelection(); // Start with one ticket selection
-    _fetchPaymentConfig();
-    _setupRazorpayWeb();
+    _layoutImage = _event.seatingLayoutImage;
+    _addLine();
+    _loadConfig();
+    _refreshEvent();
+    _loadLayout();
   }
-  
-  void _setupRazorpayWeb() {
-    // Razorpay setup not available on mobile
-  }
-  
-  Future<void> _fetchPaymentConfig() async {
+
+  /* ------------------------------ Loading ------------------------------ */
+
+  Future<void> _loadConfig() async {
+    setState(() => _configError = null);
     try {
-      final response = await http.get(
-        Uri.parse('https://mookala.vercel.app/api/payment/config'),
-        headers: {'Content-Type': 'application/json'},
-      );
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success'] == true) {
-          setState(() {
-            _razorpayKeyId = data['razorpayKeyId'] ?? '';
-          });
+      final config = await ApiService.getPaymentConfig();
+      if (mounted) setState(() => _config = config);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _configError = e.message);
+    }
+  }
+
+  /// Fresh ticket counts. On failure the tickets passed in stay in use and the
+  /// server still checks everything when the order is placed.
+  Future<void> _refreshEvent() async {
+    try {
+      final fresh = await ApiService.getEvent(_event.id);
+      if (!mounted || fresh.tickets.isEmpty) return;
+      setState(() {
+        _event = fresh;
+        for (final line in _lines) {
+          final i = line.draft.ticketIndex;
+          if (i != null && i >= fresh.tickets.length) line.draft.ticketIndex = null;
         }
-      }
-    } catch (e) {
-      print('Error fetching payment config: $e');
-    }
-  }
-  
-  Future<void> _loadVenueBlocks() async {
-    String? venueName;
-    if (widget.event['location'] != null && widget.event['location']['name'] != null) {
-      venueName = widget.event['location']['name'];
-    }
-    
-    if (venueName != null && venueName.isNotEmpty) {
-      final result = await ApiService.getVenueByName(venueName);
-      if (result['success'] == true && result['venues'] != null && result['venues'].isNotEmpty) {
-        final venue = result['venues'][0];
-        setState(() {
-          venueData = venue;
-        });
-        if (venue['seatConfig'] != null && venue['seatConfig']['blocks'] != null) {
-          setState(() {
-            availableBlocks = List<Map<String, dynamic>>.from(venue['seatConfig']['blocks']);
-          });
-        }
-      }
-    }
-  }
-  
-  List<Map<String, dynamic>> _getSeatCategories() {
-    if (widget.event['tickets'] != null && widget.event['tickets'] is List) {
-      final tickets = widget.event['tickets'] as List;
-      if (tickets.isNotEmpty) {
-        return tickets.map<Map<String, dynamic>>((ticket) {
-          final name = ticket['name'] ?? 'Ticket';
-          final priceType = ticket['priceType'] ?? 'Normal';
-          final blockName = ticket['blockName'] ?? 'A';
-          final startSeat = ticket['startSeat'] ?? 1;
-          final endSeat = ticket['endSeat'] ?? (int.tryParse(ticket['quantity'].toString()) ?? 100);
-          
-          return {
-            'name': name,
-            'price': _extractPriceFromTicket(ticket['price']),
-            'blockName': blockName,
-            'priceType': priceType,
-            'startSeat': startSeat,
-            'endSeat': endSeat,
-            'seatRange': '$blockName$startSeat to $blockName$endSeat',
-          };
-        }).toList();
-      }
-    }
-    return [];
-  }
-  
-  int _extractPriceFromTicket(dynamic price) {
-    if (price is int) return price;
-    if (price is double) return price.toInt();
-    if (price is String) {
-      // Remove currency symbols and parse
-      final cleanPrice = price.replaceAll(RegExp(r'[^0-9.]'), '');
-      return int.tryParse(cleanPrice.split('.')[0]) ?? 500;
-    }
-    return 500;
-  }
-  
-
-  
-
-  
-
-  
-  void _addTicketSelection() {
-    setState(() {
-      selectedTickets.add({
-        'category': null,
-        'block': null,
-        'fromSeat': 1,
-        'toSeat': 1,
-        'quantity': 1,
-        'price': 0,
       });
-    });
+    } on ApiException {
+      // Kept quiet on purpose: see above.
+    }
   }
-  
-  void _removeTicketSelection(int index) {
-    setState(() {
-      selectedTickets.removeAt(index);
-    });
-  }
-  
-  int _getTotalSeats() {
-    return selectedTickets.fold(0, (sum, ticket) => sum + (ticket['quantity'] as int));
-  }
-  
-  int _getTotalPrice() {
-    return selectedTickets.fold(0, (sum, ticket) => sum + ((ticket['price'] as int) * (ticket['quantity'] as int)));
-  }
-  
-  List<Map<String, dynamic>> _getAvailableBlocksForCategory(String categoryName) {
-    final tickets = widget.event['tickets'] as List?;
-    if (tickets == null) return [];
-    
-    final categoryTickets = tickets.where((ticket) => ticket['name'] == categoryName).toList();
-    
-    return categoryTickets.map<Map<String, dynamic>>((ticket) {
-      final priceType = ticket['priceType'] ?? 'Normal';
-      final blockName = ticket['blockName'] ?? 'A';
-      final startSeat = ticket['startSeat'] ?? 1;
-      final endSeat = ticket['endSeat'] ?? (int.tryParse(ticket['quantity'].toString()) ?? 100);
-      
-      return {
-        'blockName': blockName,
-        'priceType': priceType,
-        'startSeat': startSeat,
-        'endSeat': endSeat,
-        'price': _extractPriceFromTicket(ticket['price']),
-        'seatRange': '$blockName$startSeat to $blockName$endSeat',
-      };
-    }).toList();
-  }
-  
-  int _getBlockMinSeat(String categoryName, String blockName) {
-    final blocks = _getAvailableBlocksForCategory(categoryName);
-    final blockInfo = blocks.firstWhere(
-      (block) => block['blockName'] == blockName,
-      orElse: () => {'startSeat': 1},
-    );
-    return blockInfo['startSeat'] ?? 1;
-  }
-  
-  int _getBlockMaxSeat(String categoryName, String blockName) {
-    final blocks = _getAvailableBlocksForCategory(categoryName);
-    final blockInfo = blocks.firstWhere(
-      (block) => block['blockName'] == blockName,
-      orElse: () => {'endSeat': 100},
-    );
-    return blockInfo['endSeat'] ?? 100;
-  }
-  
-  Widget _buildTicketSelector(int ticketIndex) {
-    final ticket = selectedTickets[ticketIndex];
-    final categories = _getSeatCategories();
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(12),
-        color: Colors.white,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Ticket ${ticketIndex + 1}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              IconButton(
-                onPressed: selectedTickets.length > 1 ? () => _removeTicketSelection(ticketIndex) : null,
-                icon: const Icon(Icons.remove_circle, color: Colors.red),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          
-          // Category Selection
-          DropdownButtonFormField<String>(
-            value: ticket['category'],
-            decoration: const InputDecoration(
-              labelText: 'Category',
-              border: OutlineInputBorder(),
-            ),
-            items: categories.map((category) {
-              return DropdownMenuItem<String>(
-                value: category['name'],
-                child: Text(
-                  '${category['priceType']} - ₹${category['price']} (${category['seatRange']})',
-                  style: const TextStyle(fontSize: 14),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              );
-            }).toList(),
-            onChanged: (value) {
-              setState(() {
-                selectedTickets[ticketIndex]['category'] = value;
-                selectedTickets[ticketIndex]['block'] = null;
-                selectedTickets[ticketIndex]['price'] = categories.firstWhere((c) => c['name'] == value)['price'];
-              });
-            },
-          ),
-          
-          if (ticket['category'] != null) ...[
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: ticket['block'],
-              decoration: const InputDecoration(
-                labelText: 'Block',
-                border: OutlineInputBorder(),
-              ),
-              items: _getAvailableBlocksForCategory(ticket['category']).map((block) {
-                return DropdownMenuItem<String>(
-                  value: block['blockName'],
-                  child: Text('Block ${block['blockName']} (${block['seatRange']})')
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  selectedTickets[ticketIndex]['block'] = value;
-                  if (value != null) {
-                    final minSeat = _getBlockMinSeat(ticket['category'], value);
-                    selectedTickets[ticketIndex]['fromSeat'] = minSeat;
-                    selectedTickets[ticketIndex]['toSeat'] = minSeat;
-                    selectedTickets[ticketIndex]['quantity'] = 1;
-                  }
-                });
-              },
-            ),
-          ],
-          
-          if (ticket['block'] != null) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    decoration: const InputDecoration(
-                      labelText: 'From Seat',
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.number,
-                    initialValue: ticket['fromSeat'].toString(),
-                    onChanged: (value) {
-                      final fromSeat = int.tryParse(value) ?? ticket['fromSeat'];
-                      setState(() {
-                        selectedTickets[ticketIndex]['fromSeat'] = fromSeat;
-                        selectedTickets[ticketIndex]['quantity'] = (selectedTickets[ticketIndex]['toSeat'] - fromSeat + 1).clamp(1, 999);
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    decoration: const InputDecoration(
-                      labelText: 'To Seat',
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.number,
-                    initialValue: ticket['toSeat'].toString(),
-                    onChanged: (value) {
-                      final toSeat = int.tryParse(value) ?? ticket['toSeat'];
-                      setState(() {
-                        selectedTickets[ticketIndex]['toSeat'] = toSeat;
-                        selectedTickets[ticketIndex]['quantity'] = (toSeat - selectedTickets[ticketIndex]['fromSeat'] + 1).clamp(1, 999);
-                      });
-                    },
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'Seats: ${ticket['block']}${ticket['fromSeat']} to ${ticket['block']}${ticket['toSeat']} (${ticket['quantity']} seats) - ₹${(ticket['price'] * ticket['quantity'])}',
-                style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-  
 
+  Future<void> _loadLayout() async {
+    if (_layoutImage.isNotEmpty || _event.venueName.isEmpty) return;
+    try {
+      final venue = await ApiService.getVenueByName(_event.venueName);
+      final image = venue?['seatingLayoutImage'];
+      if (mounted && image is String && image.isNotEmpty) setState(() => _layoutImage = image);
+    } on ApiException {
+      // The seating picture is optional.
+    }
+  }
+
+  /* --------------------------- Ticket selection --------------------------- */
+
+  void _addLine() {
+    final draft = TicketLineDraft(ticketIndex: _tickets.length == 1 ? 0 : null);
+    setState(() => _lines.add(_Line(draft)));
+  }
+
+  void _removeLine(_Line line) {
+    setState(() => _lines.remove(line));
+    line.dispose();
+  }
+
+  List<TicketLineDraft> get _drafts => [for (final line in _lines) line.draft];
+
+  String? get _problem => validateSelection(_tickets, _drafts);
+
+  /* ------------------------------- Order ------------------------------- */
+
+  Future<void> _proceed() async {
+    if (_problem != null) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _stage = _Stage.creatingOrder;
+      _notice = null;
+    });
+
+    try {
+      final order = await ApiService.createOrder(eventId: _event.id, tickets: orderLines(_tickets, _drafts));
+      if (!mounted) return;
+
+      if (order.isFree) {
+        final booking = order.booking;
+        if (booking == null) {
+          throw ApiException(message: 'The booking was made but could not be shown. Please open My Bookings.');
+        }
+        _showTicket(booking);
+        return;
+      }
+
+      if (order.orderId.isEmpty || order.keyId.isEmpty || order.amountPaise <= 0) {
+        throw ApiException(message: 'The payment could not be started. Please try again in a moment.');
+      }
+      setState(() {
+        _order = order;
+        _stage = _Stage.awaitingPayment;
+      });
+      _startHoldCountdown(order);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _stage = _Stage.selecting;
+        _notice = _orderErrorText(e);
+      });
+      if (e.code == 'SEATS_TAKEN' || e.code == 'SOLD_OUT') _refreshEvent();
+    }
+  }
+
+  String _orderErrorText(ApiException e) {
+    switch (e.code) {
+      case 'PAYMENTS_UNAVAILABLE':
+        return 'Paid booking is unavailable right now. Please try again later.';
+      case 'SEATS_TAKEN':
+      case 'SOLD_OUT':
+        return '${e.message} Please choose again.';
+      case 'GATEWAY_ERROR':
+        return 'The payment could not be started. Please try again in a moment.';
+      default:
+        return e.message;
+    }
+  }
+
+  void _startHoldCountdown(OrderResult order) {
+    _holdTimer?.cancel();
+    final expiry = order.expiresAt ?? DateTime.now().add(Duration(minutes: _config?.holdMinutes ?? 15));
+    void tick() {
+      final left = expiry.difference(DateTime.now());
+      if (!mounted) return;
+      if (left <= Duration.zero && _stage == _Stage.awaitingPayment) {
+        _holdTimer?.cancel();
+        setState(() {
+          _order = null;
+          _stage = _Stage.selecting;
+          _notice = 'The hold on your seats has ended. Please choose your tickets again.';
+        });
+        _refreshEvent();
+        return;
+      }
+      setState(() => _holdLeft = left);
+    }
+
+    tick();
+    _holdTimer = Timer.periodic(const Duration(seconds: 1), (_) => tick());
+  }
+
+  void _changeTickets() {
+    // The hold simply runs out on the server (or is replaced by the next order).
+    _holdTimer?.cancel();
+    setState(() {
+      _order = null;
+      _stage = _Stage.selecting;
+      _notice = null;
+    });
+  }
+
+  /* ------------------------------ Checkout ------------------------------ */
+
+  void _pay() {
+    final order = _order;
+    if (order == null) return;
+    setState(() => _notice = null);
+
+    final razorpay = _razorpay ??= Razorpay()
+      ..on(Razorpay.EVENT_PAYMENT_SUCCESS, _onPaymentSuccess)
+      ..on(Razorpay.EVENT_PAYMENT_ERROR, _onPaymentError)
+      ..on(Razorpay.EVENT_EXTERNAL_WALLET, _onExternalWallet);
+
+    final secondsLeft = _holdLeft.inSeconds;
+    try {
+      razorpay.open({
+        'key': order.keyId,
+        'order_id': order.orderId,
+        'amount': order.amountPaise,
+        'currency': order.currency,
+        'name': AppConfig.appName,
+        'description': _event.title,
+        if (secondsLeft > 30) 'timeout': secondsLeft,
+        'prefill': {'contact': Session.phone ?? ''},
+        'retry': {'enabled': true, 'max_count': 2},
+      });
+    } catch (_) {
+      setState(() => _notice = 'The payment screen could not be opened on this device.');
+    }
+  }
+
+  void _onPaymentSuccess(PaymentSuccessResponse response) {
+    final order = _order;
+    final paymentId = response.paymentId;
+    final signature = response.signature;
+    if (order == null || paymentId == null || signature == null || !mounted) return;
+    _holdTimer?.cancel();
+    _paymentId = paymentId;
+    _signature = signature;
+    _verifyAttempts = 0;
+    _verify();
+  }
+
+  void _onPaymentError(PaymentFailureResponse response) {
+    if (!mounted) return;
+    // Closing Checkout is not an error: the hold stays until it runs out.
+    final cancelled = response.code == Razorpay.PAYMENT_CANCELLED;
+    setState(() {
+      _notice = cancelled
+          ? 'Payment was not completed. Your seats stay held until the timer ends.'
+          : 'The payment did not go through${(response.message ?? '').isNotEmpty ? ': ${response.message}' : '.'} You can try again while the seats are held.';
+    });
+  }
+
+  void _onExternalWallet(ExternalWalletResponse response) {
+    if (!mounted) return;
+    setState(() => _notice = 'Finish the payment in ${response.walletName ?? 'your wallet app'}. Your ticket will appear under My Bookings once it is confirmed.');
+  }
+
+  /* ------------------------------- Verify ------------------------------- */
+
+  Future<void> _verify() async {
+    final order = _order;
+    final paymentId = _paymentId;
+    final signature = _signature;
+    if (order == null || paymentId == null || signature == null) return;
+
+    _verifyTimer?.cancel();
+    if (_stage != _Stage.processing) setState(() => _stage = _Stage.verifying);
+    setState(() => _verifyPaused = false);
+    _verifyAttempts++;
+
+    try {
+      final result = await ApiService.verifyPayment(
+        bookingId: order.bookingId,
+        orderId: order.orderId,
+        paymentId: paymentId,
+        signature: signature,
+      );
+      if (!mounted) return;
+      if (result.confirmed && result.booking != null) {
+        _showTicket(result.booking!);
+        return;
+      }
+      // 202 PAYMENT_PROCESSING: ask again in a few seconds (the call is idempotent).
+      setState(() {
+        _stage = _Stage.processing;
+        _notice = result.message.isNotEmpty ? result.message : 'Your payment is being processed.';
+      });
+      _scheduleVerify();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      final retryable = e.isNetwork || e.statusCode == 502 || e.statusCode == 503 || e.statusCode == 504 || e.statusCode == 500;
+      if (retryable) {
+        // Never call this a failed payment: the money may have been taken.
+        setState(() => _notice = 'We are still confirming your payment. Please keep this screen open.');
+        _scheduleVerify();
+        return;
+      }
+      String text;
+      switch (e.code) {
+        case 'SEATS_LOST_REFUND_REQUESTED':
+          text = 'Your payment arrived after the seats were released, so they are no longer available. A full refund has been requested.';
+          break;
+        case 'BAD_SIGNATURE':
+        case 'ORDER_MISMATCH':
+          text = 'This payment could not be matched to your booking, so no ticket was issued. If money was taken, please contact support with payment reference $paymentId.';
+          break;
+        case 'PAYMENT_NOT_CAPTURED':
+          text = 'The payment was not successful, so no ticket was issued. If money was taken it will be returned by your bank.';
+          break;
+        default:
+          text = '${e.message} If money was taken, please contact support with payment reference $paymentId.';
+      }
+      setState(() {
+        _stage = _Stage.failed;
+        _failure = text;
+      });
+    }
+  }
+
+  void _scheduleVerify() {
+    // About four minutes of automatic checks, then the customer decides.
+    if (_verifyAttempts >= 60) {
+      setState(() => _verifyPaused = true);
+      return;
+    }
+    _verifyTimer?.cancel();
+    _verifyTimer = Timer(const Duration(seconds: 4), _verify);
+  }
+
+  void _showTicket(Booking booking) {
+    // Replace everything above the home screen with the ticket, so "back" goes home.
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => TicketScreen(booking: booking, justBooked: true)),
+      (route) => route.isFirst,
+    );
+  }
+
+  /* -------------------------------- UI -------------------------------- */
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Book Tickets',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
+    final busyWithMoney = _stage == _Stage.verifying || (_stage == _Stage.processing && !_verifyPaused);
+    return PopScope(
+      canPop: !busyWithMoney,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) showMessage(context, 'Please wait while your payment is confirmed.');
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey.shade50,
+        appBar: navyAppBar('Book tickets'),
+        body: SafeArea(child: _body()),
       ),
-      body: SingleChildScrollView(
+    );
+  }
+
+  Widget _body() {
+    switch (_stage) {
+      case _Stage.selecting:
+      case _Stage.creatingOrder:
+        return _selectionView();
+      case _Stage.awaitingPayment:
+        return _paymentView();
+      case _Stage.verifying:
+      case _Stage.processing:
+        return _confirmingView();
+      case _Stage.failed:
+        return _failedView();
+    }
+  }
+
+  Widget _eventHeader() => Container(
+        color: Colors.white,
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Event Header
-            Container(
-              color: const Color(0xFF001F3F),
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.event['title'] ?? 'Event Title',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.calendar_today, color: Colors.white70, size: 16),
-                      const SizedBox(width: 8),
-                      Text(
-                        widget.event['date'] ?? 'Date TBD',
-                        style: const TextStyle(color: Colors.white70, fontSize: 14),
-                      ),
-                      const SizedBox(width: 20),
-                      const Icon(Icons.access_time, color: Colors.white70, size: 16),
-                      const SizedBox(width: 8),
-                      Text(
-                        widget.event['time'] ?? 'Time TBD',
-                        style: const TextStyle(color: Colors.white70, fontSize: 14),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            Text(_event.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text(_event.dateLabel, style: TextStyle(color: Colors.grey.shade700)),
+            if (_event.placeLabel.isNotEmpty) Text(_event.placeLabel, style: TextStyle(color: Colors.grey.shade700)),
+          ],
+        ),
+      );
 
-            // Seating Layout Image Viewer
-            if (venueData != null && venueData!['seatingLayoutImage'] != null) ...[
-              Container(
-                margin: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+  Widget _noticeBox(String text, {Color? color}) => Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: (color ?? AppColors.warning).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+        child: Text(text, style: TextStyle(color: color ?? Colors.brown.shade800)),
+      );
+
+  Widget _policyCard() {
+    final config = _config;
+    if (config == null) {
+      if (_configError == null) return const SizedBox.shrink();
+      return Card(
+        color: Colors.white,
+        child: ListTile(
+          leading: const Icon(Icons.info_outline),
+          title: const Text('The cancellation policy could not be loaded'),
+          subtitle: Text(_configError!),
+          trailing: IconButton(icon: const Icon(Icons.refresh), onPressed: _loadConfig),
+        ),
+      );
+    }
+    return Card(
+      color: Colors.white,
+      surfaceTintColor: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Cancellation and refunds', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const SizedBox(height: 8),
+            if (config.refundPolicy.isEmpty)
+              Text('No refund rule is published. A cancelled paid ticket may not be refunded.', style: TextStyle(color: Colors.grey.shade700))
+            else ...[
+              for (final rule in config.refundPolicy)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('• ${refundRuleSentence(rule)}', style: TextStyle(color: Colors.grey.shade800)),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header with controls
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(16),
-                          topRight: Radius.circular(16),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.map, color: Color(0xFF001F3F)),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text(
-                              'Seating Layout',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF001F3F),
-                              ),
-                            ),
-                          ),
-                          // Zoom controls
-                          IconButton(
-                            onPressed: () {
-                              setState(() {
-                                _imageScale = (_imageScale - 0.2).clamp(0.5, 3.0);
-                                _transformationController.value = Matrix4.identity()..scale(_imageScale);
-                              });
-                            },
-                            icon: const Icon(Icons.zoom_out),
-                            tooltip: 'Zoom Out',
-                          ),
-                          IconButton(
-                            onPressed: () {
-                              setState(() {
-                                _imageScale = (_imageScale + 0.2).clamp(0.5, 3.0);
-                                _transformationController.value = Matrix4.identity()..scale(_imageScale);
-                              });
-                            },
-                            icon: const Icon(Icons.zoom_in),
-                            tooltip: 'Zoom In',
-                          ),
-                          // Download button
-                          IconButton(
-                            onPressed: _downloadSeatingLayout,
-                            icon: const Icon(Icons.download),
-                            tooltip: 'Download Layout',
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Image container
-                    Container(
-                      height: 200,
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      child: InteractiveViewer(
-                        transformationController: _transformationController,
-                        minScale: 0.5,
-                        maxScale: 3.0,
-                        child: Image.memory(
-                          base64Decode(venueData!['seatingLayoutImage'].split(',')[1]),
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.error_outline, size: 48, color: Colors.grey),
-                                    SizedBox(height: 8),
-                                    Text('Failed to load seating layout'),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              Text('Any other time: no refund.', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
             ],
-
-            // Multiple Ticket Selection
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Select Tickets',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF001F3F),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: _addTicketSelection,
-                        icon: const Icon(Icons.add_circle, color: Color(0xFF001F3F)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  ...selectedTickets.asMap().entries.map((entry) {
-                    return _buildTicketSelector(entry.key);
-                  }).toList(),
-                  
-                  if (selectedTickets.isEmpty)
-                    ElevatedButton(
-                      onPressed: _addTicketSelection,
-                      child: const Text('Add Ticket'),
-                    ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 100), // Space for bottom bar
           ],
         ),
       ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.3),
-              blurRadius: 10,
-              offset: const Offset(0, -5),
+    );
+  }
+
+  Widget _lineCard(int index, _Line line) {
+    final draft = line.draft;
+    final ticket = draft.ticketIndex != null && draft.ticketIndex! < _tickets.length ? _tickets[draft.ticketIndex!] : null;
+    final problem = ticket == null ? null : validateLine(_tickets, draft);
+    final quantity = lineQuantity(_tickets, draft);
+
+    return Card(
+      key: line.key,
+      color: Colors.white,
+      surfaceTintColor: Colors.white,
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text('Tickets ${index + 1}', style: const TextStyle(fontWeight: FontWeight.bold))),
+                if (_lines.length > 1)
+                  IconButton(
+                    tooltip: 'Remove',
+                    onPressed: () => _removeLine(line),
+                    icon: const Icon(Icons.delete_outline, color: AppColors.danger),
+                  ),
+              ],
             ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int>(
+              key: ValueKey('${line.key}-${_tickets.length}-${draft.ticketIndex == null}'),
+              initialValue: draft.ticketIndex,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder()),
+              items: [
+                for (var i = 0; i < _tickets.length; i++)
+                  DropdownMenuItem<int>(
+                    value: i,
+                    enabled: !_tickets[i].isSoldOut,
+                    child: Text(
+                      '${_tickets[i].name} • ${_tickets[i].priceLabel}${_tickets[i].isSoldOut ? ' • Sold out' : ''}',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: _tickets[i].isSoldOut ? Colors.grey : null),
+                    ),
+                  ),
+              ],
+              onChanged: (value) => setState(() {
+                draft.ticketIndex = value;
+                draft.fromSeat = null;
+                draft.toSeat = null;
+                draft.quantity = 1;
+                line.from.clear();
+                line.to.clear();
+              }),
+            ),
+            if (ticket != null && ticket.isSeated) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Seats ${ticket.blockName}${ticket.firstSeat} to ${ticket.blockName}${ticket.lastSeat}. Enter the first and last seat you want.',
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: line.from,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
+                      decoration: const InputDecoration(labelText: 'First seat', border: OutlineInputBorder()),
+                      onChanged: (value) => setState(() => draft.fromSeat = int.tryParse(value)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: line.to,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
+                      decoration: const InputDecoration(labelText: 'Last seat', border: OutlineInputBorder()),
+                      onChanged: (value) => setState(() => draft.toSeat = int.tryParse(value)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (ticket != null && !ticket.isSeated) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Expanded(child: Text('How many?')),
+                  IconButton(
+                    onPressed: draft.quantity > 1 ? () => setState(() => draft.quantity--) : null,
+                    icon: const Icon(Icons.remove_circle_outline),
+                  ),
+                  Text('${draft.quantity}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  IconButton(
+                    onPressed: draft.quantity < (ticket.remaining ?? maxSeatsPerBooking) && draft.quantity < maxSeatsPerBooking
+                        ? () => setState(() => draft.quantity++)
+                        : null,
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+                ],
+              ),
+              if (ticket.remaining != null)
+                Text('${ticket.remaining} left', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+            ],
+            if (ticket != null && (ticket.isSeated ? (draft.fromSeat != null && draft.toSeat != null) : true)) ...[
+              const SizedBox(height: 8),
+              if (problem != null)
+                Text(problem, style: const TextStyle(color: AppColors.danger, fontSize: 13))
+              else
+                Text(
+                  '$quantity ${quantity == 1 ? 'ticket' : 'tickets'} × ${ticket.priceLabel}',
+                  style: const TextStyle(color: AppColors.navy, fontWeight: FontWeight.w600),
+                ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  void _showLayout() {
+    showDialog<void>(
+      context: context,
+      builder: (dialog) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Seats ${_getTotalSeats()}',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF001F3F),
-                  ),
-                ),
-                Text(
-                  '₹ ${_getTotalPrice()}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF001F3F),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _getTotalSeats() > 0 ? () {
-                  _showBookingConfirmation();
-                } : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF001F3F),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  'Proceed to Payment',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+            Flexible(child: InteractiveViewer(maxScale: 5, child: AppImage(_layoutImage, fit: BoxFit.contain))),
+            TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('Close')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _selectionView() {
+    final creating = _stage == _Stage.creatingOrder;
+    final problem = _problem;
+    final estimate = estimateTotal(_tickets, _drafts);
+    final seats = totalSeats(_tickets, _drafts);
+    final paidUnavailable = _config != null && !_config!.enabled && estimate > 0;
+
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              _eventHeader(),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_layoutImage.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _showLayout,
+                          icon: const Icon(Icons.event_seat_outlined),
+                          label: const Text('View seating layout'),
+                        ),
+                      ),
+                    if (_tickets.isEmpty)
+                      _noticeBox('This event has no tickets on sale.')
+                    else ...[
+                      for (var i = 0; i < _lines.length; i++) _lineCard(i, _lines[i]),
+                      if (_lines.length < maxLinesPerBooking && _tickets.length > 1)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: creating ? null : _addLine,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add another category'),
+                          ),
+                        ),
+                    ],
+                    const SizedBox(height: 8),
+                    _policyCard(),
+                  ],
                 ),
               ),
+            ],
+          ),
+        ),
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (paidUnavailable) _noticeBox('Paid booking is unavailable right now. Please try again later.'),
+              if (_notice != null) _noticeBox(_notice!, color: AppColors.danger),
+              if (problem == null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text('$seats ${seats == 1 ? 'ticket' : 'tickets'}', style: TextStyle(color: Colors.grey.shade700))),
+                      Text(
+                        estimate == 0 ? 'Free' : 'Estimated ${formatRupees(estimate)}',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                )
+              else if (_tickets.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(problem, style: TextStyle(color: Colors.grey.shade700)),
+                ),
+              ElevatedButton(
+                onPressed: problem != null || creating ? null : _proceed,
+                style: primaryButtonStyle(),
+                child: creating
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text(estimate == 0 && problem == null ? 'CONFIRM FREE BOOKING' : 'PROCEED'),
+              ),
+              if (estimate > 0 && problem == null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'The exact amount is confirmed on the next step, before you pay.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _paymentView() {
+    final order = _order!;
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              _eventHeader(),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Card(
+                      color: Colors.white,
+                      surfaceTintColor: Colors.white,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Your seats are held', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Icon(Icons.timer_outlined, color: AppColors.warning),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Pay within ${formatCountdown(_holdLeft)}',
+                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.warning),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text('After that the seats are released for other people.', style: TextStyle(color: Colors.grey.shade700)),
+                            const Divider(height: 28),
+                            for (final draft in _drafts)
+                              if (draft.ticketIndex != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(
+                                    _tickets[draft.ticketIndex!].isSeated
+                                        ? '${_tickets[draft.ticketIndex!].name}: seats ${draft.fromSeat}–${draft.toSeat}'
+                                        : '${_tickets[draft.ticketIndex!].name}: ${draft.quantity}',
+                                  ),
+                                ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Expanded(child: Text('Amount to pay', style: TextStyle(fontSize: 16))),
+                                Text(formatRupees(order.totalPrice > 0 ? order.totalPrice : order.amountPaise / 100),
+                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.navy)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _policyCard(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_notice != null) _noticeBox(_notice!),
+              ElevatedButton(
+                onPressed: _pay,
+                style: primaryButtonStyle(),
+                child: Text('PAY ${formatRupees(order.totalPrice > 0 ? order.totalPrice : order.amountPaise / 100)}'),
+              ),
+              TextButton(onPressed: _changeTickets, child: const Text('Change tickets')),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _confirmingView() {
+    final processing = _stage == _Stage.processing;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!_verifyPaused) const CircularProgressIndicator(color: AppColors.navy) else const Icon(Icons.hourglass_bottom, size: 48, color: AppColors.warning),
+            const SizedBox(height: 20),
+            Text(
+              processing ? 'Payment processing' : 'Confirming your payment',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _verifyPaused
+                  ? 'Your payment is still being processed by the bank. The ticket will appear under My Bookings as soon as it is confirmed. You do not need to pay again.'
+                  : (_notice ?? 'Please keep this screen open. This usually takes a few seconds.'),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
+            if (_verifyPaused) ...[
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  _verifyAttempts = 0;
+                  _verify();
+                },
+                style: primaryButtonStyle(),
+                child: const Text('CHECK AGAIN'),
+              ),
+              TextButton(onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst), child: const Text('Back to home')),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _failedView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, size: 56, color: AppColors.danger),
+            const SizedBox(height: 16),
+            const Text('No ticket was issued', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(_failure ?? '', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade800)),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _order = null;
+                  _paymentId = null;
+                  _signature = null;
+                  _failure = null;
+                  _notice = null;
+                  _stage = _Stage.selecting;
+                });
+                _refreshEvent();
+              },
+              style: primaryButtonStyle(),
+              child: const Text('CHOOSE TICKETS AGAIN'),
             ),
           ],
         ),
@@ -621,216 +879,14 @@ class _BookingScreenState extends State<BookingScreen> {
     );
   }
 
-  void _showBookingConfirmation() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text(
-            'Booking Confirmation',
-            style: TextStyle(
-              color: Color(0xFF001F3F),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Event: ${widget.event['title'] ?? 'Event Title'}'),
-              FutureBuilder<Map<String, String>>(
-                future: _getVenueDetails(),
-                builder: (context, snapshot) {
-                  final venueInfo = snapshot.data ?? {'name': 'Loading...', 'address': '', 'city': ''};
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Venue: ${venueInfo['name']}'),
-                      if (venueInfo['address']!.isNotEmpty)
-                        Text('Address: ${venueInfo['address']}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                      if (venueInfo['city']!.isNotEmpty)
-                        Text('Location: ${venueInfo['city']}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                    ],
-                  );
-                },
-              ),
-              Text('Date: ${widget.event['date'] ?? 'Date TBD'}'),
-              Text('Time: ${widget.event['time'] ?? 'Time TBD'}'),
-              Text('Tickets: ${selectedTickets.length}'),
-              ...selectedTickets.map((ticket) => Text('${ticket['category']} - Block ${ticket['block']}: ${ticket['block']}${ticket['fromSeat']}-${ticket['block']}${ticket['toSeat']} (${ticket['quantity']} seats)')).toList(),
-              const SizedBox(height: 8),
-              Text(
-                'Total: ₹${_getTotalPrice()}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: Color(0xFF001F3F),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => _initiatePayment(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF001F3F),
-              ),
-              child: const Text('Pay Now', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        );
-      },
-    );
-  }
-  
-  void _initiatePayment() {
-    // Simulate payment success for mobile (integrate proper payment gateway)
-    _handlePaymentSuccess('test_payment_${DateTime.now().millisecondsSinceEpoch}');
-  }
-  
-  void _handlePaymentSuccess(String paymentId) {
-    Navigator.pop(context); // Close dialog
-    _confirmBooking(paymentId);
-  }
-  
-  void _handlePaymentError(String error) {
-    Navigator.pop(context); // Close dialog
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Payment failed: $error'),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-  
-  Future<void> _confirmBooking([String? paymentId]) async {
-    try {
-      final userPhone = await ApiService.getUserPhone();
-      if (userPhone == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please login to book tickets')),
-        );
-        return;
-      }
-      
-      // Check for seat conflicts
-      final eventId = widget.event['id'] ?? widget.event['title'];
-      final conflictCheck = await ApiService.checkSeatConflicts(userPhone, eventId, selectedTickets);
-      
-      if (conflictCheck['hasConflict'] == true) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(conflictCheck['message'] ?? 'Some seats are already booked'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-      
-      // Save booking locally for now
-      final bookingData = {
-        'userPhone': userPhone,
-        'eventId': eventId,
-        'eventTitle': widget.event['title'],
-        'eventDate': widget.event['date'],
-        'eventTime': widget.event['time'],
-        'venue': widget.event['venue'] ?? 'Venue',
-        'tickets': selectedTickets.map((ticket) => {
-          'category': ticket['category'],
-          'block': ticket['block'],
-          'fromSeat': ticket['fromSeat'],
-          'toSeat': ticket['toSeat'],
-          'quantity': ticket['quantity'],
-          'price': ticket['price'],
-          'totalPrice': ticket['price'] * ticket['quantity'],
-        }).toList(),
-        'totalSeats': _getTotalSeats(),
-        'totalPrice': _getTotalPrice(),
-        'bookingDate': DateTime.now().toIso8601String(),
-        'status': 'confirmed',
-        'paymentId': paymentId,
-        'paymentStatus': paymentId != null ? 'paid' : 'pending',
-        '_id': DateTime.now().millisecondsSinceEpoch.toString(),
-      };
-      
-      await ApiService.saveBookingLocally(bookingData);
-      
-      Navigator.pop(context); // Close dialog
-      Navigator.pop(context); // Go back to event details
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => MyBookingsScreen()),
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Booking confirmed! Welcome to My Bookings.'),
-          backgroundColor: Color(0xFF001F3F),
-        ),
-      );
-    } catch (e) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error creating booking. Please try again.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    _verifyTimer?.cancel();
+    _razorpay?.clear();
+    for (final line in _lines) {
+      line.dispose();
     }
-  }
-  
-  Future<void> _downloadSeatingLayout() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Download feature is not available on mobile')),
-    );
-  }
-  
-  Future<Map<String, String>> _getVenueDetails() async {
-    try {
-      String? venueName;
-      if (widget.event['location'] != null) {
-        if (widget.event['location'] is String) {
-          venueName = widget.event['location'];
-        } else if (widget.event['location']['name'] != null) {
-          venueName = widget.event['location']['name'];
-        }
-      } else if (widget.event['venue'] != null) {
-        venueName = widget.event['venue'];
-      }
-      
-      if (venueName != null && venueName.isNotEmpty && venueName != 'Venue') {
-        final venueResult = await ApiService.getVenueByName(venueName);
-        if (venueResult['success'] == true && venueResult['venues'] != null && venueResult['venues'].isNotEmpty) {
-          final venue = venueResult['venues'][0];
-          final address = venue['location']?['address']?.toString() ?? '';
-          final city = venue['location']?['city']?.toString() ?? '';
-          final state = venue['location']?['state']?.toString() ?? '';
-          final cityState = [city, state].where((s) => s.isNotEmpty).join(', ');
-          
-          return {
-            'name': venue['name']?.toString() ?? venueName,
-            'address': address,
-            'city': cityState,
-          };
-        }
-      }
-      
-      return {
-        'name': venueName ?? 'Venue TBD',
-        'address': '',
-        'city': '',
-      };
-    } catch (e) {
-      return {
-        'name': 'Venue TBD',
-        'address': '',
-        'city': '',
-      };
-    }
+    super.dispose();
   }
 }

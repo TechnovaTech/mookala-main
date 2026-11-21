@@ -1,64 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
-import { ObjectId } from 'mongodb';
+import { fail, ok, toObjectId } from '@/lib/http';
+import { requireAppUser } from '@/lib/app-auth';
+
+export const dynamic = 'force-dynamic';
 
 export async function OPTIONS() {
-  return new NextResponse(null, { 
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
-  });
+  return new NextResponse(null, { status: 200 });
 }
 
+/** GET /api/user/follow-status?artistId=<artist id or phone>&userPhone= */
 export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const artistId = (searchParams.get('artistId') || '').trim();
+  if (!artistId || !searchParams.get('userPhone')) return fail('Artist ID and user phone are required', 400);
+
+  const auth = requireAppUser(request, searchParams.get('userPhone'));
+  if (!auth.ok) return auth.response;
+
   try {
-    const { searchParams } = new URL(request.url);
-    const artistId = searchParams.get('artistId');
-    const userPhone = searchParams.get('userPhone');
-
-    if (!artistId || !userPhone) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Artist ID and user phone are required' 
-      }, { status: 400 });
-    }
-
     const { db } = await connectToDatabase();
-    
-    // Find the artist
-    const artist = await db.collection('artists').findOne({ 
-      $or: [
-        { _id: new ObjectId(artistId) },
-        { phone: artistId }
-      ]
-    });
 
-    if (!artist) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Artist not found' 
-      }, { status: 404 });
-    }
+    // An artist is addressed by its id or, failing that, by its phone.
+    const oid = toObjectId(artistId);
+    const artist = await db
+      .collection('artists')
+      .findOne(oid ? { _id: oid } : { phone: artistId }, { projection: { _id: 1 } });
+    if (!artist) return fail('Artist not found', 404);
 
-    // Check if user is following this artist
-    const user = await db.collection('users').findOne({
-      phone: userPhone,
-      followedArtists: artist._id
-    });
+    const following = await db
+      .collection('users')
+      .findOne({ phone: auth.phone, followedArtists: artist._id }, { projection: { _id: 1 } });
 
-    return NextResponse.json({ 
-      success: true, 
-      isFollowing: !!user
-    });
-
+    return ok({ isFollowing: Boolean(following) });
   } catch (error) {
     console.error('Error checking follow status:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to check follow status' 
-    }, { status: 500 });
+    return fail('Failed to check follow status', 500);
   }
 }

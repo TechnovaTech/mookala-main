@@ -1,119 +1,77 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
-import { ObjectId } from 'mongodb';
+import { fail, ok, toObjectId } from '@/lib/http';
+import { restrictionFor } from '@/lib/user-status';
+import { readBody, requireAppUser, text } from '@/lib/app-auth';
+
+export const dynamic = 'force-dynamic';
 
 export async function OPTIONS() {
-  return new NextResponse(null, { 
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
-  });
+  return new NextResponse(null, { status: 200 });
 }
 
+/**
+ * POST /api/artists/follow
+ *   { artistId: <artist id or phone>, userPhone, action?: 'follow' | 'unfollow' }
+ */
 export async function POST(request: NextRequest) {
+  const body = await readBody(request);
+  if (!body) return fail('Invalid request body', 400);
+
+  const artistId = text(body.artistId, 40);
+  if (!artistId || !body.userPhone) return fail('Artist ID and user phone are required', 400);
+
+  const action = body.action === undefined || body.action === null ? 'follow' : body.action;
+  if (action !== 'follow' && action !== 'unfollow') return fail('Action must be follow or unfollow', 400);
+
+  const auth = requireAppUser(request, body.userPhone);
+  if (!auth.ok) return auth.response;
+  const userPhone = auth.phone;
+
   try {
     const { db } = await connectToDatabase();
-    const body = await request.json();
-    console.log('Follow request body:', body);
-    
-    const artistId = body.artistId;
-    const userPhone = body.userPhone;
-    const action = body.action || 'follow';
 
-    if (!artistId || !userPhone) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Artist ID and user phone are required' 
-      }, { status: 400 });
+    // An artist is addressed by its id or, failing that, by its phone.
+    const oid = toObjectId(artistId);
+    const artist = await db
+      .collection('artists')
+      .findOne(oid ? { _id: oid } : { phone: artistId }, { projection: { _id: 1 } });
+    if (!artist) return fail('Artist not found', 404);
+
+    const users = db.collection('users');
+    const user = await users.findOne({ phone: userPhone }, { projection: { followedArtists: 1 } });
+    if (!user) return fail('User not found', 404);
+
+    const restricted = await restrictionFor(db, 'users', userPhone);
+    if (restricted) return fail(restricted, 403);
+
+    const followingNow =
+      Array.isArray(user.followedArtists) && user.followedArtists.some((id: any) => String(id) === String(artist._id));
+    const count = () => users.countDocuments({ followedArtists: artist._id });
+
+    if (action === 'follow' && followingNow) {
+      return ok({ followerCount: await count(), isFollowing: true, message: 'Already following this artist' });
+    }
+    if (action === 'unfollow' && !followingNow) {
+      return ok({ followerCount: await count(), isFollowing: false, message: 'Not following this artist' });
     }
 
-    // Find the artist
-    const artist = await db.collection('artists').findOne({ 
-      $or: [
-        { _id: new ObjectId(artistId) },
-        { phone: artistId }
-      ]
-    });
-
-    if (!artist) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Artist not found' 
-      }, { status: 404 });
-    }
-
-    const artistObjectId = artist._id;
-
-    // Check current follow status to prevent duplicates
-    const existingUser = await db.collection('users').findOne({
-      phone: userPhone,
-      followedArtists: artistObjectId
-    });
-
-    const isCurrentlyFollowing = !!existingUser;
-
-    // Prevent duplicate operations
-    if (action === 'follow' && isCurrentlyFollowing) {
-      const followerCount = await db.collection('users')
-        .countDocuments({ 'followedArtists': artistObjectId });
-      return NextResponse.json({ 
-        success: true, 
-        followerCount: followerCount,
-        message: 'Already following this artist'
-      });
-    }
-
-    if (action === 'unfollow' && !isCurrentlyFollowing) {
-      const followerCount = await db.collection('users')
-        .countDocuments({ 'followedArtists': artistObjectId });
-      return NextResponse.json({ 
-        success: true, 
-        followerCount: followerCount,
-        message: 'Not following this artist'
-      });
-    }
-
-    // Update user's followedArtists array
     if (action === 'follow') {
-      await db.collection('users').updateOne(
-        { phone: userPhone },
-        { $addToSet: { followedArtists: artistObjectId } },
-        { upsert: true }
-      );
-    } else if (action === 'unfollow') {
-      await db.collection('users').updateOne(
-        { phone: userPhone },
-        { $pull: { followedArtists: artistObjectId } } as any
-      );
+      await users.updateOne({ phone: userPhone }, { $addToSet: { followedArtists: artist._id } });
+    } else {
+      await users.updateOne({ phone: userPhone }, { $pull: { followedArtists: artist._id } } as any);
     }
 
-    // Count real followers from users collection
-    const followerCount = await db.collection('users')
-      .countDocuments({ 
-        'followedArtists': artistObjectId
-      });
-    
-    // Update artist's follower count
-    await db.collection('artists').updateOne(
-      { _id: artistObjectId },
-      { $set: { followersCount: followerCount } }
-    );
-    
-    return NextResponse.json({ 
-      success: true, 
-      followerCount: followerCount,
-      isFollowing: action === 'follow',
-      message: `Successfully ${action}ed artist`
-    });
+    const followerCount = await count();
+    await db.collection('artists').updateOne({ _id: artist._id }, { $set: { followersCount: followerCount } });
 
+    return ok({
+      followerCount,
+      isFollowing: action === 'follow',
+      message: `Successfully ${action}ed artist`,
+    });
   } catch (error) {
     console.error('Error updating follow status:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to update follow status' 
-    }, { status: 500 });
+    return fail('Failed to update follow status', 500);
   }
 }

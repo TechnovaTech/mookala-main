@@ -1,40 +1,20 @@
 import 'package:flutter/material.dart';
-import 'artist_profile_screen.dart';
-import 'artist_followers_screen.dart';
-import 'artist_tiers_screen.dart';
-import 'artist_calendar_screen.dart';
+
+import '../app_flow.dart';
+import '../logic/ticket_logic.dart';
+import '../services/api.dart';
+import '../services/api_client.dart';
+import '../services/session.dart';
+import '../widgets/common.dart';
 import 'artist_bookings_screen.dart';
+import 'artist_calendar_screen.dart';
+import 'artist_followers_screen.dart';
 import 'artist_payments_screen.dart';
+import 'artist_profile_screen.dart';
 import 'kyc_verification_screen.dart';
-import 'user_profile_screen.dart';
-import '../services/auth_service.dart';
 
-/// These screens double as dashboard tabs (where the dashboard supplies the
-/// Scaffold) and as full pages opened from the dashboard. When opened as a
-/// page they carry no Scaffold of their own, so wrap them in one here to give
-/// the route a title bar with a working back button.
-Route<void> _pageRoute(String title, Widget child) {
-  return MaterialPageRoute(
-    builder: (context) => Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: Text(
-          title,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      body: child,
-    ),
-  );
-}
-
+/// The artist's home. Everything is behind KYC approval, and each KYC state
+/// (not submitted / under review / rejected) offers its own next action.
 class ArtistDashboardScreen extends StatefulWidget {
   const ArtistDashboardScreen({super.key});
 
@@ -43,545 +23,303 @@ class ArtistDashboardScreen extends StatefulWidget {
 }
 
 class _ArtistDashboardScreenState extends State<ArtistDashboardScreen> {
-  int _currentIndex = 0;
-  String _kycStatus = 'pending';
+  bool _loadingKyc = true;
+  String? _kycError;
+  String _kycStatus = 'not_submitted';
   String _rejectionNotes = '';
-  String _userPhone = '';
-  bool _isLoading = true;
-  Map<String, dynamic> _dashboardStats = {
-    'followers': 0,
-    'bookingRequests': 0,
-    'upcomingEvents': 0,
-    'totalEarnings': 0,
-  };
+  bool _switching = false;
+
+  int _tab = 0;
+  final _homeKey = GlobalKey<_ArtistHomeState>();
 
   @override
   void initState() {
     super.initState();
-    _checkKYCStatus();
-    _fetchDashboardStats();
+    _loadKyc();
   }
 
-  Future<void> _checkKYCStatus() async {
-    final userData = await AuthService.getUserData();
-    final phone = userData['phone'];
-    
-    if (phone != null) {
-      setState(() {
-        _userPhone = phone;
-      });
-      
-      final result = await AuthService.getKYCStatus(phone);
-      
-      if (result['success'] == true) {
-        setState(() {
-          _kycStatus = result['kycStatus'] ?? 'pending';
-          _rejectionNotes = result['rejectionNotes'] ?? '';
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    } else {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-  
-  Future<void> _fetchDashboardStats() async {
+  Future<void> _loadKyc() async {
+    setState(() {
+      _loadingKyc = true;
+      _kycError = null;
+    });
     try {
-      final userData = await AuthService.getUserData();
-      final phone = userData['phone'];
-      
-      if (phone != null) {
-        final result = await AuthService.getDashboardStats(phone);
-        
-        if (result['success'] == true) {
-          setState(() {
-            _dashboardStats = result['stats'] ?? _dashboardStats;
-          });
-        }
-      }
-    } catch (error) {
-      print('Error fetching dashboard stats: $error');
+      final data = await Api.kycStatus('artist');
+      if (!mounted) return;
+      setState(() {
+        _kycStatus = (data['kycStatus'] ?? 'not_submitted').toString();
+        _rejectionNotes = (data['rejectionNotes'] ?? '').toString().trim();
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _kycError = e.message);
+    } finally {
+      if (mounted) setState(() => _loadingKyc = false);
     }
   }
 
-  List<Widget> get _screens => [
-    DashboardHomeScreen(stats: _dashboardStats, onRefresh: _fetchDashboardStats),
-    const ArtistProfileScreen(),
-    const ArtistCalendarScreen(),
-    const ArtistBookingsScreen(),
-    const ArtistPaymentsScreen(),
-  ];
+  Future<void> _openKyc() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const KYCVerificationScreen()));
+    if (mounted) _loadKyc();
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        title: Text(
-          _getAppBarTitle(),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
+  Future<void> _switchRole() async {
+    if (_switching) return;
+    setState(() => _switching = true);
+    try {
+      await AppFlow.openRoleSwitcher(context);
+    } on ApiException catch (e) {
+      if (mounted) showMessage(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _switching = false);
+    }
+  }
+
+  Future<void> _signOut() async {
+    final sure = await confirm(context, title: 'Sign out', message: 'Sign out of this device?', yes: 'Sign out', danger: true);
+    if (sure) await AppFlow.signOut();
+  }
+
+  /// Shown instead of the dashboard until KYC is approved. Always offers
+  /// "Switch role" and "Sign out" so nobody is stuck here.
+  Widget _gate() {
+    Widget state;
+    if (_loadingKyc) {
+      state = const LoadingView();
+    } else if (_kycError != null) {
+      state = StateView.error(_kycError!, onRetry: _loadKyc);
+    } else if (_kycStatus == 'rejected') {
+      state = StateView(
+        icon: Icons.cancel_outlined,
+        title: 'KYC rejected',
+        message: _rejectionNotes.isEmpty
+            ? 'Your documents were not accepted. The reviewer did not leave a note. Please check them and submit again.'
+            : 'Your documents were not accepted.\n\nReviewer\'s note: $_rejectionNotes',
+        actionLabel: 'Resubmit documents',
+        onAction: _openKyc,
+        color: Colors.red,
+      );
+    } else if (_kycStatus == 'pending') {
+      state = RefreshIndicator(
+        onRefresh: _loadKyc,
+        child: StateView(
+          icon: Icons.hourglass_top,
+          title: 'KYC under review',
+          message: 'Your documents are waiting for review by the Mookalaa team. '
+              'You can use the app once they are approved. Pull down to check again.',
+          actionLabel: 'Check again',
+          onAction: _loadKyc,
+          color: Colors.orange,
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications, color: Colors.white),
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: const Icon(Icons.person, color: Colors.white),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const UserProfileScreen()),
-              );
-            },
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _kycStatus != 'approved'
-              ? _buildKYCStatusWidget()
-              : _screens[_currentIndex],
-      bottomNavigationBar: _kycStatus == 'approved'
-          ? BottomNavigationBar(
-              currentIndex: _currentIndex,
-              onTap: (index) => setState(() => _currentIndex = index),
-              type: BottomNavigationBarType.fixed,
-              selectedItemColor: const Color(0xFF001F3F),
-              unselectedItemColor: Colors.grey.shade600,
-              items: const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.dashboard),
-                  label: 'Dashboard',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.person),
-                  label: 'Profile',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.calendar_today),
-                  label: 'Calendar',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.event_note),
-                  label: 'Bookings',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.payment),
-                  label: 'Payments',
-                ),
-              ],
-            )
-          : null,
-    );
-  }
-  
-  String _getAppBarTitle() {
-    switch (_currentIndex) {
-      case 0: return 'Artist Dashboard';
-      case 1: return 'Profile';
-      case 2: return 'Calendar';
-      case 3: return 'Booking Requests';
-      case 4: return 'Payments & History';
-      default: return 'Artist Dashboard';
+      );
+    } else {
+      state = StateView(
+        icon: Icons.badge_outlined,
+        title: 'Verify your identity',
+        message: 'You have not submitted your KYC documents yet. Submit your Aadhaar and PAN to start '
+            'receiving booking requests.',
+        actionLabel: 'Submit KYC',
+        onAction: _openKyc,
+      );
     }
-  }
-
-  Widget _buildKYCStatusWidget() {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            _kycStatus == 'rejected' ? Icons.cancel : Icons.pending,
-            size: 80,
-            color: _kycStatus == 'rejected' ? Colors.red : Colors.orange,
-          ),
-          const SizedBox(height: 24),
-          Text(
-            _kycStatus == 'rejected' ? 'KYC Rejected' : 'KYC Pending',
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _kycStatus == 'rejected'
-                ? 'Your KYC documents have been rejected. Please resubmit with correct information.'
-                : 'Your KYC documents are under review. You will be able to access all features once approved.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey.shade600,
-            ),
-          ),
-          if (_kycStatus == 'rejected' && _rejectionNotes.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.shade200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return Scaffold(
+      appBar: appBar('Mookalaa Artist', showBack: false),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(child: state),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  const Text(
-                    'Rejection Reason:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red,
-                    ),
+                  TextButton.icon(
+                    onPressed: _switching ? null : _switchRole,
+                    icon: const Icon(Icons.swap_horiz, color: AppColors.navy),
+                    label: Text(_switching ? 'Loading…' : 'Switch role', style: const TextStyle(color: AppColors.navy)),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _rejectionNotes,
-                    style: const TextStyle(color: Colors.red),
+                  TextButton.icon(
+                    onPressed: _signOut,
+                    icon: Icon(Icons.logout, color: Colors.red.shade700),
+                    label: Text('Sign out', style: TextStyle(color: Colors.red.shade700)),
                   ),
                 ],
               ),
             ),
           ],
-          const SizedBox(height: 32),
-          if (_kycStatus == 'rejected')
-            ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => KYCVerificationScreen(
-                      phone: _userPhone, 
-                      isResubmission: true,
-                    ),
-                  ),
-                ).then((_) {
-                  _checkKYCStatus();
-                });
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF001F3F),
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              ),
-              child: const Text(
-                'Resubmit KYC Documents',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          const SizedBox(height: 16),
-          TextButton(
-            onPressed: () {
-              _checkKYCStatus();
-            },
-            child: const Text(
-              'Refresh Status',
-              style: TextStyle(color: Color(0xFF001F3F)),
-            ),
-          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loadingKyc || _kycError != null || _kycStatus != 'approved') return _gate();
+
+    return Scaffold(
+      body: IndexedStack(
+        index: _tab,
+        children: [
+          _ArtistHome(key: _homeKey, onOpenTab: (index) => setState(() => _tab = index)),
+          ArtistBookingsScreen(embedded: true, onChanged: () => _homeKey.currentState?.reload()),
+          const ArtistCalendarScreen(embedded: true),
+          const ArtistProfileScreen(embedded: true),
+        ],
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _tab,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: AppColors.navy,
+        unselectedItemColor: Colors.black45,
+        onTap: (index) {
+          setState(() => _tab = index);
+          if (index == 0) _homeKey.currentState?.reload();
+        },
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.inbox_outlined), activeIcon: Icon(Icons.inbox), label: 'Bookings'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.calendar_month_outlined), activeIcon: Icon(Icons.calendar_month), label: 'Calendar'),
+          BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
     );
   }
 }
 
-class DashboardHomeScreen extends StatelessWidget {
-  final Map<String, dynamic> stats;
-  final Future<void> Function() onRefresh;
-  
-  const DashboardHomeScreen({super.key, required this.stats, required this.onRefresh});
+/// Home tab: real counts from `GET /artist/dashboard-stats`.
+class _ArtistHome extends StatefulWidget {
+  const _ArtistHome({super.key, required this.onOpenTab});
+
+  /// Switches the dashboard to another bottom tab (1 = Bookings, 2 = Calendar).
+  final ValueChanged<int> onOpenTab;
+
+  @override
+  State<_ArtistHome> createState() => _ArtistHomeState();
+}
+
+class _ArtistHomeState extends State<_ArtistHome> {
+  Map<String, dynamic>? _stats;
+  String _name = '';
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    reload();
+  }
+
+  Future<void> reload() async {
+    try {
+      final stats = await Api.artistStats();
+      if (!mounted) return;
+      setState(() {
+        _stats = stats;
+        _error = null;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    }
+    // The greeting is a nicety: the screen works without it.
+    try {
+      final user = await Api.profile('artist');
+      if (!mounted) return;
+      setState(() => _name = (user['name'] ?? '').toString().trim());
+    } on ApiException {
+      // keep whatever name is already shown
+    }
+  }
+
+  Widget _statTile(IconData icon, String label, int value, VoidCallback onTap) {
+    return Expanded(
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+            child: Column(
+              children: [
+                Icon(icon, color: AppColors.navy),
+                const SizedBox(height: 8),
+                Text('$value',
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.navy)),
+                const SizedBox(height: 4),
+                Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _entry(IconData icon, String title, String subtitle, VoidCallback onTap) => Card(
+        margin: const EdgeInsets.only(bottom: 10),
+        child: ListTile(
+          leading: Icon(icon, color: AppColors.navy),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(subtitle),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: onTap,
+        ),
+      );
+
+  void _push(Widget screen) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => screen)).then((_) {
+      if (mounted) reload();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final stats = _stats;
+    Widget body;
+    if (stats == null) {
+      body = _error != null ? StateView.error(_error!, onRetry: reload) : const LoadingView();
+    } else {
+      final followers = TicketLogic.countOf(stats['followers']);
+      final requests = TicketLogic.countOf(stats['bookingRequests']);
+      final upcoming = TicketLogic.countOf(stats['upcomingEvents']);
+      body = RefreshIndicator(
+        onRefresh: reload,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
           children: [
-          // Welcome Section
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF001F3F), Color(0xFF003366)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Welcome back!',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Ready to showcase your talent?',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Stats Overview
-          const Text(
-            'Profile Stats',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _buildStatCard('Followers', '${stats['followers'] ?? 0}', Icons.people, Colors.blue, context)),
-              const SizedBox(width: 12),
-              Expanded(child: _buildStatCard('Booking Requests', '${stats['bookingRequests'] ?? 0}', Icons.event, Colors.orange, context)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: _buildStatCard('Upcoming Events', '${stats['upcomingEvents'] ?? 0}', Icons.calendar_today, Colors.green, context)),
-              const SizedBox(width: 12),
-              Expanded(child: _buildStatCard('Total Earnings', '₹${stats['totalEarnings'] ?? 0}', Icons.currency_rupee, Colors.purple, context)),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // Notifications Section
-          const Text(
-            'Recent Notifications',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildNotificationCard(
-            'New Booking Request',
-            'Wedding event on Dec 25th',
-            Icons.event_note,
-            Colors.blue,
-          ),
-          const SizedBox(height: 8),
-          _buildNotificationCard(
-            'Payment Received',
-            '₹5,000 for last performance',
-            Icons.payment,
-            Colors.green,
-          ),
-          const SizedBox(height: 8),
-          _buildNotificationCard(
-            'New Message',
-            'Client inquiry about availability',
-            Icons.message,
-            Colors.orange,
-          ),
-          const SizedBox(height: 24),
-          
-          // Tiers Section
-          GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              _pageRoute('Tiers', const ArtistTiersScreen()),
-            ),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.purple.shade400, Colors.purple.shade600],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Upgrade Your Plan',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Get more visibility and features',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.arrow_forward, color: Colors.white),
-                ],
-              ),
-            ),
-          ),
-        ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatCard(String title, String value, IconData icon, Color color, BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        if (title == 'Followers') {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const ArtistFollowersScreen()),
-          );
-        } else if (title == 'Booking Requests') {
-          Navigator.push(
-            context,
-            _pageRoute('Booking Requests', const ArtistBookingsScreen()),
-          );
-        } else if (title == 'Upcoming Events') {
-          Navigator.push(
-            context,
-            _pageRoute('Upcoming Events', const ArtistCalendarScreen()),
-          );
-        }
-        onRefresh();
-      },
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
-              spreadRadius: 1,
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+            Text(_name.isEmpty ? 'Welcome' : 'Welcome, $_name',
+                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text('+91 ${Session.phone ?? ''}', style: const TextStyle(color: Colors.black54)),
+            const SizedBox(height: 14),
+            if (_error != null) ...[InfoBanner(_error!, color: Colors.red), const SizedBox(height: 12)],
             Row(
               children: [
-                Icon(icon, color: color, size: 24),
-                const Spacer(),
+                _statTile(Icons.inbox_outlined, 'Pending requests', requests, () => widget.onOpenTab(1)),
+                _statTile(Icons.event_available_outlined, 'Upcoming events', upcoming, () => widget.onOpenTab(2)),
+                _statTile(Icons.people_outline, 'Followers', followers, () => _push(const ArtistFollowersScreen())),
               ],
             ),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
+            const SizedBox(height: 16),
+            if (requests > 0) ...[
+              InfoBanner(
+                '$requests booking request${requests == 1 ? ' is' : 's are'} waiting for your answer. Open Bookings to accept or decline.',
+                color: Colors.blue,
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-              ),
-            ),
+              const SizedBox(height: 12),
+            ],
+            _entry(Icons.people_outline, 'Followers', 'People who follow you on Mookalaa',
+                () => _push(const ArtistFollowersScreen())),
+            _entry(Icons.account_balance_wallet_outlined, 'Earnings', 'Not available in the app yet',
+                () => _push(const ArtistPaymentsScreen())),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildNotificationCard(String title, String subtitle, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Icon(Icons.chevron_right, color: Colors.grey.shade400),
-        ],
-      ),
+      );
+    }
+    return Scaffold(
+      appBar: appBar('Mookalaa Artist', showBack: false),
+      body: SafeArea(child: body),
     );
   }
 }

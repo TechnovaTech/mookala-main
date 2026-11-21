@@ -1,65 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
+import { fail } from '@/lib/http';
+import { normalisePhone } from '@/lib/otp';
+import { PHONE_ERROR, readBody } from '@/lib/app-auth';
+
+export const dynamic = 'force-dynamic';
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 200 });
 }
 
+/**
+ * POST /api/auth/check-user   { phone }
+ * Says whether the phone has an artist and/or organiser profile, whatever its
+ * signup status. A phone may hold both roles: `roles` lists every one. `role`
+ * and `user` describe the first of them (artist before organiser) and exist
+ * for app builds that predate `roles`; `users` has the same details per role.
+ */
 export async function POST(request: NextRequest) {
+  const body = await readBody(request);
+  const phone = normalisePhone(body?.phone);
+  if (!phone) return fail(PHONE_ERROR, 400);
+
   try {
-    const { phone } = await request.json();
-
-    if (!phone || !/^\d{10}$/.test(phone)) {
-      return NextResponse.json({ error: 'Valid 10-digit phone number required' }, { status: 400 });
-    }
-
     const { db } = await connectToDatabase();
-    
-    // Match on the phone alone, whatever the status. Filtering to finished
-    // profiles here used to strand anyone who started signing up and stopped
-    // before completing: check-user said "new", registration then rejected the
-    // number as already taken, and the phone could never get past this screen.
-    // The caller decides what to do with an unfinished profile via `status`.
-    const artist = await db.collection('artists').findOne({ phone });
-    const organizer = await db.collection('organizers').findOne({ phone });
+    const projection = { phone: 1, status: 1, name: 1 };
+    const [artist, organizer] = await Promise.all([
+      db.collection('artists').findOne({ phone }, { projection }),
+      db.collection('organizers').findOne({ phone }, { projection }),
+    ]);
 
-    // A phone may hold both roles — they live in separate collections — so
-    // report every role found, not just the first match.
-    const roles = [
-      ...(artist ? ['artist'] : []),
-      ...(organizer ? ['organizer'] : []),
-    ];
+    const summary = (doc: any) => ({ phone: doc.phone, _id: doc._id, status: doc.status, name: doc.name || null });
+    const roles = [...(artist ? ['artist'] : []), ...(organizer ? ['organizer'] : [])];
+    const first = artist || organizer;
 
-    if (artist) {
-      return NextResponse.json({
-        exists: true,
-        role: 'artist',
-        roles,
-        user: {
-          phone: artist.phone,
-          _id: artist._id,
-          status: artist.status,
-          name: artist.name || null
-        }
-      });
-    }
+    if (!first) return NextResponse.json({ exists: false, roles: [] });
 
-    if (organizer) {
-      return NextResponse.json({
-        exists: true,
-        role: 'organizer',
-        roles,
-        user: {
-          phone: organizer.phone,
-          _id: organizer._id,
-          status: organizer.status,
-          name: organizer.name || null
-        }
-      });
-    }
-
-    return NextResponse.json({ exists: false, roles: [] });
+    return NextResponse.json({
+      exists: true,
+      role: roles[0],
+      roles,
+      user: summary(first),
+      users: {
+        artist: artist ? summary(artist) : null,
+        organizer: organizer ? summary(organizer) : null,
+      },
+    });
   } catch (error) {
-    return NextResponse.json({ error: 'Check user failed' }, { status: 500 });
+    console.error('Check user error:', error);
+    return fail('Check user failed', 500);
   }
 }

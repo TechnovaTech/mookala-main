@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminFromRequest } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth';
 import {
   getRazorpayConfig,
   validateKeyId,
@@ -16,13 +16,8 @@ export const dynamic = 'force-dynamic';
  *  - {} or { keySecret: '' } -> tests the credentials currently saved
  */
 export async function POST(request: NextRequest) {
-  const admin = getAdminFromRequest(request);
-  if (!admin) {
-    return NextResponse.json(
-      { success: false, error: 'Unauthorized. Please sign in to the admin panel again.' },
-      { status: 401 }
-    );
-  }
+  const check = await requireAdmin(request, 'integrations:manage');
+  if (!check.ok) return check.response;
 
   try {
     const body = await request.json().catch(() => ({}));

@@ -1,44 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { connectToDatabase } from '@/lib/mongodb';
+import { fail } from '@/lib/http';
+import { getAppPhone, kycStatusResponse } from '@/lib/app-auth';
 
-const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017';
-const client = new MongoClient(uri);
+export const dynamic = 'force-dynamic';
 
-export async function OPTIONS(request: NextRequest) {
+export async function OPTIONS() {
   return new NextResponse(null, { status: 200 });
 }
 
+/**
+ * GET /api/organizer/kyc-status?phone=
+ * kycStatus: 'not_submitted' | 'pending' | 'approved' | 'rejected'.
+ * canSubmit is true when documents may be sent now (never sent, or rejected).
+ *
+ * The Aadhaar and PAN numbers are returned only to a caller whose session
+ * token proves this phone number. A call without a token (still accepted while
+ * APP_AUTH_MODE is not 'enforce') receives them as empty strings, with
+ * `documentNumbersHidden: true`, so knowing a phone number is not enough to
+ * read someone's identity numbers.
+ */
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const phone = searchParams.get('phone');
-
-    if (!phone) {
-      return NextResponse.json({ error: 'Phone number is required' }, { status: 400 });
-    }
-
-    await client.connect();
-    const db = client.db('mookalaa');
-    const organizers = db.collection('organizers');
-
-    const organizer = await organizers.findOne({ phone });
-
-    if (!organizer) {
-      return NextResponse.json({ error: 'Organizer not found' }, { status: 404 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      kycStatus: organizer.kycStatus || 'pending',
-      rejectionNotes: organizer.rejectionNotes || '',
-      aadharId: organizer.aadharId || '',
-      panId: organizer.panId || ''
-    });
-
+    const { db } = await connectToDatabase();
+    const response = await kycStatusResponse(db, request, 'organizer', new URL(request.url).searchParams.get('phone'));
+    if (response.status !== 200 || getAppPhone(request)) return response;
+    const body = await response.json();
+    return NextResponse.json({ ...body, aadharId: '', panId: '', documentNumbersHidden: true });
   } catch (error) {
     console.error('Error fetching KYC status:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  } finally {
-    await client.close();
+    return fail('Internal server error', 500);
   }
 }

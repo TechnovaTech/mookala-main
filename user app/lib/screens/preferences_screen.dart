@@ -1,253 +1,169 @@
 import 'package:flutter/material.dart';
+
+import '../services/api_client.dart';
 import '../services/api_service.dart';
-import 'profile_screen.dart';
+import '../widgets/app_theme.dart';
+import '../widgets/state_views.dart';
 import 'discovery_home_screen.dart';
 
+/// Favourite genres. Optional: it can always be skipped, and a failed genre
+/// list can be retried or skipped, so sign-up never gets stuck here.
 class PreferencesScreen extends StatefulWidget {
-  final String phoneNumber;
-  const PreferencesScreen({super.key, required this.phoneNumber});
+  const PreferencesScreen({super.key, this.onboarding = false});
+
+  /// True during sign-up (continues to the home screen); false when opened from the profile menu.
+  final bool onboarding;
 
   @override
   State<PreferencesScreen> createState() => _PreferencesScreenState();
 }
 
 class _PreferencesScreenState extends State<PreferencesScreen> {
-  List<String> selectedGenres = [];
-  List<String> availableGenres = [];
-  bool _isLoading = false;
-  
+  final Set<String> _selected = {};
+  List<String> _genres = [];
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+
   @override
   void initState() {
     super.initState();
-    _loadGenres();
-  }
-  
-  void _loadGenres() async {
-    final genres = await ApiService.getGenres();
-    setState(() {
-      availableGenres = genres;
-    });
+    _load();
   }
 
-  void toggleGenre(String genre) {
+  Future<void> _load() async {
     setState(() {
-      if (selectedGenres.contains(genre)) {
-        selectedGenres.remove(genre);
-      } else {
-        selectedGenres.add(genre);
-      }
+      _loading = true;
+      _error = null;
     });
+    try {
+      final genres = await ApiService.getGenres();
+      List<String> mine = [];
+      if (!widget.onboarding) {
+        final user = await ApiService.getProfile();
+        mine = [
+          if (user['genres'] is List)
+            for (final g in user['genres'] as List)
+              if (g is String) g,
+        ];
+      }
+      if (!mounted) return;
+      setState(() {
+        _genres = genres;
+        _selected
+          ..clear()
+          ..addAll(mine.where(genres.contains));
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.message;
+      });
+    }
+  }
+
+  void _finish() {
+    if (widget.onboarding) {
+      Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const DiscoveryHomeScreen()), (route) => false);
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await ApiService.updateProfile(genres: _selected.toList());
+      if (!mounted) return;
+      if (!widget.onboarding) showMessage(context, 'Preferences saved.');
+      _finish();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      showMessage(context, e.message);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF001F3F),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ProfileScreen(phoneNumber: widget.phoneNumber),
-              ),
-            );
-          },
-        ),
-        title: const Text(
-          'Preferences',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        centerTitle: false,
-
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 20),
-                // Title
-                const Text(
-                  'Select favorite genres',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Choose your interests for personalized feeds',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ],
+      appBar: navyAppBar(
+        'Favourite genres',
+        showBack: !widget.onboarding,
+        actions: [
+          if (widget.onboarding)
+            TextButton(
+              onPressed: _saving ? null : _finish,
+              child: const Text('Skip', style: TextStyle(color: Colors.white)),
             ),
-          ),
-          const SizedBox(height: 30),
-          // Genre Grid
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: GridView.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: 2.5,
-                ),
-                itemCount: availableGenres.length,
-                itemBuilder: (context, index) {
-                  final genre = availableGenres[index];
-                  final isSelected = selectedGenres.contains(genre);
-                  
-                  return GestureDetector(
-                    onTap: () => toggleGenre(genre),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFF001F3F) : Colors.white,
-                        border: Border.all(
-                          color: isSelected ? const Color(0xFF001F3F) : Colors.grey.shade300,
-                          width: 2,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
+        ],
+      ),
+      body: _loading
+          ? const LoadingView()
+          : _error != null
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ErrorView(message: _error!, onRetry: _load),
+                    if (widget.onboarding) TextButton(onPressed: _finish, child: const Text('Skip for now')),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+                      child: Text(
+                        'Choose what you like. You can change this later from your profile.',
+                        style: TextStyle(fontSize: 15, color: Colors.grey.shade700),
                       ),
-                      child: Center(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              genre,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: isSelected ? Colors.white : Colors.black87,
+                    ),
+                    Expanded(
+                      child: _genres.isEmpty
+                          ? const EmptyView(icon: Icons.music_note_outlined, title: 'No genres are available yet')
+                          : SingleChildScrollView(
+                              padding: const EdgeInsets.all(24),
+                              child: Wrap(
+                                spacing: 10,
+                                runSpacing: 10,
+                                children: [
+                                  for (final genre in _genres)
+                                    FilterChip(
+                                      label: Text(genre),
+                                      selected: _selected.contains(genre),
+                                      showCheckmark: true,
+                                      selectedColor: AppColors.navy,
+                                      checkmarkColor: Colors.white,
+                                      labelStyle: TextStyle(color: _selected.contains(genre) ? Colors.white : Colors.black87),
+                                      onSelected: (on) => setState(() => on ? _selected.add(genre) : _selected.remove(genre)),
+                                    ),
+                                ],
                               ),
                             ),
-                            if (isSelected) const SizedBox(width: 8),
-                            if (isSelected) const Icon(
-                              Icons.check_circle,
-                              color: Colors.white,
-                              size: 20,
+                    ),
+                    SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          children: [
+                            ElevatedButton(
+                              onPressed: _selected.isEmpty || _saving ? null : _save,
+                              style: primaryButtonStyle(),
+                              child: _saving
+                                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  : Text(_selected.isEmpty ? 'SELECT AT LEAST ONE' : 'SAVE (${_selected.length})'),
                             ),
+                            if (widget.onboarding)
+                              TextButton(onPressed: _saving ? null : _finish, child: const Text('Skip for now')),
                           ],
                         ),
                       ),
                     ),
-                  );
-                },
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              children: [
-                // Selected count
-                if (selectedGenres.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF001F3F).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.check_circle,
-                          color: const Color(0xFF001F3F),
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${selectedGenres.length} genres selected',
-                          style: TextStyle(
-                            color: const Color(0xFF001F3F),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 20),
-                // Continue Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: selectedGenres.isEmpty || _isLoading ? null : () async {
-                      setState(() {
-                        _isLoading = true;
-                      });
-                      
-                      final result = await ApiService.updateProfile(
-                        phone: widget.phoneNumber,
-                        genres: selectedGenres,
-                      );
-                      
-                      setState(() {
-                        _isLoading = false;
-                      });
-                      
-                      if (result['success'] == true) {
-                        await ApiService.saveUserPhone(widget.phoneNumber);
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const DiscoveryHomeScreen(),
-                          ),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(result['error'] ?? 'Failed to save preferences')),
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF001F3F),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        : const Text(
-                            'SAVE PREFERENCES',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

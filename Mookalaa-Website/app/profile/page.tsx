@@ -1,260 +1,182 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { User, LogOut, Phone, Mail, MapPin, Edit } from "lucide-react"
-import { BackButton } from "@/components/back-button"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
+import { Edit, LogOut, Mail, MapPin, Phone, Ticket, User } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { BackButton } from "@/components/back-button"
+import { fetchProfile } from "@/lib/api"
+import { errorMessage } from "@/lib/api-client"
+import { useAuth } from "@/lib/auth"
+import { loginPath } from "@/lib/navigation"
+import type { UserProfile } from "@/lib/types"
 
-interface UserProfile {
-  phone: string
-  name?: string
-  email?: string
-  city?: string
-  profileImage?: string
-  createdAt?: string
-}
+const PAGE_BACKGROUND = { background: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)" }
+const PANEL = { background: "linear-gradient(135deg, #1e293b 0%, #334155 100%)" }
 
 export default function ProfilePage() {
+  const router = useRouter()
+  const { ready, phone, signOut } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
-  const router = useRouter()
+  const [error, setError] = useState("")
 
-  useEffect(() => {
-    const userPhone = localStorage.getItem('userPhone')
-    if (!userPhone) {
-      router.push('/login')
-      return
-    }
-
-    fetchProfile(userPhone)
-  }, [router])
-
-  const fetchProfile = async (phone: string) => {
+  const load = useCallback(async () => {
+    if (!phone) return
+    setLoading(true)
+    setError("")
     try {
-      const response = await fetch(`https://mookala.vercel.app/api/user/profile?phone=${phone}`)
-      const data = await response.json()
-      
-      if (data.success && data.user) {
-        setProfile(data.user)
-      } else {
-        setProfile({ phone })
-      }
-    } catch (error) {
-      console.error('Error fetching profile:', error)
-      setProfile({ phone })
+      setProfile(await fetchProfile(phone))
+    } catch (err) {
+      setProfile(null)
+      setError(errorMessage(err, "Your profile could not be loaded."))
     } finally {
       setLoading(false)
     }
-  }
+  }, [phone])
+
+  // True once this page has seen a session: losing it later means "signed
+  // out" (go home), not "never signed in" (go to sign-in and come back).
+  const hadSession = useRef(false)
+
+  useEffect(() => {
+    if (!ready) return
+    if (!phone) {
+      router.replace(hadSession.current ? "/" : loginPath("/profile"))
+      return
+    }
+    hadSession.current = true
+    load()
+  }, [ready, phone, router, load])
 
   const handleLogout = () => {
-    localStorage.removeItem('userPhone')
-    router.push('/')
+    signOut()
   }
 
-  if (loading) {
+  if (!ready || !phone || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)'}}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
-          <p className="text-blue-200">Loading profile...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center" style={PAGE_BACKGROUND}>
+        <p className="text-blue-200" role="status">
+          Loading profile...
+        </p>
       </div>
     )
   }
 
   if (!profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)'}}>
-        <div className="p-8 text-center bg-white rounded-3xl shadow-2xl">
-          <h1 className="text-2xl font-bold mb-4 text-gray-900">Profile Not Found</h1>
-          <Button onClick={() => router.push('/')} style={{background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)'}}>Go Home</Button>
+      <div className="min-h-screen flex items-center justify-center px-4" style={PAGE_BACKGROUND}>
+        <div className="p-8 text-center bg-white rounded-3xl shadow-2xl max-w-md">
+          <h1 className="text-2xl font-bold mb-3 text-gray-900">Profile unavailable</h1>
+          <p className="text-gray-600 mb-6" role="alert">
+            {error}
+          </p>
+          <div className="flex gap-3 justify-center">
+            <Button onClick={load}>Try again</Button>
+            <Button variant="outline" onClick={handleLogout} className="text-gray-900 bg-white">
+              Sign out
+            </Button>
+          </div>
         </div>
       </div>
     )
   }
 
+  const rows = [
+    { icon: Phone, label: "Phone number", value: `+91 ${profile.phone}`, hint: "Verified by one-time code" },
+    { icon: User, label: "Full name", value: profile.name, hint: "" },
+    { icon: Mail, label: "Email address", value: profile.email, hint: "" },
+    { icon: MapPin, label: "City", value: profile.city, hint: "" },
+  ]
+
+  const memberSince = profile.createdAt ? new Date(profile.createdAt) : null
+
   return (
-    <div className="min-h-screen" style={{background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)'}}>
-      <div className="max-w-6xl mx-auto px-6 py-12">
-        {/* Header */}
+    <div className="min-h-screen" style={PAGE_BACKGROUND}>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
         <BackButton variant="onDark" className="mb-6" />
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-white mb-3">My Profile</h1>
-          <p className="text-blue-200 text-lg">Manage your account information and preferences</p>
-        </div>
+        <h1 className="text-3xl sm:text-4xl font-bold text-white mb-10 text-center">My Profile</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Profile Card */}
           <div className="lg:col-span-4">
-            <div className="rounded-2xl shadow-2xl p-8 text-center border border-blue-800/30" style={{background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)'}}>
-              <div className="relative inline-block mb-6">
-                <div className="w-32 h-32 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-indigo-500 flex items-center justify-center overflow-hidden shadow-2xl">
-                  {profile.profileImage ? (
-                    <img 
-                      src={profile.profileImage} 
-                      alt="Profile" 
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User className="w-16 h-16 text-white" />
-                  )}
-                </div>
-                <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-green-500 rounded-full border-4 border-white"></div>
+            <div className="rounded-2xl shadow-2xl p-8 text-center border border-blue-800/30" style={PANEL}>
+              <div className="w-32 h-32 mx-auto mb-6 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-indigo-500 flex items-center justify-center overflow-hidden shadow-2xl">
+                {profile.profileImage ? (
+                  <img src={profile.profileImage} alt="Your profile photo" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-16 h-16 text-white" />
+                )}
               </div>
-              
-              <h2 className="text-2xl font-bold text-white mb-2">
-                {profile.name || 'Welcome User!'}
-              </h2>
-              <p className="text-blue-200 mb-2 text-sm">
-                +91 {profile.phone}
-              </p>
-              <p className="text-blue-300 mb-6">
-                {profile.email || 'Complete your profile'}
-              </p>
-              
+
+              <h2 className="text-2xl font-bold text-white mb-2 break-words">{profile.name || "Name not added yet"}</h2>
+              <p className="text-blue-200 mb-6 text-sm">+91 {profile.phone}</p>
+
               <div className="space-y-3">
-                <Button 
-                  className="w-full h-12 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
-                  style={{background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)'}}
-                  onClick={() => router.push('/bookings')}
+                <Button
+                  className="w-full h-12 text-white font-semibold rounded-xl"
+                  style={{ background: "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)" }}
+                  onClick={() => router.push("/bookings")}
                 >
+                  <Ticket className="w-5 h-5 mr-2" />
                   My Bookings
                 </Button>
-                <Button 
-                  className="w-full h-12 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
-                  style={{background: 'linear-gradient(135deg, #475569 0%, #64748b 100%)'}}
-                  onClick={() => router.push(`/profile-setup?phone=${profile.phone}`)}
+                <Button
+                  className="w-full h-12 text-white font-semibold rounded-xl"
+                  style={{ background: "linear-gradient(135deg, #475569 0%, #64748b 100%)" }}
+                  onClick={() => router.push("/profile-setup?next=/profile")}
                 >
                   <Edit className="w-5 h-5 mr-2" />
                   Edit Profile
                 </Button>
-                <Button 
-                  className="w-full h-12 border-2 border-red-400/50 text-red-300 hover:bg-red-500/20 hover:border-red-400 rounded-xl font-semibold transition-all duration-300"
+                <Button
+                  variant="outline"
+                  className="w-full h-12 border-2 border-red-400/50 bg-transparent text-red-300 hover:bg-red-500/20 hover:text-red-200 rounded-xl font-semibold"
                   onClick={handleLogout}
                 >
                   <LogOut className="w-5 h-5 mr-2" />
-                  Logout
+                  Sign out
                 </Button>
               </div>
             </div>
           </div>
 
-          {/* Profile Details */}
           <div className="lg:col-span-8">
-            <div className="rounded-2xl shadow-2xl p-8 border border-blue-800/30" style={{background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)'}}>
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-2xl font-bold text-white">Account Information</h3>
-                <div className="px-4 py-2 bg-green-500 text-white rounded-full text-sm font-medium">
-                  Active Account
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Phone */}
-                <div className="group">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-                      <Phone className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <label className="text-sm font-semibold text-white">Phone Number</label>
-                      <p className="text-xs text-green-400">Verified</p>
-                    </div>
-                  </div>
-                  <div className="rounded-xl p-4 border-2 border-blue-700/30 group-hover:border-blue-400 transition-all duration-300" style={{background: 'rgba(30, 41, 59, 0.3)'}}>
-                    <p className="text-white font-semibold text-lg">+91 {profile.phone}</p>
-                  </div>
-                </div>
+            <div className="rounded-2xl shadow-2xl p-6 sm:p-8 border border-blue-800/30" style={PANEL}>
+              <h2 className="text-2xl font-bold text-white mb-8">Account information</h2>
 
-                {/* Name */}
-                <div className="group">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <div className="w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center">
-                      <User className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <label className="text-sm font-semibold text-white">Full Name</label>
-                      <p className="text-xs text-blue-300">{profile.name ? 'Completed' : 'Incomplete'}</p>
-                    </div>
+              <dl className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {rows.map(({ icon: Icon, label, value, hint }) => (
+                  <div key={label}>
+                    <dt className="flex items-center gap-3 mb-3">
+                      <span className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                        <Icon className="w-5 h-5 text-white" />
+                      </span>
+                      <span>
+                        <span className="block text-sm font-semibold text-white">{label}</span>
+                        {hint && <span className="block text-xs text-green-400">{hint}</span>}
+                      </span>
+                    </dt>
+                    <dd
+                      className="rounded-xl p-4 border-2 border-blue-700/30 text-lg font-semibold break-words"
+                      style={{ background: "rgba(30, 41, 59, 0.3)" }}
+                    >
+                      {value ? (
+                        <span className="text-white">{value}</span>
+                      ) : (
+                        <span className="text-blue-300 italic font-normal">Not added yet</span>
+                      )}
+                    </dd>
                   </div>
-                  <div className="rounded-xl p-4 border-2 border-blue-700/30 group-hover:border-purple-400 transition-all duration-300" style={{background: 'rgba(30, 41, 59, 0.3)'}}>
-                    <p className={`text-lg font-semibold ${
-                      profile.name 
-                        ? 'text-white' 
-                        : 'text-blue-300 italic'
-                    }`}>
-                      {profile.name || 'Add your name'}
-                    </p>
-                  </div>
-                </div>
+                ))}
+              </dl>
 
-                {/* Email */}
-                <div className="group">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center">
-                      <Mail className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <label className="text-sm font-semibold text-white">Email Address</label>
-                      <p className="text-xs text-blue-300">{profile.email ? 'Completed' : 'Incomplete'}</p>
-                    </div>
-                  </div>
-                  <div className="rounded-xl p-4 border-2 border-blue-700/30 group-hover:border-green-400 transition-all duration-300" style={{background: 'rgba(30, 41, 59, 0.3)'}}>
-                    <p className={`text-lg font-semibold ${
-                      profile.email 
-                        ? 'text-white' 
-                        : 'text-blue-300 italic'
-                    }`}>
-                      {profile.email || 'Add your email'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* City */}
-                <div className="group">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center">
-                      <MapPin className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <label className="text-sm font-semibold text-white">City</label>
-                      <p className="text-xs text-blue-300">{profile.city ? 'Completed' : 'Incomplete'}</p>
-                    </div>
-                  </div>
-                  <div className="rounded-xl p-4 border-2 border-blue-700/30 group-hover:border-orange-400 transition-all duration-300" style={{background: 'rgba(30, 41, 59, 0.3)'}}>
-                    <p className={`text-lg font-semibold ${
-                      profile.city 
-                        ? 'text-white' 
-                        : 'text-blue-300 italic'
-                    }`}>
-                      {profile.city || 'Select your city'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Member Since */}
-              {profile.createdAt && (
-                <div className="mt-8 pt-8 border-t border-blue-700/30">
-                  <div className="flex items-center space-x-4 rounded-xl p-6 border border-blue-700/30" style={{background: 'rgba(30, 41, 59, 0.3)'}}>
-                    <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center shadow-lg">
-                      <div className="w-4 h-4 bg-white rounded-full"></div>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-blue-300">Member Since</p>
-                      <p className="text-xl font-bold text-white">
-                        {new Date(profile.createdAt).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+              {memberSince && !Number.isNaN(memberSince.getTime()) && (
+                <p className="mt-8 pt-6 border-t border-blue-700/30 text-blue-200">
+                  Member since{" "}
+                  <span className="font-semibold text-white">
+                    {memberSince.toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" })}
+                  </span>
+                </p>
               )}
             </div>
           </div>

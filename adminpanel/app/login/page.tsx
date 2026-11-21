@@ -1,7 +1,6 @@
 'use client'
 import { useState } from 'react'
 import { Eye, EyeOff, Lock, Mail, Shield } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
@@ -9,7 +8,9 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const router = useRouter()
+  const [code, setCode] = useState('')
+  const [needsCode, setNeedsCode] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -20,16 +21,19 @@ export default function Login() {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password, code: needsCode ? code : undefined })
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
 
       if (response.ok) {
-        console.log('Login successful, redirecting...')
-        window.location.replace('/dashboard')
+        // Return to the page the admin was trying to open, if it is one of ours.
+        const next = new URLSearchParams(window.location.search).get('next')
+        const target = next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard'
+        window.location.replace(data.mustChangePassword ? '/security/account' : target)
       } else {
-        setError(data.error || 'Login failed')
+        if (data.twoFactorRequired) setNeedsCode(true)
+        setError(data.twoFactorRequired && !needsCode ? '' : data.error || 'Login failed')
       }
     } catch (err) {
       console.error('Login error:', err)
@@ -102,26 +106,48 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Remember Me & Forgot Password */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center">
+            {/* Two-factor code, shown only when the account has 2FA switched on */}
+            {needsCode && (
+              <div>
+                <label htmlFor="login-code" className="block text-sm font-medium text-gray-700 mb-2">
+                  Authenticator code
+                </label>
                 <input
-                  type="checkbox"
-                  className="w-4 h-4 text-teal border-gray-300 rounded focus:ring-teal/20"
+                  id="login-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="6-digit code"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50/50 tracking-widest focus:ring-2 focus:ring-teal/20 focus:border-teal focus:bg-white outline-none"
+                  autoFocus
+                  required
                 />
-                <span className="ml-2 text-sm text-gray-600">Remember me</span>
-              </label>
+                <p className="text-xs text-gray-500 mt-1">Open your authenticator app and enter the current code.</p>
+              </div>
+            )}
+
+            <div className="text-right">
               <button
                 type="button"
-                className="text-sm text-teal hover:text-emerald transition-colors"
+                onClick={() => setShowHelp(!showHelp)}
+                className="text-sm text-teal hover:text-emerald"
               >
                 Forgot password?
               </button>
+              {showHelp && (
+                <p className="text-sm text-gray-600 text-left bg-gray-50 rounded-lg p-3 mt-2">
+                  Ask a Super Admin to reset your password from Security &amp; Audit → Admins &amp; Roles. You will be
+                  asked to choose a new one when you next sign in.
+                </p>
+              )}
             </div>
 
             {/* Error Message */}
             {error && (
-              <div className="text-red-500 text-sm text-center bg-red-50 p-3 rounded-lg">
+              <div className="text-red-600 text-sm text-center bg-red-50 p-3 rounded-lg" role="alert">
                 {error}
               </div>
             )}
@@ -142,7 +168,7 @@ export default function Login() {
         {/* Footer */}
         <div className="text-center mt-6">
           <p className="text-white/70 text-sm">
-            © 2023 Mookalla. All rights reserved.
+            © {new Date().getFullYear()} Mookalaa. All rights reserved.
           </p>
         </div>
       </div>

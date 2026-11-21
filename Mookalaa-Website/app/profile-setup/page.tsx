@@ -1,213 +1,236 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import type React from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { ArrowRight, Camera, User } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { User, ArrowRight, Camera } from "lucide-react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { fetchProfile, saveProfile } from "@/lib/api"
+import { errorMessage } from "@/lib/api-client"
+import { useAuth } from "@/lib/auth"
+import { photoToBase64 } from "@/lib/image"
+import { loginPath, safeNextPath } from "@/lib/navigation"
 
-export default function ProfileSetupPage() {
+function ProfileSetupForm() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const next = safeNextPath(searchParams.get("next"))
+  // The phone always comes from the signed-in session, never from the URL.
+  const { ready, phone } = useAuth()
+
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [city, setCity] = useState("")
-  const [profileImage, setProfileImage] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [currentImage, setCurrentImage] = useState<string | null>(null)
+  const [newImageBase64, setNewImageBase64] = useState("")
   const [isEdit, setIsEdit] = useState(false)
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const phone = searchParams.get("phone") || ""
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+  const hadSession = useRef(false)
 
-  const cities = [
-    "Mumbai", "Delhi", "Bangalore", "Chennai", "Kolkata",
-    "Hyderabad", "Pune", "Ahmedabad", "Surat", "Jaipur"
-  ]
-  
   useEffect(() => {
-    // Check if this is edit mode and load existing profile
-    const userPhone = localStorage.getItem('userPhone')
-    if (userPhone && phone === userPhone) {
-      setIsEdit(true)
-      fetchProfile(phone)
+    if (!ready) return
+    if (!phone) {
+      router.replace(hadSession.current ? "/" : loginPath("/profile-setup"))
+      return
     }
-  }, [phone])
-  
-  const fetchProfile = async (phoneNumber: string) => {
-    try {
-      const response = await fetch(`https://mookala.vercel.app/api/user/profile?phone=${phoneNumber}`)
-      const data = await response.json()
-      
-      if (data.success && data.user) {
-        const user = data.user
-        setName(user.name || "")
-        setEmail(user.email || "")
-        setCity(user.city || "")
-        setProfileImage(user.profileImage || null)
-      }
-    } catch (error) {
-      console.error('Error fetching profile:', error)
-    }
-  }
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setProfileImage(reader.result as string)
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  const handleSaveProfile = async () => {
-    setIsLoading(true)
-    
-    try {
-      const response = await fetch("/api/auth/update-profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone,
-          name: name || null,
-          email: email || null,
-          city: city || null,
-          profileImage: profileImage || null
-        })
+    hadSession.current = true
+    let cancelled = false
+    fetchProfile(phone)
+      .then((profile) => {
+        if (cancelled) return
+        setName(profile.name)
+        setEmail(profile.email)
+        setCity(profile.city)
+        setCurrentImage(profile.profileImage)
+        setIsEdit(profile.status === "completed")
       })
-      
-      const data = await response.json()
-      
-      if (data.success) {
-        localStorage.setItem("userPhone", phone)
-        if (isEdit) {
-          router.push("/profile")
-        } else {
-          router.push("/")
-        }
-      } else {
-        alert(data.error || "Profile update failed")
-      }
-    } catch (error) {
-      alert("Profile update failed. Please try again.")
-    } finally {
-      setIsLoading(false)
+      .catch((err) => {
+        if (!cancelled && err?.status !== 404) setError(errorMessage(err, "Your profile could not be loaded."))
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [ready, phone, router])
+
+  const handleImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    setError("")
+    try {
+      setNewImageBase64(await photoToBase64(file))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "This image could not be used.")
     }
   }
+
+  const done = () => router.replace(next || (isEdit ? "/profile" : "/"))
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!phone || saving) return
+    const trimmedName = name.trim()
+    const trimmedEmail = email.trim()
+    if (!trimmedName) {
+      setError("Please enter your name.")
+      return
+    }
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError("Please enter a valid email address, or leave it empty.")
+      return
+    }
+
+    setSaving(true)
+    setError("")
+    try {
+      await saveProfile({
+        phone,
+        name: trimmedName,
+        email: trimmedEmail,
+        city: city.trim(),
+        profileImageBase64: newImageBase64 || undefined,
+      })
+      done()
+    } catch (err) {
+      setError(errorMessage(err, "Your profile could not be saved. Please try again."))
+      setSaving(false)
+    }
+  }
+
+  if (!ready || !phone || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#f8fafc" }}>
+        <p className="text-gray-600" role="status">
+          Loading...
+        </p>
+      </div>
+    )
+  }
+
+  const preview = newImageBase64 ? `data:image/jpeg;base64,${newImageBase64}` : currentImage
+  const field = "h-12 bg-white text-gray-900 border-gray-300"
 
   return (
-    <div className="min-h-screen" style={{backgroundColor: '#f8fafc'}}>
+    <div className="min-h-screen" style={{ backgroundColor: "#f8fafc" }}>
       <div className="max-w-2xl mx-auto p-4 py-12">
-        <Card className="p-8 shadow-xl border-0">
-          <div className="text-center space-y-4 mb-8">
-            <div className="w-24 h-24 mx-auto">
-              <img src="/mookalaa-logo-2.png" alt="MOOKALAA" className="w-full h-full object-contain" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">{isEdit ? "Edit Profile" : "Complete Profile"}</h1>
-              <p className="text-gray-600 mt-2">{isEdit ? "Update your information" : "Tell us about yourself (optional)"}</p>
-            </div>
+        <Card className="p-8 shadow-xl border-0 bg-white text-gray-900 gap-0">
+          <div className="text-center space-y-2 mb-8">
+            <h1 className="text-3xl font-bold text-gray-900">{isEdit ? "Edit profile" : "Complete your profile"}</h1>
+            <p className="text-gray-600">Signed in as +91 {phone}</p>
           </div>
 
-          <div className="space-y-6">
-            {/* Profile Image */}
-            <div className="flex justify-center mb-8">
+          {error && (
+            <p role="alert" className="mb-6 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
+              {error}
+            </p>
+          )}
+
+          <form onSubmit={handleSave} className="space-y-6" noValidate>
+            <div className="flex justify-center">
               <div className="relative">
                 <div className="w-32 h-32 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 flex items-center justify-center overflow-hidden shadow-lg">
-                  {profileImage ? (
-                    <img src={profileImage} alt="Profile" className="w-full h-full object-cover" />
+                  {preview ? (
+                    <img src={preview} alt="Your profile photo" className="w-full h-full object-cover" />
                   ) : (
                     <User className="w-16 h-16 text-white" />
                   )}
                 </div>
                 <label className="absolute bottom-2 right-2 w-10 h-10 bg-white rounded-full flex items-center justify-center cursor-pointer shadow-lg border-2 border-purple-200 hover:border-purple-400 transition-colors">
                   <Camera className="w-5 h-5 text-purple-600" />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                  />
+                  <span className="sr-only">Choose a profile photo</span>
+                  <input type="file" accept="image/*" onChange={handleImage} className="sr-only" />
                 </label>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Name */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Full Name</label>
+                <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                  Full name
+                </label>
                 <Input
+                  id="name"
                   type="text"
-                  placeholder="Enter your full name"
+                  autoComplete="name"
+                  maxLength={120}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="h-12 border-gray-300 focus:border-purple-500 focus:ring-purple-500"
+                  className={field}
                 />
               </div>
-
-              {/* Email */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Email Address</label>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                  Email address (optional)
+                </label>
                 <Input
+                  id="email"
                   type="email"
-                  placeholder="Enter your email address"
+                  autoComplete="email"
+                  maxLength={200}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="h-12 border-gray-300 focus:border-purple-500 focus:ring-purple-500"
+                  className={field}
                 />
               </div>
             </div>
 
-            {/* City */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">City</label>
-              <Select value={city} onValueChange={setCity}>
-                <SelectTrigger className="h-12 border-gray-300 focus:border-purple-500 focus:ring-purple-500">
-                  <SelectValue placeholder="Select your city" />
-                </SelectTrigger>
-                <SelectContent>
-                  {cities.map((cityName) => (
-                    <SelectItem key={cityName} value={cityName}>
-                      {cityName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <label htmlFor="city" className="block text-sm font-medium text-gray-700">
+                City (optional)
+              </label>
+              <Input
+                id="city"
+                type="text"
+                autoComplete="address-level2"
+                maxLength={120}
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className={field}
+              />
             </div>
 
-            <div className="pt-4 space-y-4">
+            <div className="pt-4 space-y-3">
               <Button
-                onClick={handleSaveProfile}
-                disabled={isLoading}
-                className="w-full h-12 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
+                type="submit"
+                disabled={saving}
+                className="w-full h-12 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-lg shadow-lg"
               >
-                {isLoading ? (
-                  <div className="flex items-center">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    Saving...
-                  </div>
+                {saving ? (
+                  "Saving..."
                 ) : (
                   <>
-                    {isEdit ? "Update Profile" : "Save Profile"}
+                    {isEdit ? "Update profile" : "Save profile"}
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </>
                 )}
               </Button>
-
-              {!isEdit && (
-                <Button
-                  variant="ghost"
-                  onClick={() => router.push("/")}
-                  className="w-full h-12 text-gray-600 hover:text-gray-800 hover:bg-gray-100"
-                >
-                  Skip for now
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={done}
+                className="w-full h-12 text-gray-600 hover:text-gray-800 hover:bg-gray-100"
+              >
+                {isEdit ? "Cancel" : "Skip for now"}
+              </Button>
             </div>
-          </div>
+          </form>
         </Card>
       </div>
     </div>
+  )
+}
+
+export default function ProfileSetupPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen" style={{ backgroundColor: "#f8fafc" }}></div>}>
+      <ProfileSetupForm />
+    </Suspense>
   )
 }

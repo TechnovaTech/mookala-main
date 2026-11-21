@@ -9,14 +9,32 @@ import crypto from 'crypto';
 
 const ENC_PREFIX = 'enc:v1:';
 
-function getEncryptionKey(): Buffer {
-  const secret =
-    process.env.SETTINGS_ENCRYPTION_KEY ||
-    process.env.JWT_SECRET ||
-    'mookalaa-secret-key';
+/** The value that was used when no secret was configured. Kept only to read old data. */
+const LEGACY_SECRET = 'mookalaa-secret-key';
 
+function keyFrom(secret: string): Buffer {
   // sha256 gives us a stable 32 byte key from an arbitrary length secret.
   return crypto.createHash('sha256').update(secret, 'utf8').digest();
+}
+
+function configuredSecret(): string | null {
+  return process.env.SETTINGS_ENCRYPTION_KEY || process.env.JWT_SECRET || null;
+}
+
+function getEncryptionKey(): Buffer {
+  const secret = configuredSecret();
+  if (secret) return keyFrom(secret);
+  if (process.env.NODE_ENV === 'production') {
+    // Never encrypt new secrets with a key that is written in the source code.
+    throw new Error('Set SETTINGS_ENCRYPTION_KEY (or JWT_SECRET) before saving secrets.');
+  }
+  return keyFrom(LEGACY_SECRET);
+}
+
+function decryptionKeys(): Buffer[] {
+  const secret = configuredSecret();
+  // Values saved before a key was configured can still be read once.
+  return secret ? [keyFrom(secret), keyFrom(LEGACY_SECRET)] : [keyFrom(LEGACY_SECRET)];
 }
 
 export function isEncrypted(value: unknown): boolean {
@@ -51,28 +69,25 @@ export function decryptValue(value: unknown): string | null {
   if (typeof value !== 'string' || value.length === 0) return null;
   if (!isEncrypted(value)) return value; // legacy / manually inserted plain text
 
-  try {
-    const [ivPart, tagPart, dataPart] = value
-      .slice(ENC_PREFIX.length)
-      .split(':');
+  const [ivPart, tagPart, dataPart] = value.slice(ENC_PREFIX.length).split(':');
+  if (!ivPart || !tagPart || !dataPart) return null;
 
-    if (!ivPart || !tagPart || !dataPart) return null;
+  for (const key of decryptionKeys()) {
+    try {
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivPart, 'base64'));
+      decipher.setAuthTag(Buffer.from(tagPart, 'base64'));
 
-    const decipher = crypto.createDecipheriv(
-      'aes-256-gcm',
-      getEncryptionKey(),
-      Buffer.from(ivPart, 'base64')
-    );
-    decipher.setAuthTag(Buffer.from(tagPart, 'base64'));
+      const decrypted = Buffer.concat([
+        decipher.update(Buffer.from(dataPart, 'base64')),
+        decipher.final(),
+      ]);
 
-    const decrypted = Buffer.concat([
-      decipher.update(Buffer.from(dataPart, 'base64')),
-      decipher.final(),
-    ]);
-
-    return decrypted.toString('utf8');
-  } catch (error) {
-    console.error('Failed to decrypt stored settings value:', error);
-    return null;
+      return decrypted.toString('utf8');
+    } catch {
+      // Wrong key: try the next one.
+    }
   }
+
+  console.error('Failed to decrypt a stored settings value with the configured key.');
+  return null;
 }
