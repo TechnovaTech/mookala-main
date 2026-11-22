@@ -3,6 +3,7 @@ import { isAdminWith, requireAdmin } from '@/lib/auth';
 import { requireAppUser } from '@/lib/app-auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { asString } from '@/lib/http';
+import { maintenanceBlock } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +58,7 @@ export async function GET(request: NextRequest) {
 /** POST /api/hire-requests: sent by the user app (no login) when a customer asks to hire a professional. */
 export async function POST(request: NextRequest) {
   try {
+    const down = await maintenanceBlock(); if (down) return down;
     const body = await request.json().catch(() => null);
     const userPhone = asString(body?.userPhone, 30);
     const professionalId = asString(body?.professionalId, 64);

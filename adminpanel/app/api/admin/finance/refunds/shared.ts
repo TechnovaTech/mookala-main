@@ -1,5 +1,5 @@
 import type { Db } from 'mongodb';
-import { recordTransaction, roundMoney, SERVICES, type Service } from '@/lib/ledger';
+import { COUPON_DISCOUNT_KIND, recordTransaction, roundMoney, SERVICES, type Service } from '@/lib/ledger';
 import { idFilter, toObjectId } from '@/lib/http';
 import { eventStart as bookingEventStart } from '@/lib/bookings';
 
@@ -216,6 +216,11 @@ export async function writeRefundLedger(
         status: 'success',
       },
       { $set: { status: 'refunded', updatedAt: new Date(), 'meta.reversedByRefund': refundId } }
+    );
+    // A platform-funded coupon discount is not owed for a cancelled booking either.
+    await transactions.updateMany(
+      { parentReference: payment.reference, type: 'adjustment', 'meta.kind': COUPON_DISCOUNT_KIND, status: 'success' },
+      { $set: { status: 'refunded', updatedAt: new Date(), 'meta.reversedByRefund': refundId, 'meta.statusFollows': 'payment' } }
     );
   }
 

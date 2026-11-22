@@ -1,5 +1,5 @@
-import ResourcePage from '@/components/ResourcePage'
+import CasesWorkspace from '@/components/support/CasesWorkspace'
 
 export default function Page() {
-  return <ResourcePage resource="support-tickets" />
+  return <CasesWorkspace mode="ticket" />
 }

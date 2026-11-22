@@ -15,7 +15,7 @@ const WINDOW_DAYS = 30;
  * Counts for the strip above the subscriptions list.
  *
  * Opening it first stores "expired" on subscriptions whose expiry date has
- * passed (there is no scheduler), so the list that loads next never shows a
+ * passed (the scheduler runs every 15 minutes; this also covers the time in between), so the list that loads next never shows a
  * lapsed subscription as active. Revenue is given two ways, from the payment
  * records and from the finance ledger, for this month and for all dates.
  */

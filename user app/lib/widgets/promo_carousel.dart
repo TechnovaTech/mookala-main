@@ -23,6 +23,7 @@ class Promo {
     required this.sponsor,
     required this.seconds,
     this.campaignId = '',
+    this.couponCode = '',
   });
 
   factory Promo.fromJson(Map<String, dynamic> json) {
@@ -37,6 +38,7 @@ class Promo {
       sponsor: json['sponsor'] is String ? (json['sponsor'] as String).trim() : '',
       seconds: duration > 0 ? duration : 5,
       campaignId: json['campaignId'] is String ? (json['campaignId'] as String).trim() : '',
+      couponCode: json['couponCode'] is String ? (json['couponCode'] as String).trim() : '',
     );
   }
 
@@ -53,6 +55,16 @@ class Promo {
   /// Set when the slide is an advertiser campaign, whose views and taps are
   /// reported to the server. Empty for ordinary banners and ads.
   final String campaignId;
+
+  /// The coupon a promotion advertises, entered at checkout. Empty when none.
+  final String couponCode;
+
+  /// The sponsor without the "· code X" the server appends for older app
+  /// versions, since the code has its own badge here.
+  String get sponsorLabel {
+    final suffix = ' · code $couponCode';
+    return couponCode.isNotEmpty && sponsor.endsWith(suffix) ? sponsor.substring(0, sponsor.length - suffix.length) : sponsor;
+  }
 }
 
 /// Reports advertiser campaign views and taps. A view is reported once per
@@ -197,7 +209,24 @@ class _PromoCarouselState extends State<PromoCarousel> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(10)),
-                          child: Text('Ad • ${item.sponsor}', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                          child: Text('Ad • ${item.sponsorLabel}', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                        ),
+                      ),
+                    if (item.couponCode.isNotEmpty)
+                      Positioned(
+                        left: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(10)),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.local_offer_outlined, color: Colors.white, size: 12),
+                              const SizedBox(width: 4),
+                              Text('Code ${item.couponCode}', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
                         ),
                       ),
                     if (item.link.isNotEmpty)

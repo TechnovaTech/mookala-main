@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { maintenanceBlock } from '@/lib/maintenance';
 import { connectToDatabase } from '@/lib/mongodb';
 import { fail, ok } from '@/lib/http';
 import { requestOtp } from '@/lib/otp';
@@ -16,6 +17,8 @@ export async function OPTIONS() {
  * ('pending' until the code is verified through /api/user/verify-otp).
  */
 export async function POST(request: NextRequest) {
+  // Refused while the platform is under maintenance (see lib/maintenance.ts).
+  const down = await maintenanceBlock(); if (down) return down;
   const body = await readBody(request);
   if (!body) return fail('Invalid request body', 400);
 

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import AdminShell from '@/components/AdminShell'
+import RatingsSection from '@/components/support/RatingsSection'
 import { Card, EmptyState, NoticeBar, Spinner, api, formatDate, formatMoney, type Notice } from '@/components/ui'
 import AccountActions from '@/components/artists/AccountActions'
 import {
@@ -373,6 +374,8 @@ function OrganizerDetail() {
           </div>
         )}
       </Card>
+
+      <RatingsSection subject="organizer" id={id} className="mb-4" />
 
       <Card>
         <SectionTitle>Admin history</SectionTitle>

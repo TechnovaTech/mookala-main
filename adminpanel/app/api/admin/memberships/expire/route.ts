@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  * date has passed. A subscription is valid through its "Expires on" date, so
  * it expires from the following day (India time).
  *
- * There is no scheduler in this project. The same update is also applied when
+ * The notifications scheduler (/api/cron/notifications) also runs this regularly. The same update is also applied when
  * a membership screen is opened, and every screen and the app-facing status
  * work the status out from the date, so a lapsed subscription is never shown
  * as active. Every subscription changed gets its own activity log entry.

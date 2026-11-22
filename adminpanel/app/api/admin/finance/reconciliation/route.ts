@@ -7,7 +7,7 @@ import { roundMoney } from '@/lib/ledger';
 import { getRazorpayConfig } from '@/lib/razorpay';
 import { fetchRazorpayPayment, listRazorpayPayments, type RazorpayPayment } from '@/lib/razorpay-api';
 import { BookingError, confirmPaidBooking } from '@/lib/bookings';
-import { logPaymentEvent } from '@/app/api/payment/shared';
+import { afterPaymentConfirmed, logPaymentEvent } from '@/app/api/payment/shared';
 import {
   buildExportCsv,
   csvDownload,
@@ -486,6 +486,9 @@ export async function POST(request: NextRequest) {
         { id: payment.id, orderId: payment.order_id, amountPaise: payment.amount, method: payment.method || null },
         'reconciliation'
       );
+      if (result.outcome === 'confirmed' || result.outcome === 'already_confirmed') {
+        await afterPaymentConfirmed(db, result.booking, 'reconciliation');
+      }
       const entry = await db.collection('transactions').findOne({ type: 'payment', gatewayPaymentId });
       await audit(result.outcome, {
         status: result.booking?.status ?? null,

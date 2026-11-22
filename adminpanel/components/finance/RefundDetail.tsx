@@ -434,6 +434,15 @@ export default function RefundDetail({
                 </Row>
                 {refund.rejectionReason && <Row label="Rejection reason">{refund.rejectionReason}</Row>}
                 {refund.disputeReason && <Row label="Dispute reason">{refund.disputeReason}</Row>}
+                <Row label="Support cases">
+                  <a href={`/support/complaints?q=${refund._id}`} className="text-teal underline">
+                    Complaints about this refund
+                  </a>
+                  {' · '}
+                  <a href={`/support/tickets?q=${refund._id}`} className="text-teal underline">
+                    Tickets
+                  </a>
+                </Row>
                 {refund.gatewayRefundId && <Row label="Gateway refund ID">{refund.gatewayRefundId}</Row>}
                 {refund.manualReference && <Row label="Bank / UPI reference">{refund.manualReference}</Row>}
                 {refund.processedAt && <Row label="Processed">{formatDate(refund.processedAt, true)}</Row>}

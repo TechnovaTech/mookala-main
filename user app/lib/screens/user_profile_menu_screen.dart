@@ -11,6 +11,7 @@ import 'help_support_screen.dart';
 import 'my_bookings_screen.dart';
 import 'phone_login_screen.dart';
 import 'preferences_screen.dart';
+import 'referrals/referral_screen.dart';
 
 /// The account menu. Every row opens something that works.
 class UserProfileMenuScreen extends StatefulWidget {
@@ -126,7 +127,7 @@ class _UserProfileMenuScreenState extends State<UserProfileMenuScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          Container(
+          Material(
             color: Colors.white,
             child: Column(
               children: [
@@ -138,12 +139,14 @@ class _UserProfileMenuScreenState extends State<UserProfileMenuScreen> {
                 const Divider(height: 1),
                 _item(Icons.people_outline, 'Artists I follow', () => _push(const FollowingArtistsScreen())),
                 const Divider(height: 1),
+                _item(Icons.card_giftcard_outlined, 'Refer friends', () => _push(const ReferralScreen())),
+                const Divider(height: 1),
                 _item(Icons.help_outline, 'Help and policies', () => _push(const HelpSupportScreen())),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          Container(color: Colors.white, child: _item(Icons.logout, 'Sign out', _logout, color: AppColors.danger)),
+          Material(color: Colors.white, child: _item(Icons.logout, 'Sign out', _logout, color: AppColors.danger)),
         ],
       ),
     );

@@ -16,9 +16,10 @@ export const dynamic = 'force-dynamic';
  *   bookings,   bookings on those events that are not cancelled, expired or
  *   tickets     still waiting for payment; tickets = their `totalSeats`
  *   checkIns    bookings on those events with `checkedIn: true`
- *   rating      `feedback` with targetType 'artist' that is not hidden,
- *               matched by `targetId`, or by `targetName` when exactly one
- *               artist has that name
+ *   rating      published `feedback`: targetType 'artist' matched by
+ *               `targetId` (or by `targetName` when it has no id and exactly
+ *               one artist has that name), or a rating of an event whose
+ *               `artistIds` include the artist
  *   complaints  complaints (`supportCases`, kind 'complaint') that name the
  *               artist (`artistId`) or a booking on one of the artist's events
  *   reports     `userReports` with reportedType 'artist' matched by phone
@@ -120,21 +121,30 @@ export async function GET(request: NextRequest) {
       byName.set(key, [...(byName.get(key) || []), String(artist._id)]);
     }
     const ratingOf = new Map<string, { sum: number; count: number }>();
+    // Published ratings only: of the artist, or of an event the artist performed in or created.
     const feedback = await db
       .collection('feedback')
-      .find({ targetType: 'artist', status: { $ne: 'hidden' } }, { projection: { targetId: 1, targetName: 1, rating: 1 } })
+      .find(
+        { status: 'published', $or: [{ targetType: 'artist' }, { targetType: 'event', 'artistIds.0': { $exists: true } }] },
+        { projection: { targetType: 1, targetId: 1, targetName: 1, artistIds: 1, rating: 1 } }
+      )
       .toArray();
     for (const entry of feedback) {
       const rating = Number(entry.rating);
       if (!Number.isFinite(rating) || rating < 1 || rating > 5) continue;
-      let id: string | null = entry.targetId && artistIds.has(String(entry.targetId)) ? String(entry.targetId) : null;
-      if (!id) {
+      const ids = new Set<string>();
+      if (entry.targetType === 'event') {
+        for (const artistId of Array.isArray(entry.artistIds) ? entry.artistIds : []) if (artistIds.has(String(artistId))) ids.add(String(artistId));
+      } else if (entry.targetId && artistIds.has(String(entry.targetId))) {
+        ids.add(String(entry.targetId));
+      } else if (!entry.targetId) {
         const candidates = byName.get(String(entry.targetName || '').trim().toLowerCase()) || [];
-        if (candidates.length === 1) id = candidates[0];
+        if (candidates.length === 1) ids.add(candidates[0]);
       }
-      if (!id) continue;
-      const current = ratingOf.get(id) || { sum: 0, count: 0 };
-      ratingOf.set(id, { sum: current.sum + rating, count: current.count + 1 });
+      for (const id of ids) {
+        const current = ratingOf.get(id) || { sum: 0, count: 0 };
+        ratingOf.set(id, { sum: current.sum + rating, count: current.count + 1 });
+      }
     }
 
     // Complaints.

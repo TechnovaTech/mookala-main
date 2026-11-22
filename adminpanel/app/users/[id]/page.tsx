@@ -80,6 +80,11 @@ interface SupportCase {
   service: string
   priority: string
   status: string
+  source?: string
+  escalated?: boolean
+  escalationLevel?: number
+  assignedToName?: string
+  repliesCount?: number
   createdAt: string | null
 }
 
@@ -167,13 +172,14 @@ const CASE_TONES: Record<string, Tone> = {
   published: 'green',
   hidden: 'gray',
 }
-const TIMELINE_TONES: Record<string, Tone> = { signup: 'green', signin: 'gray', booking: 'blue', payment: 'green', support: 'amber', feedback: 'gray', report: 'red', admin: 'purple' }
+const TIMELINE_TONES: Record<string, Tone> = { signup: 'green', signin: 'gray', booking: 'blue', payment: 'green', support: 'amber', reply: 'blue', feedback: 'gray', report: 'red', admin: 'purple' }
 const TIMELINE_LABELS: Record<string, string> = {
   signup: 'Signup',
   signin: 'Sign-in',
   booking: 'Booking',
   payment: 'Payment',
   support: 'Support',
+  reply: 'Reply sent',
   feedback: 'Feedback',
   report: 'Report',
   admin: 'Admin action',
@@ -542,6 +548,13 @@ function UserDetail({ id }: { id: string }) {
                       <Link href={`/support/${c.kind === 'complaint' ? 'complaints' : 'tickets'}?id=${c.id}`} className="text-deep-blue hover:underline">
                         {c.subject || 'Open case'}
                       </Link>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {c.escalated && (
+                          <Badge tone="red">Escalated{c.escalationLevel && c.escalationLevel > 1 ? ` ×${c.escalationLevel}` : ''}</Badge>
+                        )}
+                        {c.source === 'app' && <Badge tone="blue">Raised in the app</Badge>}
+                        {c.repliesCount ? <span className="text-xs text-gray-500">{c.repliesCount} repl{c.repliesCount === 1 ? 'y' : 'ies'} sent</span> : null}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-gray-700 capitalize">{words(c.service)}</td>
                     <td className="px-4 py-3 text-gray-700 capitalize">{words(c.priority)}</td>
@@ -563,7 +576,7 @@ function UserDetail({ id }: { id: string }) {
         {feedback.length === 0 ? (
           <EmptyState
             title="No feedback from this customer"
-            hint="The apps and website do not collect ratings yet. Feedback entered by staff with this phone number appears here."
+            hint="Customers rate events they attended from My bookings in the app. Their ratings, and whether each one was published, appear here."
           />
         ) : (
           <div className="overflow-x-auto">
@@ -672,7 +685,7 @@ function UserDetail({ id }: { id: string }) {
         title="Customer timeline"
         note={
           <span>
-            Signup, sign-ins, bookings, payments, support cases, feedback, reports and admin actions, newest first ·{' '}
+            Signup, sign-ins, bookings, payments, support cases and replies, ratings, reports and admin actions, newest first ·{' '}
             <Link href={`/users/activity?user=${user.id}`} className="text-deep-blue hover:underline">Open in User Activity</Link>
           </span>
         }

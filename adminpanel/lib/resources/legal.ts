@@ -31,7 +31,7 @@ export const legalResources: ResourceDef[] = [
       ] },
       { key: 'version', label: 'Version', type: 'text', required: true, list: true, placeholder: '1.0' },
       { key: 'effectiveDate', label: 'Effective date', type: 'date', required: true, list: true },
-      { key: 'body', label: 'Policy text', type: 'textarea', required: true, help: 'Up to 20,000 characters. Once published the text is locked: add a new version to change it.' },
+      { key: 'body', label: 'Policy text', type: 'textarea', required: true, help: 'Up to 20,000 characters, plain text. The website shows a line starting with "# " or "## " as a heading, lines starting with "- " as a list and **text** in bold; a blank line starts a new paragraph. HTML is shown as text, never run. Once published the text is locked: add a new version to change it.' },
       { key: 'publishedAt', label: 'Published at', type: 'datetime', readOnly: true },
       { key: 'publishedBy', label: 'Published by', type: 'text', readOnly: true },
       { key: 'archivedAt', label: 'Archived at', type: 'datetime', readOnly: true },

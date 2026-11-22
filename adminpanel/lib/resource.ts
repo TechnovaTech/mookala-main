@@ -564,6 +564,14 @@ export async function patchResourceItem(request: NextRequest, name: string, id: 
         at: new Date(),
       };
       await collection.updateOne({ _id: existing._id }, { $push: { notes: note } as any, $set: { updatedAt: new Date() } });
+      const noteHooks = getHooks(name);
+      if (noteHooks.afterNote) {
+        try {
+          await noteHooks.afterNote({ db, item: existing, note, admin: check.admin });
+        } catch (error) {
+          console.error(`afterNote hook for ${name} failed:`, error);
+        }
+      }
       await logAudit({
         admin: check.admin,
         action: 'note',

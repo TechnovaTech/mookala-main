@@ -14,6 +14,7 @@ import {
   priceDraft,
   publicBooking,
 } from '@/lib/bookings';
+import { maintenanceBlock } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,6 +123,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const down = await maintenanceBlock(); if (down) return down;
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object') return fail('Send the booking as JSON', 400);
 

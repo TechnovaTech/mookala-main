@@ -1,7 +1,7 @@
 import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import { NextResponse } from 'next/server';
-import { SERVICES, roundMoney } from './ledger';
+import { COUPON_DISCOUNT_KIND, SERVICES, roundMoney, syncCouponDiscounts } from './ledger';
 import { FIGURE_DEFINITIONS, REPORT_TIMEZONE, REPORT_TIMEZONE_LABEL, getReportInfo } from './resources/reports';
 
 /**
@@ -224,7 +224,18 @@ export async function groupLedger(
   match: Record<string, any>,
   options: { byService?: boolean; bucket?: Bucket } = {}
 ): Promise<LedgerGroup[]> {
-  const id: Record<string, any> = { type: '$type', status: '$status' };
+  // Coupon discounts are 'adjustment' entries marked meta.kind 'coupon_discount'.
+  // They are grouped as their own line so the figures can treat them apart.
+  const id: Record<string, any> = {
+    type: {
+      $cond: [
+        { $and: [{ $eq: ['$type', 'adjustment'] }, { $eq: ['$meta.kind', COUPON_DISCOUNT_KIND] }] },
+        COUPON_DISCOUNT_KIND,
+        '$type',
+      ],
+    },
+    status: '$status',
+  };
   if (options.byService) id.service = '$service';
   if (options.bucket) {
     id.bucket = { $dateToString: { format: BUCKET_FORMAT[options.bucket], date: '$createdAt', timezone: REPORT_TIMEZONE } };
@@ -257,6 +268,10 @@ export interface Figures {
   refundCount: number;
   settlementsPaid: number;
   netToPayees: number;
+  /** Coupon discounts the platform funds; owed to payees on top of what customers paid. */
+  couponDiscounts: number;
+  /** Platform revenue less the coupon discounts it funded. */
+  platformNet: number;
 }
 
 /** Applies the published definitions to a set of grouped ledger rows. */
@@ -272,6 +287,7 @@ export function figuresFrom(groups: LedgerGroup[]): Figures {
   const gst = sum('gst');
   const gatewayFees = sum('gateway_fee');
   const refunds = sum('refund');
+  const couponDiscounts = sum(COUPON_DISCOUNT_KIND);
 
   return {
     payments: count('payment'),
@@ -284,7 +300,9 @@ export function figuresFrom(groups: LedgerGroup[]): Figures {
     refunds: roundMoney(refunds),
     refundCount: count('refund'),
     settlementsPaid: roundMoney(sum('settlement')),
-    netToPayees: roundMoney(gtv - commission - gst - gatewayFees - refunds - refundDeductions),
+    netToPayees: roundMoney(gtv + couponDiscounts - commission - gst - gatewayFees - refunds - refundDeductions),
+    couponDiscounts: roundMoney(couponDiscounts),
+    platformNet: roundMoney(commission + refundDeductions - couponDiscounts),
   };
 }
 
@@ -320,6 +338,11 @@ function payeeBalanceStages(): Record<string, any>[] {
         gatewayFee: typeSum('gateway_fee'),
         refunds: typeSum('refund'),
         refundDeductions: typeSum('refund_deduction'),
+        couponDiscounts: {
+          $sum: {
+            $cond: [{ $and: [{ $eq: ['$type', 'adjustment'] }, { $eq: ['$meta.kind', COUPON_DISCOUNT_KIND] }] }, '$amount', 0],
+          },
+        },
         settled: typeSum('settlement'),
       },
     },
@@ -327,7 +350,7 @@ function payeeBalanceStages(): Record<string, any>[] {
       // Same rule as payeeBalance: the cancellation charge kept under a refund
       // rule is the platform's, so it is not owed to the payee.
       $addFields: {
-        earned: { $subtract: ['$gross', { $add: ['$commission', '$gst', '$gatewayFee', '$refunds', '$refundDeductions'] }] },
+        earned: { $subtract: [{ $add: ['$gross', '$couponDiscounts'] }, { $add: ['$commission', '$gst', '$gatewayFee', '$refunds', '$refundDeductions'] }] },
       },
     },
     { $addFields: { pending: { $subtract: ['$earned', '$settled'] } } },
@@ -335,6 +358,7 @@ function payeeBalanceStages(): Record<string, any>[] {
 }
 
 export async function pendingSettlementTotals(db: Db) {
+  await syncCouponDiscounts(db);
   const [balances] = await db
     .collection('transactions')
     .aggregate([
@@ -1060,6 +1084,7 @@ async function customersReport(db: Db, range: DateRange) {
 }
 
 async function payeeBalancesReport(db: Db, limit: number) {
+  await syncCouponDiscounts(db);
   const transactions = db.collection('transactions');
   const [list, totalsRow] = await Promise.all([
     transactions.aggregate([...payeeBalanceStages(), { $sort: { pending: -1 } }, { $limit: limit }]).toArray(),

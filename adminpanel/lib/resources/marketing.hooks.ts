@@ -1,22 +1,24 @@
 /**
- * Server-side rules for the marketing resources, plus the coupon engine
- * (evaluateCoupon / redeemCoupon) used by POST /api/public/coupons/validate
- * and, later, by the booking flow. Server only.
+ * Server-side rules for the marketing resources. Server only.
+ *
+ * The coupon engine (checking, holding and redeeming a coupon at checkout) is
+ * in lib/coupons.ts, referrals in lib/referrals.ts and push delivery in
+ * lib/push-campaigns.ts.
  */
-import type { Db } from 'mongodb';
 import { registerHooks } from '../resource-hooks';
+import { can } from '../permissions';
 import { SERVICES } from '../ledger';
+import { COUPON_CODE, normaliseCouponCode } from '../coupons';
+import { resolvePushAudience } from '../push-campaigns';
+import { describeArtwork, promotionStatusFor, resolveArtwork } from '../../app/api/admin/marketing/_lib/promotions';
+
+export { evaluateCoupon, normaliseCouponCode } from '../coupons';
 
 /* ------------------------------------------------------------------ */
 /* Coupons                                                             */
 /* ------------------------------------------------------------------ */
 
-const COUPON_CODE = /^[A-Z0-9_-]{3,30}$/;
 const COUPON_SERVICES = ['all', ...SERVICES.map((s) => s.value as string)];
-
-export function normaliseCouponCode(value: unknown): string {
-  return typeof value === 'string' ? value.trim().toUpperCase() : '';
-}
 
 function couponProblem(coupon: Record<string, any>): string | null {
   if (!COUPON_CODE.test(coupon.code || '')) {
@@ -69,129 +71,6 @@ registerHooks('coupons', {
   },
 });
 
-export interface CouponRequest {
-  code: unknown;
-  service: unknown;
-  amount: unknown;
-  userPhone?: unknown;
-}
-
-export interface CouponEvaluation {
-  valid: boolean;
-  /** Why the coupon does not apply. Safe to show to a customer. */
-  reason: string | null;
-  code: string;
-  discount: number;
-  payable: number;
-  coupon: any | null;
-}
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
-/**
- * Checks whether a coupon applies to an order and works out the discount.
- * Reads only: nothing is redeemed.
- */
-export async function evaluateCoupon(db: Db, request: CouponRequest, now = new Date()): Promise<CouponEvaluation> {
-  const code = normaliseCouponCode(request.code);
-  const amount = typeof request.amount === 'number' ? request.amount : parseFloat(String(request.amount ?? ''));
-  const service = typeof request.service === 'string' ? request.service : '';
-  const userPhone = typeof request.userPhone === 'string' ? request.userPhone.trim().slice(0, 20) : '';
-
-  const refuse = (reason: string, coupon: any = null): CouponEvaluation => ({
-    valid: false,
-    reason,
-    code,
-    discount: 0,
-    payable: Number.isFinite(amount) && amount > 0 ? round2(amount) : 0,
-    coupon,
-  });
-
-  if (!COUPON_CODE.test(code)) return refuse('This coupon code is not valid');
-  if (!Number.isFinite(amount) || amount <= 0) return refuse('The order amount is missing');
-  if (!SERVICES.some((s) => s.value === service)) return refuse('The service is missing or unknown');
-
-  const coupon = await db.collection('coupons').findOne({ code });
-  // Drafts and paused coupons look the same as codes that do not exist.
-  if (!coupon || coupon.status === 'draft' || coupon.status === 'paused') return refuse('This coupon code is not valid');
-  if (coupon.status === 'expired') return refuse('This coupon has expired', coupon);
-  if (coupon.status !== 'active') return refuse('This coupon code is not valid');
-
-  if (coupon.validFrom && new Date(coupon.validFrom) > now) return refuse('This coupon is not valid yet', coupon);
-  if (coupon.validUntil && new Date(coupon.validUntil) <= now) return refuse('This coupon has expired', coupon);
-  if (coupon.service !== 'all' && coupon.service !== service) return refuse('This coupon does not apply to this service', coupon);
-  if (coupon.minOrderAmount && amount < coupon.minOrderAmount) {
-    return refuse(`This coupon needs a minimum order of ₹${coupon.minOrderAmount}`, coupon);
-  }
-  if (coupon.usageLimit && (coupon.timesUsed || 0) >= coupon.usageLimit) {
-    return refuse('This coupon has been fully used', coupon);
-  }
-  if (coupon.perUserLimit) {
-    if (!userPhone) return refuse('Sign in to use this coupon', coupon);
-    const used = await db.collection('couponRedemptions').countDocuments({ couponId: String(coupon._id), userPhone });
-    if (used >= coupon.perUserLimit) return refuse('You have already used this coupon', coupon);
-  }
-
-  let discount = coupon.discountType === 'percent' ? (amount * Number(coupon.value)) / 100 : Number(coupon.value);
-  if (coupon.discountType === 'percent' && coupon.maxDiscount) discount = Math.min(discount, coupon.maxDiscount);
-  discount = round2(Math.min(discount, amount));
-
-  return { valid: true, reason: null, code, discount, payable: round2(amount - discount), coupon };
-}
-
-/**
- * Redeems a coupon for a booking. For the booking flow to call once payment
- * for the discounted amount is confirmed; NOTHING CALLS THIS YET.
- *
- * Safe to call twice for the same booking: the first redemption is returned.
- * The total usage limit is enforced atomically. The per-customer limit is
- * checked just before, so two simultaneous bookings by one customer could
- * both pass it.
- */
-export async function redeemCoupon(
-  db: Db,
-  request: CouponRequest & { bookingId: string }
-): Promise<{ ok: boolean; error: string | null; discount: number; payable: number; redemptionId: string | null }> {
-  const bookingId = typeof request.bookingId === 'string' ? request.bookingId.trim().slice(0, 64) : '';
-  if (!bookingId) return { ok: false, error: 'A booking is required to redeem a coupon', discount: 0, payable: 0, redemptionId: null };
-
-  const code = normaliseCouponCode(request.code);
-  const redemptions = db.collection('couponRedemptions');
-  const already = await redemptions.findOne({ code, bookingId });
-  if (already) {
-    return { ok: true, error: null, discount: already.discount, payable: already.payable, redemptionId: String(already._id) };
-  }
-
-  const result = await evaluateCoupon(db, request);
-  if (!result.valid || !result.coupon) {
-    return { ok: false, error: result.reason, discount: 0, payable: result.payable, redemptionId: null };
-  }
-
-  const coupon = result.coupon;
-  const filter: Record<string, any> = { _id: coupon._id, status: 'active' };
-  if (coupon.usageLimit) {
-    filter.$or = [{ timesUsed: { $lt: coupon.usageLimit } }, { timesUsed: null }];
-  }
-  const claimed = await db.collection('coupons').updateOne(filter, { $inc: { timesUsed: 1 } });
-  if (claimed.modifiedCount !== 1) {
-    return { ok: false, error: 'This coupon has been fully used', discount: 0, payable: result.payable, redemptionId: null };
-  }
-
-  const inserted = await redemptions.insertOne({
-    couponId: String(coupon._id),
-    code,
-    bookingId,
-    userPhone: typeof request.userPhone === 'string' ? request.userPhone.trim().slice(0, 20) : null,
-    service: request.service,
-    orderAmount: result.payable + result.discount,
-    discount: result.discount,
-    payable: result.payable,
-    createdAt: new Date(),
-  });
-
-  return { ok: true, error: null, discount: result.discount, payable: result.payable, redemptionId: String(inserted.insertedId) };
-}
-
 /* ------------------------------------------------------------------ */
 /* Referral programmes and promotions                                  */
 /* ------------------------------------------------------------------ */
@@ -210,15 +89,38 @@ registerHooks('referral-programmes', {
 });
 
 registerHooks('promotions', {
-  beforeCreate({ doc }) {
+  async beforeCreate({ db, doc }) {
     if (endBeforeStart(doc, 'startsAt', 'endsAt')) return 'Ends at must be after starts at';
+    const art = await resolveArtwork(db, doc.bannerRef);
+    if (typeof art === 'string') return art;
+    doc.artworkSource = describeArtwork(art);
+    doc.artworkRef = art.id ? { collection: art.source === 'banner' ? 'banners' : 'ads', id: art.id } : null;
+    if (doc.link && !/^https?:\/\//i.test(String(doc.link))) return '"Opens when tapped" must start with http:// or https://';
   },
-  beforeUpdate({ existing, changes }) {
-    if (endBeforeStart({ ...existing, ...changes }, 'startsAt', 'endsAt')) return 'Ends at must be after starts at';
+  async beforeUpdate({ db, existing, changes }) {
+    const merged = { ...existing, ...changes };
+    if (endBeforeStart(merged, 'startsAt', 'endsAt')) return 'Ends at must be after starts at';
+    if (merged.link && !/^https?:\/\//i.test(String(merged.link))) return '"Opens when tapped" must start with http:// or https://';
+    if ('bannerRef' in changes) {
+      const art = await resolveArtwork(db, merged.bannerRef);
+      if (typeof art === 'string') return art;
+      changes.artworkSource = describeArtwork(art);
+      changes.artworkRef = art.id ? { collection: art.source === 'banner' ? 'banners' : 'ads', id: art.id } : null;
+    }
+    // A scheduled or live promotion whose dates change follows the new dates.
+    if (('startsAt' in changes || 'endsAt' in changes) && (existing.status === 'scheduled' || existing.status === 'live')) {
+      changes.status = promotionStatusFor(merged);
+    }
   },
-  beforeStatusChange({ existing, to }) {
-    if (to === 'live' && existing.endsAt && new Date(existing.endsAt) <= new Date()) {
-      return 'This promotion has already ended. Change its dates before making it live.';
+  async beforeStatusChange({ db, existing, to }) {
+    if (to === 'scheduled' || to === 'live') {
+      const art = await resolveArtwork(db, existing.bannerRef, existing.artworkRef);
+      if (typeof art === 'string') return art;
+      const now = new Date();
+      if (existing.endsAt && new Date(existing.endsAt) <= now) return 'This promotion has already ended. Change its dates before scheduling it again.';
+      // The dates decide: asking for "live" before the start keeps it scheduled, and the other way round.
+      const byDates = promotionStatusFor({ ...existing, status: 'scheduled' }, now);
+      return { __status: byDates };
     }
   },
 });
@@ -251,20 +153,25 @@ function same(a: any, b: any): boolean {
 }
 
 function audienceProblem(record: Record<string, any>): string | null {
-  if ((record.audience === 'city' || record.audience === 'followers_of_artist') && !String(record.audienceValue || '').trim()) {
-    return record.audience === 'city'
-      ? 'Enter the city in "Audience value"'
-      : 'Enter the artist\'s ID or phone number in "Audience value"';
-  }
+  const value = String(record.audienceValue || '').trim();
+  if (record.audience === 'city' && !value) return 'Enter the city in "Audience value"';
+  if (record.audience === 'followers_of_artist' && !value) return 'Enter the artist\'s ID or phone number in "Audience value"';
+  if (record.audience === 'event_attendees' && !value) return 'Enter the event ID or the exact event name in "Audience value"';
   return null;
 }
 
 registerHooks('push-campaigns', {
-  beforeCreate({ doc }) {
-    return audienceProblem(doc) || undefined;
+  async beforeCreate({ db, doc }) {
+    const problem = audienceProblem(doc);
+    if (problem) return problem;
+    // The audience value must point at something real (a city may have nobody yet, which is fine).
+    if (doc.audience === 'followers_of_artist' || doc.audience === 'event_attendees') {
+      const parts = await resolvePushAudience(db, doc.audience, doc.audienceValue);
+      if (typeof parts === 'string') return parts;
+    }
   },
 
-  beforeUpdate({ existing, changes }) {
+  async beforeUpdate({ db, existing, changes }) {
     if (existing.status === 'sent' || existing.status === 'sending') return 'A campaign that has been sent cannot be edited';
     if (CONTENT_LOCKED.includes(existing.status)) {
       const touched = CONTENT_FIELDS.filter((key) => key in changes && !same(existing[key], changes[key]));
@@ -272,25 +179,60 @@ registerHooks('push-campaigns', {
         return 'The content and audience of this campaign were approved and cannot be changed. Move it back to Draft to edit it; it will then need approval again.';
       }
     }
-    return audienceProblem({ ...existing, ...changes }) || undefined;
+    if ('scheduledFor' in changes && !same(existing.scheduledFor, changes.scheduledFor) && existing.status === 'scheduled') {
+      if (!changes.scheduledFor) return 'A scheduled campaign needs a time. To send it with "Send now" instead, move it back to Draft, clear the time and have it approved again.';
+      if (new Date(changes.scheduledFor) <= new Date()) return '"Scheduled for" is in the past. Choose a later time.';
+    }
+    const merged = { ...existing, ...changes };
+    const problem = audienceProblem(merged);
+    if (problem) return problem;
+    if (('audience' in changes || 'audienceValue' in changes) && (merged.audience === 'followers_of_artist' || merged.audience === 'event_attendees')) {
+      const parts = await resolvePushAudience(db, merged.audience, merged.audienceValue);
+      if (typeof parts === 'string') return parts;
+    }
   },
 
-  beforeStatusChange({ existing, from, to, admin }) {
+  async beforeStatusChange({ db, existing, from, to, admin }) {
     if (to === 'sending' || to === 'sent' || to === 'failed') {
-      return 'This status is set by the send action, not by hand. Use "Send now" on the campaign.';
+      return 'This status is set by the scheduler and "Send now", not by hand.';
     }
     if (!(PUSH_TRANSITIONS[from] || []).includes(to)) {
       if (to === 'scheduled') return 'Only an approved campaign can be scheduled. Submit it for approval first.';
       if (to === 'approved') return 'Only a campaign that is pending approval can be approved.';
       return `A campaign cannot move from "${from}" to "${to}".`;
     }
-    if (to === 'pending_approval') return audienceProblem(existing) || undefined;
-    if (to === 'approved') return { approvedBy: admin.email || null, approvedAt: new Date() };
+    if (to === 'pending_approval') {
+      const problem = audienceProblem(existing);
+      if (problem) return problem;
+      const parts = await resolvePushAudience(db, existing.audience, existing.audienceValue);
+      if (typeof parts === 'string') return parts;
+      return { submittedBy: admin.email || null, submittedAt: new Date() };
+    }
+    if (to === 'approved' && from === 'pending_approval') {
+      // Four eyes: whoever wrote or submitted the campaign cannot approve it.
+      const email = admin.email || '';
+      if (email && (email === existing.createdBy || email === existing.submittedBy)) {
+        // Unless nobody else could approve it: a panel with a single approver must still be able to send.
+        const others = await db
+          .collection('admins')
+          .find({ status: { $ne: 'disabled' }, email: { $ne: email } }, { projection: { role: 1, extraPermissions: 1 } })
+          .toArray();
+        const someoneElse = others.some((a: any) =>
+          can({ role: a.role, perms: Array.isArray(a.extraPermissions) ? a.extraPermissions : [] }, 'marketing:approve')
+        );
+        if (someoneElse) return 'A different admin must approve this campaign: you created or submitted it.';
+      }
+      const approval = { approvedBy: email || null, approvedAt: new Date() };
+      // With a time set, approval schedules it; without one it waits for "Send now".
+      if (existing.scheduledFor && new Date(existing.scheduledFor) > new Date()) return { ...approval, __status: 'scheduled' };
+      if (existing.scheduledFor) return '"Scheduled for" is in the past. Move the campaign back to Draft and choose a later time, or clear it to send with "Send now".';
+      return approval;
+    }
     if (to === 'scheduled') {
       if (!existing.approvedBy) return 'Only an approved campaign can be scheduled.';
       if (!existing.scheduledFor) return 'Set "Scheduled for" before scheduling the campaign.';
       if (new Date(existing.scheduledFor) <= new Date()) return '"Scheduled for" is in the past. Choose a later time.';
     }
-    if (to === 'draft') return { approvedBy: null, approvedAt: null };
+    if (to === 'draft') return { approvedBy: null, approvedAt: null, submittedBy: null, submittedAt: null };
   },
 });

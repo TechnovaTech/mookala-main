@@ -2,14 +2,16 @@ import { NextRequest } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { requireAdmin } from '@/lib/auth';
 import { fail, ok, toObjectId } from '@/lib/http';
-import { countAudience, getChannelConfig, messageBlocker, resolveAudience } from '@/lib/notifications';
+import { getChannelConfig, messageBlocker } from '@/lib/notifications';
+import { previewPushAudience, resolvePushAudience } from '@/lib/push-campaigns';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Audience preview for a push campaign: the real number of accounts that match
- * the audience right now, the message as it would appear, and whether anything
- * could actually be delivered.
+ * GET: audience preview for a push campaign, counted now: the accounts that
+ * match the audience, how many of them have a valid device for their app,
+ * how many devices would receive the push, whether the push provider can
+ * send, and the message as it will appear.
  */
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const check = await requireAdmin(request, 'marketing:view');
@@ -23,19 +25,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const campaign = await db.collection('pushCampaigns').findOne({ _id: oid });
     if (!campaign) return fail('Campaign not found', 404);
 
-    const parts = await resolveAudience(db, campaign.audience, campaign.audienceValue);
+    const parts = await resolvePushAudience(db, campaign.audience, campaign.audienceValue);
     if (typeof parts === 'string') return fail(parts);
 
-    const { total, breakdown } = await countAudience(db, parts);
-    const blocker = messageBlocker(await getChannelConfig(db, 'push'));
+    const [audience, config] = await Promise.all([previewPushAudience(db, parts), getChannelConfig(db, 'push')]);
+    const blocker = messageBlocker(config);
 
     return ok({
       campaign: { id: String(campaign._id), title: campaign.title, status: campaign.status, scheduledFor: campaign.scheduledFor || null },
-      audience: { total, breakdown },
-      // The apps do not register device tokens, so no account can receive a push yet.
-      reachable: 0,
-      reachableNote: 'No account has a registered device token: the mobile apps do not register for push notifications yet.',
-      provider: { connected: !blocker, problem: blocker },
+      audience,
+      provider: { name: config.provider || null, connected: !blocker, problem: blocker },
       preview: { title: campaign.title, message: campaign.message, deepLink: campaign.deepLink || null },
     });
   } catch (error) {

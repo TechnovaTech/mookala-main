@@ -6,6 +6,8 @@ import '../services/api_service.dart';
 import '../utils/booking_logic.dart';
 import '../widgets/app_theme.dart';
 import '../widgets/state_views.dart';
+import 'support/rate_event_sheet.dart';
+import 'support/support_models.dart';
 import 'ticket_screen.dart';
 
 /// The customer's bookings from one request (`GET /bookings?userPhone=`),
@@ -21,6 +23,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
   bool _loading = true;
   String? _error;
   Map<BookingGroup, List<Booking>> _groups = groupBookings(const [], DateTime.now());
+
+  /// Ratings the customer already gave, by booking id.
+  Map<String, MyRating> _ratings = {};
 
   @override
   void initState() {
@@ -40,6 +45,8 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
         _groups = groupBookings(bookings, DateTime.now());
         _loading = false;
       });
+      // Only bookings the customer attended can be rated; ask for their ratings only then.
+      if (bookings.any(canRateBooking)) _loadRatings();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -47,6 +54,23 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
         _error = e.message;
       });
     }
+  }
+
+  Future<void> _loadRatings() async {
+    try {
+      final rows = await ApiService.getMyRatings();
+      if (!mounted) return;
+      setState(() => _ratings = {for (final row in rows) MyRating.fromJson(row).bookingId: MyRating.fromJson(row)});
+    } on ApiException {
+      // Without the list the button is still shown; the server refuses a second rating.
+    }
+  }
+
+  Future<void> _rate(Booking booking) async {
+    final message = await showRateEventSheet(context, booking);
+    if (message == null || !mounted) return;
+    showMessage(context, message);
+    _loadRatings();
   }
 
   Future<void> _open(Booking booking) async {
@@ -71,7 +95,12 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
               padding: const EdgeInsets.all(16),
               itemCount: list.length,
               separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (_, i) => _BookingTile(booking: list[i], onTap: () => _open(list[i])),
+              itemBuilder: (_, i) => _BookingTile(
+                booking: list[i],
+                rating: _ratings[list[i].id],
+                onTap: () => _open(list[i]),
+                onRate: canRateBooking(list[i]) ? () => _rate(list[i]) : null,
+              ),
             ),
     );
   }
@@ -114,9 +143,15 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
 }
 
 class _BookingTile extends StatelessWidget {
-  const _BookingTile({required this.booking, required this.onTap});
+  const _BookingTile({required this.booking, required this.onTap, this.rating, this.onRate});
   final Booking booking;
   final VoidCallback onTap;
+
+  /// The customer's rating of this booking, when they gave one.
+  final MyRating? rating;
+
+  /// Set for a booking the customer attended: opens "Rate this event".
+  final VoidCallback? onRate;
 
   @override
   Widget build(BuildContext context) {
@@ -163,6 +198,32 @@ class _BookingTile extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text('Ref ${booking.reference}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+              if (rating != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.star, size: 18, color: AppColors.warning),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'You rated this event ${rating!.rating}/5${rating!.statusLabel.isEmpty ? '' : ' • ${rating!.statusLabel}'}',
+                        style: TextStyle(color: Colors.grey.shade800),
+                      ),
+                    ),
+                  ],
+                ),
+              ] else if (onRate != null) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    key: ValueKey('rate-${booking.id}'),
+                    onPressed: onRate,
+                    icon: const Icon(Icons.star_border, color: AppColors.warning),
+                    label: const Text('Rate this event'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

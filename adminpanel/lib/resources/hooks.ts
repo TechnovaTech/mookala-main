@@ -15,5 +15,6 @@ import './finance.hooks';
 import './catalogue.hooks';
 import './artists.hooks';
 import './reports.hooks';
+import './support.hooks';
 
 export {};

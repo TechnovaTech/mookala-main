@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { maintenanceBlock } from '@/lib/maintenance';
 import { connectToDatabase } from '@/lib/mongodb';
 import { fail, ok, toObjectId } from '@/lib/http';
 import { restrictionFor } from '@/lib/user-status';
@@ -15,6 +16,8 @@ export async function OPTIONS() {
  * Only an artist who is listed on the event can answer for it.
  */
 export async function POST(request: NextRequest) {
+  // Refused while the platform is under maintenance (see lib/maintenance.ts).
+  const down = await maintenanceBlock(); if (down) return down;
   const body = await readBody(request);
   if (!body) return fail('Invalid request body', 400);
 

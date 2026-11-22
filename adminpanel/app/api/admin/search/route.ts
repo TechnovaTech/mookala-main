@@ -85,6 +85,15 @@ const SOURCES: Source[] = [
     href: () => `/advertising/advertisers`,
   },
   {
+    type: 'Support case',
+    collection: 'supportCases',
+    permission: 'support:view',
+    fields: ['subject', 'customerPhone', 'customerName', 'bookingId'],
+    label: (d) => d.subject || 'Support case',
+    detail: (d) => [d.kind === 'ticket' ? 'Ticket' : 'Complaint', d.status, d.priority].filter(Boolean).join(' · '),
+    href: (d) => `/support/${d.kind === 'ticket' ? 'tickets' : 'complaints'}?id=${d._id}`,
+  },
+  {
     type: 'Transaction',
     collection: 'transactions',
     permission: 'finance:view',
@@ -114,7 +123,7 @@ export async function GET(request: NextRequest) {
         for (const key of [
           'name', 'phone', 'email', 'city', 'genre', 'kycStatus', 'location', 'category', 'startDate', 'status',
           'eventTitle', 'userPhone', 'totalPrice', 'businessName', 'contactName', 'reference', 'gatewayPaymentId',
-          'type', 'amount',
+          'type', 'amount', 'subject', 'customerPhone', 'customerName', 'kind', 'priority',
         ]) projection[key] = 1;
 
         const docs = await db

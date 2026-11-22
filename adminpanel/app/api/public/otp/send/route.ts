@@ -4,6 +4,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { fail, ok } from '@/lib/http';
 import { requestOtp } from '@/lib/otp';
 import { otpFailure, readBody } from '@/lib/app-auth';
+import { maintenanceBlock } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,7 @@ export async function OPTIONS() {
  * test code is accepted (local testing only).
  */
 export async function POST(request: NextRequest) {
+  const down = await maintenanceBlock(); if (down) return down;
   const body = await readBody(request);
   if (!body) return fail('Invalid request body', 400);
 

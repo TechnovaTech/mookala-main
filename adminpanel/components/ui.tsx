@@ -265,7 +265,9 @@ export function formatDate(value: any, withTime = false): string {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value)
+  // The platform runs on India Standard Time, whatever the viewer's computer is set to.
   return date.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     day: '2-digit',
     month: 'short',
     year: 'numeric',

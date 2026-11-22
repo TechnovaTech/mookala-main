@@ -497,40 +497,48 @@ export async function recordSecurityEvent(db: Db, input: SecurityEventInput): Pr
     };
     const inserted = await db.collection(SECURITY_EVENTS).insertOne(doc);
 
-    try {
-      await ensureAlertTemplate(db);
-      const supers = await db
-        .collection('admins')
-        .find({ role: { $in: ['super_admin', 'admin'] }, status: { $ne: 'disabled' } }, { projection: { email: 1 } })
-        .limit(50)
-        .toArray();
-      const recipients = new Set<string>();
-      // Only a real account is written to: an unknown email typed at sign-in is not.
-      if (adminEmail && input.adminId) recipients.add(adminEmail);
-      for (const admin of supers) if (admin.email) recipients.add(String(admin.email).toLowerCase());
+    // The alert emails must not hold up the request that caused the event (a
+    // sign-in, for example): the caller waits at most three seconds, and the
+    // outcome is written to the event whenever the sends finish.
+    const alerting = (async () => {
+      try {
+        await ensureAlertTemplate(db);
+        const supers = await db
+          .collection('admins')
+          .find({ role: { $in: ['super_admin', 'admin'] }, status: { $ne: 'disabled' } }, { projection: { email: 1 } })
+          .limit(50)
+          .toArray();
+        const recipients = new Set<string>();
+        // Only a real account is written to: an unknown email typed at sign-in is not.
+        if (adminEmail && input.adminId) recipients.add(adminEmail);
+        for (const admin of supers) if (admin.email) recipients.add(String(admin.email).toLowerCase());
 
-      const emailAlerts = [];
-      for (const to of recipients) {
-        const result = await sendNotification(db, {
-          channel: 'email',
-          to,
-          templateKey: EMAIL_ALERT_TEMPLATE,
-          variables: {
-            title: doc.label,
-            account: adminEmail || 'unknown',
-            time: now.toISOString(),
-            ip: doc.ip || 'unknown',
-            device: doc.userAgent || 'unknown',
-            detail: doc.detail,
-          },
-          requestedBy: 'security-alerts',
-        });
-        emailAlerts.push({ to, status: result.status, error: result.error, logId: result.logId });
+        // Sent in parallel: one slow provider call must not hold up the others.
+        const emailAlerts = await Promise.all(
+          Array.from(recipients).map(async (to) => {
+            const result = await sendNotification(db, {
+            channel: 'email',
+            to,
+            templateKey: EMAIL_ALERT_TEMPLATE,
+            variables: {
+              title: doc.label,
+              account: adminEmail || 'unknown',
+              time: now.toISOString(),
+              ip: doc.ip || 'unknown',
+              device: doc.userAgent || 'unknown',
+              detail: doc.detail,
+            },
+            requestedBy: 'security-alerts',
+            });
+            return { to, status: result.status, error: result.error, logId: result.logId };
+          })
+        );
+        await db.collection(SECURITY_EVENTS).updateOne({ _id: inserted.insertedId }, { $set: { emailAlerts } });
+      } catch (error) {
+        console.error('Security alert email attempt failed:', error);
       }
-      await db.collection(SECURITY_EVENTS).updateOne({ _id: inserted.insertedId }, { $set: { emailAlerts } });
-    } catch (error) {
-      console.error('Security alert email attempt failed:', error);
-    }
+    })();
+    await Promise.race([alerting, new Promise((resolve) => setTimeout(resolve, 3000))]);
 
     return String(inserted.insertedId);
   } catch (error) {

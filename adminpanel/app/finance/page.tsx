@@ -54,6 +54,7 @@ const LINKS = [
   { href: '/finance/commissions', label: 'Commission settings', hint: 'Rates, GST and gateway fee rules' },
   { href: '/finance/reconciliation', label: 'Reconciliation', hint: 'Gateway against ledger, webhook health' },
   { href: '/reports', label: 'Reports & exports', hint: 'Statements, GST and service reports' },
+  { href: '/marketing/redemptions', label: 'Coupon redemptions', hint: 'Discounts funded by the platform, per booking' },
 ]
 
 export default function FinanceOverviewPage() {

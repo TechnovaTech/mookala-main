@@ -3,6 +3,7 @@ import { requireAppUser } from '@/lib/app-auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { requireAdmin } from '@/lib/auth';
 import { asString } from '@/lib/http';
+import { maintenanceBlock } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,6 +62,7 @@ function textList(value: unknown): string[] {
 
 export async function POST(request: NextRequest) {
   try {
+    const down = await maintenanceBlock(); if (down) return down;
     const body = await request.json().catch(() => null);
     const name = asString(body?.name, 300);
     const organizerPhone = asString(body?.organizerPhone, 30);

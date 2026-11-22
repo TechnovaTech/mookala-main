@@ -1,6 +1,7 @@
 'use client'
 import React, { useState } from 'react'
 import ResourcePage from '@/components/ResourcePage'
+import ReferralCounts from '@/components/marketing/ReferralCounts'
 
 const VIEWS = [
   { value: 'referral-programmes', label: 'Programmes' },
@@ -27,6 +28,7 @@ export default function Page() {
           </button>
         ))}
       </div>
+      {view === 'referral-programmes' && <ReferralCounts />}
     </ResourcePage>
   )
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { maintenanceBlock } from '@/lib/maintenance';
 import { connectToDatabase } from '@/lib/mongodb';
 import { fail, ok } from '@/lib/http';
 import { restrictionFor } from '@/lib/user-status';
@@ -26,6 +27,8 @@ export async function OPTIONS() {
  * item waits for portfolio review (`reviewStatus: 'pending'`).
  */
 export async function POST(request: NextRequest) {
+  // Refused while the platform is under maintenance (see lib/maintenance.ts).
+  const down = await maintenanceBlock(); if (down) return down;
   // base64 is a third larger than the file, plus the rest of the JSON body.
   const declared = Number(request.headers.get('content-length') || 0);
   if (declared > MAX_MEDIA_BYTES * 1.4 + 4096) return fail(MEDIA_TOO_LARGE, 413);

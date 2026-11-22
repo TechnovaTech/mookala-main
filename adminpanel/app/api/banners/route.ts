@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit';
 import { asString } from '@/lib/http';
 import { mediaProblem, placementState, readDate, readPositiveInt } from '@/app/api/admin/catalogue/_lib/shared';
 import { servedCampaigns } from '@/app/api/admin/advertising/_lib/campaigns';
+import { servedPromotions } from '@/app/api/admin/marketing/_lib/promotions';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,12 @@ export const dynamic = 'force-dynamic';
  * GET /api/banners[?city=<city>]: the user app (no login) receives banners
  * that are active and inside their dates. An admin with ads:view receives
  * every hand-entered banner.
+ *
+ * Live promotions placed as "Home screen banner" (Marketing > Promotions) come
+ * first, highest priority first, in the same shape, each with `promotionId`
+ * and the linked coupon's `couponCode` (also added to the title, which the
+ * app reads out as the slide's label). A banner that a live promotion shows is
+ * not listed a second time.
  *
  * Advertiser campaigns placed as "Home banner" that are live, inside their
  * dates and have a creative follow the hand-entered banners, in the same
@@ -27,12 +34,33 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const city = asString(request.nextUrl.searchParams.get('city'), 80);
     const campaigns = await servedCampaigns(db, 'banners', city);
+    // Live promotions for the home banner placement (Marketing > Promotions) come first, highest priority first.
+    // Not for the admin screen, which manages hand-entered banners only.
+    const promotions = isAdmin ? [] : await servedPromotions(db, 'banners', now);
+    const promoted = new Set(promotions.filter((p) => p.artwork.source === 'banner').map((p) => String(p.artwork.id)));
 
     return NextResponse.json({
       success: true,
       banners: [
+        ...promotions.map(({ promotion: p, artwork, couponCode }, index) => ({
+          _id: p._id.toString(),
+          title: couponCode ? `${p.name} (code ${couponCode})` : p.name,
+          image: artwork.image,
+          mediaType: artwork.mediaType,
+          link: p.link || artwork.link || '',
+          order: index - promotions.length,
+          status: 'active',
+          createdAt: p.createdAt,
+          startDate: p.startsAt || null,
+          endDate: p.endsAt || null,
+          state: 'active' as const,
+          promotionId: p._id.toString(),
+          couponCode,
+        })),
         ...banners
           .map((b) => ({ doc: b, state: placementState(b, now) }))
+          // A banner shown by a live promotion is listed once, as the promotion.
+          .filter(({ doc }) => isAdmin || !promoted.has(String(doc._id)))
           .filter(({ state }) => isAdmin || state === 'active')
           .map(({ doc: b, state }) => ({
             _id: b._id.toString(),

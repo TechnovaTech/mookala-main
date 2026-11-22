@@ -16,6 +16,9 @@ import '../widgets/app_image.dart';
 import '../widgets/app_theme.dart';
 import 'ticket_screen.dart';
 
+/// Text colour for coupon savings (dark green, readable on white).
+const _savingColor = Color(0xFF2E7D32);
+
 /// Where the booking is in the order -> Checkout -> verify sequence.
 enum _Stage {
   /// Choosing tickets.
@@ -89,6 +92,14 @@ class _BookingScreenState extends State<BookingScreen> {
   int _verifyAttempts = 0;
   bool _verifyPaused = false;
 
+  /// The coupon box. A coupon is checked against one total; a changed
+  /// selection needs a new check. The server checks it again with the order.
+  final TextEditingController _couponInput = TextEditingController();
+  CouponCheck? _coupon;
+  double _couponForAmount = 0;
+  String? _couponError;
+  bool _couponBusy = false;
+
   List<TicketType> get _tickets => _event.tickets;
 
   @override
@@ -158,6 +169,52 @@ class _BookingScreenState extends State<BookingScreen> {
 
   String? get _problem => validateSelection(_tickets, _drafts);
 
+  /// The applied coupon, while it still matches the selection.
+  CouponCheck? get _activeCoupon {
+    final coupon = _coupon;
+    if (coupon == null || !coupon.valid) return null;
+    return coupon.code.isNotEmpty && _couponForAmount == estimateTotal(_tickets, _drafts) ? coupon : null;
+  }
+
+  Future<void> _applyCoupon() async {
+    final code = _couponInput.text.trim().toUpperCase();
+    final amount = estimateTotal(_tickets, _drafts).toDouble();
+    if (code.isEmpty) {
+      setState(() => _couponError = 'Enter a coupon code.');
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _couponBusy = true;
+      _couponError = null;
+    });
+    try {
+      final check = await ApiService.validateCoupon(code: code, amount: amount);
+      if (!mounted) return;
+      setState(() {
+        _couponBusy = false;
+        if (check.valid) {
+          _coupon = check;
+          _couponForAmount = amount;
+        } else {
+          _coupon = null;
+          _couponError = check.reason ?? 'This coupon cannot be used.';
+        }
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _couponBusy = false;
+        _couponError = e.message;
+      });
+    }
+  }
+
+  void _removeCoupon() => setState(() {
+        _coupon = null;
+        _couponError = null;
+      });
+
   /* ------------------------------- Order ------------------------------- */
 
   Future<void> _proceed() async {
@@ -169,7 +226,11 @@ class _BookingScreenState extends State<BookingScreen> {
     });
 
     try {
-      final order = await ApiService.createOrder(eventId: _event.id, tickets: orderLines(_tickets, _drafts));
+      final order = await ApiService.createOrder(
+        eventId: _event.id,
+        tickets: orderLines(_tickets, _drafts),
+        couponCode: _activeCoupon?.code,
+      );
       if (!mounted) return;
 
       if (order.isFree) {
@@ -194,6 +255,10 @@ class _BookingScreenState extends State<BookingScreen> {
       setState(() {
         _stage = _Stage.selecting;
         _notice = _orderErrorText(e);
+        if (e.code == 'COUPON_NOT_VALID') {
+          _coupon = null;
+          _couponError = e.message;
+        }
       });
       if (e.code == 'SEATS_TAKEN' || e.code == 'SOLD_OUT') _refreshEvent();
     }
@@ -208,6 +273,8 @@ class _BookingScreenState extends State<BookingScreen> {
         return '${e.message} Please choose again.';
       case 'GATEWAY_ERROR':
         return 'The payment could not be started. Please try again in a moment.';
+      case 'COUPON_NOT_VALID':
+        return '${e.message}. The coupon was removed: you can book without it or try another code.';
       default:
         return e.message;
     }
@@ -617,6 +684,83 @@ class _BookingScreenState extends State<BookingScreen> {
     );
   }
 
+  Widget _couponBox(double estimate) {
+    final coupon = _activeCoupon;
+    return Card(
+      key: const Key('coupon-box'),
+      color: Colors.white,
+      surfaceTintColor: Colors.white,
+      margin: const EdgeInsets.only(top: 4, bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Have a coupon?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const SizedBox(height: 8),
+            if (coupon != null) ...[
+              Row(
+                children: [
+                  const Icon(Icons.local_offer_outlined, color: _savingColor, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Coupon ${coupon.code} applied${coupon.description.isNotEmpty ? ': ${coupon.description}' : ''}',
+                      style: const TextStyle(color: _savingColor, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  TextButton(key: const Key('coupon-remove'), onPressed: _removeCoupon, child: const Text('Remove')),
+                ],
+              ),
+              Row(
+                children: [
+                  const Expanded(child: Text('Discount')),
+                  Text('−${formatRupees(coupon.discount)}', key: const Key('coupon-discount'), style: const TextStyle(color: _savingColor)),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Expanded(child: Text('New total', style: TextStyle(fontWeight: FontWeight.bold))),
+                  Text(
+                    coupon.payable == 0 ? 'Free' : formatRupees(coupon.payable),
+                    key: const Key('coupon-total'),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ],
+              ),
+            ] else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('coupon-input'),
+                      controller: _couponInput,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [LengthLimitingTextInputFormatter(30)],
+                      decoration: const InputDecoration(labelText: 'Coupon code', border: OutlineInputBorder(), isDense: true),
+                      onSubmitted: (_) => _applyCoupon(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    key: const Key('coupon-apply'),
+                    onPressed: _couponBusy ? null : _applyCoupon,
+                    child: _couponBusy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Apply'),
+                  ),
+                ],
+              ),
+            if (_couponError != null) ...[
+              const SizedBox(height: 8),
+              Text(_couponError!, key: const Key('coupon-error'), style: const TextStyle(color: AppColors.danger, fontSize: 13)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _selectionView() {
     final creating = _stage == _Stage.creatingOrder;
     final problem = _problem;
@@ -660,6 +804,7 @@ class _BookingScreenState extends State<BookingScreen> {
                         ),
                     ],
                     const SizedBox(height: 8),
+                    if (estimate > 0 && problem == null && Session.isSignedIn) _couponBox(estimate),
                     _policyCard(),
                   ],
                 ),
@@ -681,9 +826,18 @@ class _BookingScreenState extends State<BookingScreen> {
                   child: Row(
                     children: [
                       Expanded(child: Text('$seats ${seats == 1 ? 'ticket' : 'tickets'}', style: TextStyle(color: Colors.grey.shade700))),
-                      Text(
-                        estimate == 0 ? 'Free' : 'Estimated ${formatRupees(estimate)}',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      // Flexible: with a coupon the text is longer and must still fit a small phone at a large font size.
+                      Flexible(
+                        flex: 3,
+                        child: Text(
+                          estimate == 0
+                              ? 'Free'
+                              : _activeCoupon != null
+                                  ? 'Estimated ${_activeCoupon!.payable == 0 ? 'free' : formatRupees(_activeCoupon!.payable)} with coupon'
+                                  : 'Estimated ${formatRupees(estimate)}',
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ],
                   ),
@@ -698,7 +852,13 @@ class _BookingScreenState extends State<BookingScreen> {
                 style: primaryButtonStyle(),
                 child: creating
                     ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(estimate == 0 && problem == null ? 'CONFIRM FREE BOOKING' : 'PROCEED'),
+                    : Text(
+                        estimate == 0 && problem == null
+                            ? 'CONFIRM FREE BOOKING'
+                            : _activeCoupon?.payable == 0
+                                ? 'CONFIRM BOOKING WITH COUPON'
+                                : 'PROCEED',
+                      ),
               ),
               if (estimate > 0 && problem == null)
                 Padding(
@@ -766,6 +926,21 @@ class _BookingScreenState extends State<BookingScreen> {
                                   ),
                                 ),
                             const SizedBox(height: 8),
+                            if (order.couponCode != null) ...[
+                              Row(
+                                children: [
+                                  const Expanded(child: Text('Tickets')),
+                                  Text(formatRupees(order.listPrice)),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  Expanded(child: Text('Coupon ${order.couponCode}', style: const TextStyle(color: _savingColor))),
+                                  Text('−${formatRupees(order.discount)}', key: const Key('pay-coupon-discount'), style: const TextStyle(color: _savingColor)),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                            ],
                             Row(
                               children: [
                                 const Expanded(child: Text('Amount to pay', style: TextStyle(fontSize: 16))),
@@ -884,6 +1059,7 @@ class _BookingScreenState extends State<BookingScreen> {
     _holdTimer?.cancel();
     _verifyTimer?.cancel();
     _razorpay?.clear();
+    _couponInput.dispose();
     for (final line in _lines) {
       line.dispose();
     }

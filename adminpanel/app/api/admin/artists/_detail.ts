@@ -1,5 +1,6 @@
 import type { Db } from 'mongodb';
-import { escapeRegex, parseAmount, toObjectId } from '@/lib/http';
+import { parseAmount, toObjectId } from '@/lib/http';
+import { ratingFilter } from '@/lib/resources/support.hooks';
 import { EVENT_PROJECTION, artistEventsFilter, findParty, historyFor, maskId, mediaReviewOf, toEventRow } from './_shared';
 import { addDays, loadCalendar, summarise, todayInIndia } from './_availability';
 
@@ -83,30 +84,19 @@ async function bookingHistory(db: Db, eventIds: string[]) {
  * the Artist Performance screen (see app/api/admin/artists/performance/route.ts).
  */
 async function reputation(db: Db, artist: { _id: string; name: string; phone: string }, eventIds: string[]) {
-  const name = artist.name.trim();
-  const sameName = name
-    ? await db.collection('artists').countDocuments({ name: { $regex: '^\\s*' + escapeRegex(name) + '\\s*$', $options: 'i' } })
-    : 0;
-  const ratingFilter: any = {
-    targetType: 'artist',
-    status: { $ne: 'hidden' },
-    $or: [{ targetId: artist._id }, ...(toObjectId(artist._id) ? [{ targetId: toObjectId(artist._id) }] : [])],
-  };
-  // A rating without an id counts only when exactly one artist has that name.
-  if (name && sameName === 1) {
-    ratingFilter.$or.push({
-      targetId: { $in: ['', null] },
-      targetName: { $regex: '^\\s*' + escapeRegex(name) + '\\s*$', $options: 'i' },
-    });
-  }
+  // Published ratings of the artist and of the events they performed in or
+  // created, matched as in lib/resources/support.hooks.ts (ratingFilter).
+  const match = await ratingFilter(db, 'artist', artist._id);
+  const ratingQuery = { $and: [match, { status: 'published' }] };
 
   const idValues: any[] = [...eventIds, ...eventIds.map((id) => toObjectId(id)).filter(Boolean)];
   const eventBookingIds = eventIds.length
     ? (await db.collection('bookings').find({ eventId: { $in: idValues } }, { projection: { _id: 1 } }).limit(20000).toArray()).map((b) => String(b._id))
     : [];
 
-  const [ratings, complaints, reports] = await Promise.all([
-    db.collection('feedback').find(ratingFilter).sort({ createdAt: -1 }).limit(200).toArray(),
+  const [ratings, pendingRatings, complaints, reports] = await Promise.all([
+    db.collection('feedback').find(ratingQuery).sort({ createdAt: -1 }).limit(2000).toArray(),
+    db.collection('feedback').countDocuments({ $and: [match, { status: 'pending' }] }),
     db
       .collection('supportCases')
       .find({
@@ -125,6 +115,7 @@ async function reputation(db: Db, artist: { _id: string; name: string; phone: st
   return {
     rating: valid.length ? Math.round((valid.reduce((sum, r) => sum + Number(r.rating), 0) / valid.length) * 100) / 100 : null,
     ratingCount: valid.length,
+    pendingRatings,
     ratings: valid.slice(0, 10).map((r) => ({
       _id: String(r._id),
       rating: Number(r.rating),

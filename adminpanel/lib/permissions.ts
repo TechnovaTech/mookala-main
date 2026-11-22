@@ -253,6 +253,8 @@ export const NAV: NavGroup[] = [
       { label: 'All Users', href: '/users', permission: 'users:view' },
       { label: 'User Verification', href: '/users/verification', permission: 'users:view' },
       { label: 'User Activity', href: '/users/activity', permission: 'users:view' },
+      { label: 'Support Overview', href: '/support/overview', permission: 'support:view' },
+      { label: 'My Cases', href: '/support/my-cases', permission: 'support:view' },
       { label: 'Complaints', href: '/support/complaints', permission: 'support:view' },
       { label: 'Support Tickets', href: '/support/tickets', permission: 'support:view' },
       { label: 'Feedback & Ratings', href: '/support/feedback', permission: 'support:view' },

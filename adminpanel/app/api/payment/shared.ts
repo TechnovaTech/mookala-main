@@ -1,9 +1,39 @@
 import { ObjectId, type Db } from 'mongodb';
 import { idFilter } from '@/lib/http';
-import { recordFailedPayment, roundMoney } from '@/lib/ledger';
+import { recordFailedPayment, roundMoney, syncCouponDiscounts } from '@/lib/ledger';
 import { BookingError, confirmPaidBooking, releaseBooking } from '@/lib/bookings';
 import { clearDispute, loseDispute, openDispute, recomputeRefundState } from '@/app/api/admin/finance/payments/shared';
 import { findPaymentEntry, writeBookingOutcome, writeRefundLedger } from '@/app/api/admin/finance/refunds/shared';
+import { settleBookingCoupon } from '@/lib/coupons';
+import { qualifyReferralForBooking } from '@/lib/referrals';
+
+/* ------------------------------------------------------------------ */
+/* After a payment is confirmed                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The follow-up work for a booking whose payment has just been confirmed (or a
+ * free booking that was placed): the coupon on it is redeemed and its ledger
+ * entries written (lib/coupons.ts), and a referral waiting for this customer's
+ * first paid booking qualifies (lib/referrals.ts). Both steps are idempotent,
+ * so calling this again for the same booking changes nothing. A failure here
+ * never undoes the confirmation: it is logged and picked up again by the
+ * catch-up in the order route and the marketing screens.
+ *
+ * Called by the webhook below and the free-booking path of /api/payment/order.
+ * /api/payment/verify and the reconciliation screen should call it too.
+ */
+export async function afterPaymentConfirmed(db: Db, booking: any, via: string): Promise<void> {
+  if (!booking?._id) return;
+  try {
+    const fresh = await db.collection('bookings').findOne({ _id: booking._id });
+    if (!fresh) return;
+    if (fresh.coupon?.couponId) await settleBookingCoupon(db, fresh, via);
+    await qualifyReferralForBooking(db, fresh);
+  } catch (error) {
+    console.error('Follow-up after payment confirmation failed for booking', String(booking._id), error);
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* Payment event log                                                   */
@@ -246,6 +276,9 @@ export async function handleWebhookEvent(db: Db, event: string, payload: StoredW
         { id: String(entity.id), orderId: entity.order_id, amountPaise: Number(entity.amount), method: entity.method || null },
         'webhook'
       );
+      if (result.outcome === 'confirmed' || result.outcome === 'already_confirmed') {
+        await afterPaymentConfirmed(db, result.booking || booking, 'webhook');
+      }
       await logPaymentEvent(db, {
         ...base,
         kind: 'webhook',
@@ -395,6 +428,8 @@ export async function handleWebhookEvent(db: Db, event: string, payload: StoredW
         if (done) await writeBookingOutcome(db, done, { by: actor });
       }
       if (payment?.reference) await recomputeRefundState(db, [payment.reference]);
+      // A coupon discount on the refunded sale stops counting for the payee.
+      if (payment?.payeeType && payment?.payeeId) await syncCouponDiscounts(db, { payeeType: payment.payeeType, payeeId: payment.payeeId });
       await log('ok', 'refund.processed: the gateway completed the refund' + (outcome.written ? ' (ledger entries written now)' : ''));
       return 'Refund ' + refundId + ': processed' + (outcome.written ? ', ledger entries written' : '');
     }
@@ -437,6 +472,7 @@ export async function handleWebhookEvent(db: Db, event: string, payload: StoredW
       if (failed) await writeBookingOutcome(db, failed, { by: actor });
     }
     if (payment?.reference) await recomputeRefundState(db, [payment.reference]);
+    if (payment?.payeeType && payment?.payeeId) await syncCouponDiscounts(db, { payeeType: payment.payeeType, payeeId: payment.payeeId });
     await log('failed', 'refund.failed: the gateway could not complete the refund');
     return 'Refund ' + refundId + ': failed, ' + off.modifiedCount + ' ledger entries switched off';
   }
@@ -463,6 +499,7 @@ export async function handleWebhookEvent(db: Db, event: string, payload: StoredW
         : event === 'payment.dispute.won'
         ? await clearDispute(db, payment, input)
         : await loseDispute(db, payment, input);
+    if (payment.payeeType && payment.payeeId) await syncCouponDiscounts(db, { payeeType: payment.payeeType, payeeId: payment.payeeId });
     await logPaymentEvent(db, {
       kind: 'dispute',
       outcome: result.ok ? 'ok' : 'refused',

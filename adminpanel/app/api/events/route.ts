@@ -11,6 +11,7 @@ import {
   prepareStaff,
   sanitiseEvent,
 } from '@/app/api/admin/catalogue/_lib/shared';
+import { maintenanceBlock } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,6 +84,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const down = await maintenanceBlock(null, request); if (down) return down;
     const caller = await identifyCaller(request, 'events:manage');
     if (caller.kind === 'denied') return caller.response;
 

@@ -2,32 +2,76 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import { Wrench } from "lucide-react"
-import { fetchPlatform } from "@/lib/api"
 import { api, ApiError } from "@/lib/api-client"
 import { clearSession, getSession } from "@/lib/auth"
 import { showToast } from "@/lib/toast"
 import type { PlatformInfo } from "@/lib/types"
 
-const PlatformContext = createContext<PlatformInfo | null>(null)
+/** What GET /public/platform publishes, as the website uses it. Every value is set in the admin panel. */
+export interface SitePlatform extends PlatformInfo {
+  /** General enquiries and partnerships addresses ("" when not published). */
+  contacts: { general: string; partnerships: string }
+  /** The website's public address ("" when not set). */
+  website: string
+}
 
-/** Platform details from the backend (support contacts, maintenance); null until loaded. */
-export function usePlatform(): PlatformInfo | null {
+const PlatformContext = createContext<SitePlatform | null>(null)
+
+/** Platform details from the backend (name, contacts, maintenance); null until loaded. */
+export function usePlatform(): SitePlatform | null {
   return useContext(PlatformContext)
+}
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value.trim() : ""
+}
+
+async function loadPlatform(): Promise<SitePlatform> {
+  const data = await api<any>("/public/platform")
+  const policyLinks: Record<string, string> = {}
+  if (data.policyLinks && typeof data.policyLinks === "object") {
+    for (const [key, value] of Object.entries(data.policyLinks)) {
+      if (text(value)) policyLinks[key] = text(value)
+    }
+  }
+  return {
+    name: text(data.name) || "Mookalaa",
+    support: {
+      email: text(data.support?.email),
+      phone: text(data.support?.phone),
+      address: text(data.support?.address),
+    },
+    contacts: {
+      general: text(data.contacts?.general),
+      partnerships: text(data.contacts?.partnerships),
+    },
+    website: text(data.website),
+    policyLinks,
+    maintenance: {
+      active: data.maintenance?.active === true,
+      message: text(data.maintenance?.message),
+      endsAt: data.maintenance?.endsAt || null,
+      upcomingWindow: data.maintenance?.upcomingWindow || null,
+    },
+  }
 }
 
 function formatWhen(value: string | null): string {
   if (!value) return ""
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ""
-  return date.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
+  // The platform runs on India time (the timezone the backend publishes is fixed to Asia/Kolkata).
+  return (
+    date.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + " IST"
+  )
 }
 
 export function PlatformProvider({ children }: { children: ReactNode }) {
-  const [platform, setPlatform] = useState<PlatformInfo | null>(null)
+  const [platform, setPlatform] = useState<SitePlatform | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    fetchPlatform()
+    loadPlatform()
       .then((info) => {
         if (!cancelled) setPlatform(info)
       })
@@ -59,7 +103,7 @@ export function MaintenanceGate({ children }: { children: ReactNode }) {
   const platform = usePlatform()
   const maintenance = platform?.maintenance
 
-  if (maintenance?.active) {
+  if (platform && maintenance?.active) {
     const until = formatWhen(maintenance.endsAt)
     return (
       <main className="min-h-[70vh] flex items-center justify-center px-4 py-16">
@@ -67,12 +111,12 @@ export function MaintenanceGate({ children }: { children: ReactNode }) {
           <div className="w-14 h-14 mx-auto mb-5 rounded-full bg-amber-500/20 flex items-center justify-center">
             <Wrench className="text-amber-500" size={28} />
           </div>
-          <h1 className="text-2xl font-bold mb-3">Mookalaa is under maintenance</h1>
+          <h1 className="text-2xl font-bold mb-3">{platform.name} is under maintenance</h1>
           <p className="text-muted-foreground">
             {maintenance.message || "We are making some improvements. Please come back in a little while."}
           </p>
           {until && <p className="text-sm text-muted-foreground mt-4">Expected back by {until}.</p>}
-          {platform?.support.email && (
+          {platform.support.email && (
             <p className="text-sm text-muted-foreground mt-4">
               Need help? Write to{" "}
               <a className="underline" href={`mailto:${platform.support.email}`}>

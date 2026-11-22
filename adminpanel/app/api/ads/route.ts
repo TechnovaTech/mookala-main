@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit';
 import { asString } from '@/lib/http';
 import { mediaProblem, placementState, readDate, readPositiveInt } from '@/app/api/admin/catalogue/_lib/shared';
 import { servedCampaigns } from '@/app/api/admin/advertising/_lib/campaigns';
+import { servedPromotions } from '@/app/api/admin/marketing/_lib/promotions';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,12 @@ export const dynamic = 'force-dynamic';
  * clicks. A campaign with target locations is returned only when `city`
  * matches one of them (case does not matter); one with none is returned
  * everywhere.
+ *
+ * Live promotions placed as "Home screen advertisement" (Marketing >
+ * Promotions) come first, highest priority first, in the same shape, each
+ * with `promotionId` and the linked coupon's `couponCode` (also shown after
+ * the sponsor name, which the app displays). An ad that a live promotion shows
+ * is not listed a second time.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -29,12 +36,37 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const city = asString(request.nextUrl.searchParams.get('city'), 80);
     const campaigns = await servedCampaigns(db, 'ads', city);
+    // Not for the admin screen, which manages hand-entered ads only.
+    const promotions = isAdmin ? [] : await servedPromotions(db, 'ads', now);
+    const promoted = new Set(promotions.filter((p) => p.artwork.source === 'ad').map((p) => String(p.artwork.id)));
 
     return NextResponse.json({
       success: true,
       ads: [
+        ...promotions.map(({ promotion: p, artwork, couponCode }, index) => {
+          const sponsor = artwork.sponsor || 'Mookalaa';
+          return {
+            _id: p._id.toString(),
+            title: couponCode ? `${p.name} (code ${couponCode})` : p.name,
+            image: artwork.image,
+            mediaType: artwork.mediaType,
+            link: p.link || artwork.link || '',
+            sponsor: couponCode ? `${sponsor} · code ${couponCode}` : sponsor,
+            startDate: p.startsAt || null,
+            endDate: p.endsAt || null,
+            duration: artwork.duration || 0,
+            order: index - promotions.length,
+            status: 'active',
+            createdAt: p.createdAt,
+            state: 'active' as const,
+            promotionId: p._id.toString(),
+            couponCode,
+          };
+        }),
         ...ads
           .map((a) => ({ doc: a, state: placementState(a, now) }))
+          // An ad shown by a live promotion is listed once, as the promotion.
+          .filter(({ doc }) => isAdmin || !promoted.has(String(doc._id)))
           .filter(({ state }) => isAdmin || state === 'active')
           .map(({ doc: a, state }) => ({
             _id: a._id.toString(),

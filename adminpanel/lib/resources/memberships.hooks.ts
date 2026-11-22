@@ -105,13 +105,13 @@ export function phoneVariants(phone: string): string[] {
 
 /**
  * Stores "expired" on every subscription that is still marked active after its
- * expiry date. Nothing schedules this, so it runs when an admin presses
- * "Update expired" (`via: 'update-expired'`) and whenever a membership screen
- * is opened (`via: 'on-read'`). Each change is written to the activity log.
+ * expiry date. It runs when an admin presses "Update expired"
+ * (`via: 'update-expired'`), whenever a membership screen is opened
+ * (`via: 'on-read'`), and from the notifications scheduler. Each change is written to the activity log.
  */
 export async function sweepExpired(
   db: Db,
-  options: { admin: AdminIdentity | null; request?: NextRequest; via: 'update-expired' | 'on-read' }
+  options: { admin: AdminIdentity | null; request?: NextRequest; via: 'update-expired' | 'on-read' | 'scheduler' }
 ): Promise<{ updated: number; remaining: number }> {
   const collection = db.collection('membershipSubscriptions');
   const today = todayStart();

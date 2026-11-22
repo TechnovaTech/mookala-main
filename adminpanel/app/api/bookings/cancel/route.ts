@@ -3,6 +3,7 @@ import { requireAppUser } from '@/lib/app-auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { asString, fail, ok } from '@/lib/http';
 import { BookingError, cancelBooking, findBooking, publicBooking, quoteCancellation } from '@/lib/bookings';
+import { maintenanceBlock } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: NextRequest) {
   try {
+    const down = await maintenanceBlock(); if (down) return down;
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object') return fail('Send the request as JSON', 400);
 

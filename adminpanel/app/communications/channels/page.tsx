@@ -4,6 +4,7 @@ import Link from 'next/link'
 import AdminShell from '@/components/AdminShell'
 import { NoticeBar, Spinner, api, type Notice } from '@/components/ui'
 import ChannelCard, { type ChannelView } from '@/components/communications/ChannelCard'
+import SchedulerCard from '@/components/communications/SchedulerCard'
 import WaitingApprovals from '@/components/security/WaitingApprovals'
 
 export default function Page() {
@@ -30,12 +31,12 @@ export default function Page() {
   }, [load])
 
   return (
-    <AdminShell title="Channels & Providers" subtitle="SMS, email, WhatsApp and push settings, and what each channel can really send today">
+    <AdminShell title="Channels & Providers" subtitle="SMS, email, WhatsApp and push providers, their status webhooks, and the scheduler">
       <NoticeBar notice={notice} onClose={() => setNotice(null)} />
       <NoticeBar
         notice={{
           type: 'info',
-          text: 'Only one thing is implemented: one-time password SMS through 2Factor, once its API key is saved and the channel is switched on. The sign-in screens of the apps do not use it yet; that is being connected separately. Email, WhatsApp and push have no provider integration, so saving details for them does not make anything send. Every change here is written to the activity log without the key itself.',
+          text: `What is built: email through SendGrid or Resend, WhatsApp through the Meta Cloud API (approved templates), push through Firebase Cloud Messaging, and one-time password SMS through 2Factor. Other SMS text is not implemented. A channel sends only when its credentials are saved and it is switched on. The mobile apps do not include Firebase yet, so no phone registers for push until they do. Provider keys can only be changed by a Super Admin${canManage ? '' : ' (you can view this page only)'}, with a reason, and every change and test is in the activity log without the key itself.`,
         }}
       />
 
@@ -51,8 +52,10 @@ export default function Page() {
         </div>
       )}
 
+      <SchedulerCard />
+
       <p className="text-sm text-gray-600 mt-4">
-        Every attempt to send, including those that were not sent, is listed in the{' '}
+        Every attempt to send, including those that were not sent, and every delivery receipt is listed in the{' '}
         <Link href="/communications/logs" className="text-teal underline">
           delivery log
         </Link>

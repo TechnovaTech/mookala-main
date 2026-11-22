@@ -56,6 +56,8 @@ export interface Figures {
   gatewayFees: number;
   refunds: number;
   refundDeductions: number;
+  /** Coupon discounts funded by the platform; owed to the payee on top of what the customer paid. */
+  couponDiscounts: number;
   /** Paid out to payees in the period (settlement entries). */
   settled: number;
   /** Net owed to organisers, artists, instructors and cinemas for the period. */
@@ -74,6 +76,7 @@ const FIGURE_KEYS: (keyof Figures)[] = [
   'gatewayFees',
   'refunds',
   'refundDeductions',
+  'couponDiscounts',
   'settled',
   'netPayable',
   'netRevenue',
@@ -124,7 +127,13 @@ function add(total: Paise, entry: { type: string; paise: number; count: number; 
       total.netPayable -= owed;
       break;
     case 'refund_deduction':
+      // Kept by the platform under the refund rule, so not owed to the payee (as in payeeBalance).
       total.refundDeductions += entry.paise;
+      total.netPayable -= owed;
+      break;
+    case 'coupon_discount':
+      total.couponDiscounts += entry.paise;
+      total.netPayable += owed;
       break;
     case 'settlement':
       total.settled += entry.paise;
@@ -191,7 +200,13 @@ export async function buildStatement(db: Db, period: Period, service?: string | 
         $group: {
           _id: {
             service: '$service',
-            type: '$type',
+            type: {
+              $cond: [
+                { $and: [{ $eq: ['$type', 'adjustment'] }, { $eq: ['$meta.kind', 'coupon_discount'] }] },
+                'coupon_discount',
+                '$type',
+              ],
+            },
             payeeType: { $ifNull: ['$payeeType', null] },
             payeeId: { $ifNull: ['$payeeId', null] },
             saleGst: SALE_GST,
@@ -248,13 +263,13 @@ export async function buildStatement(db: Db, period: Period, service?: string | 
   const rawTotal = zero();
   let read = 0;
   const cursor = transactions
-    .find(filter, { projection: { type: 1, amount: 1, payeeType: 1, payeeId: 1, description: 1, 'meta.gstKind': 1 } })
+    .find(filter, { projection: { type: 1, amount: 1, payeeType: 1, payeeId: 1, description: 1, 'meta.gstKind': 1, 'meta.kind': 1 } })
     .limit(RAW_LIMIT + 1);
   for await (const doc of cursor) {
     read++;
     if (read > RAW_LIMIT) break;
     add(rawTotal, {
-      type: String(doc.type),
+      type: doc.type === 'adjustment' && doc.meta?.kind === 'coupon_discount' ? 'coupon_discount' : String(doc.type),
       paise: toPaise(doc.amount),
       count: 1,
       owed: isOwedToPayee(doc.payeeType, doc.payeeId),

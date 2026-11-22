@@ -28,7 +28,8 @@ export const FIGURE_DEFINITIONS: { term: string; meaning: string }[] = [
   { term: 'Refunds', meaning: "Sum of ledger 'refund' entries with status 'success' (money returned to customers)." },
   {
     term: 'Net to payees',
-    meaning: "Payments minus commission, GST, gateway fees and refunds, all with status 'success'.",
+    meaning:
+      "Payments plus coupon discounts the platform funds, minus commission, GST, gateway fees, refunds and the cancellation charges the platform keeps, all with status 'success'.",
   },
   {
     term: 'Pending settlements',

@@ -69,7 +69,19 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           { $match: { eventId: { $in: eventIds }, status: 'success' } },
           {
             $group: {
-              _id: { $cond: [{ $eq: ['$payeeType', 'platform'] }, { $concat: ['platform_', '$type'] }, '$type'] },
+              _id: {
+                $cond: [
+                  { $eq: ['$payeeType', 'platform'] },
+                  { $concat: ['platform_', '$type'] },
+                  {
+                    $cond: [
+                      { $and: [{ $eq: ['$type', 'adjustment'] }, { $eq: ['$meta.kind', 'coupon_discount'] }] },
+                      'coupon_discount',
+                      '$type',
+                    ],
+                  },
+                ],
+              },
               total: { $sum: '$amount' },
               count: { $sum: 1 },
             },
@@ -97,7 +109,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       // Refunds of bookings that were never verified with the gateway. The
       // organiser was never credited for those, so they do not reduce the net.
       refundsOutsideLedger: sum('platform_refund'),
-      net: roundMoney(sum('payment') - sum('commission') - sum('gst') - sum('gateway_fee') - sum('refund')),
+      // Coupon discounts are funded by the platform and owed to the organiser.
+      couponDiscounts: sum('coupon_discount'),
+      // Same rule as payeeBalance: the cancellation charge kept under a refund rule is the platform's.
+      net: roundMoney(
+        sum('payment') + sum('coupon_discount') - sum('commission') - sum('gst') - sum('gateway_fee') - sum('refund') - sum('refund_deduction')
+      ),
     };
 
     const byPaymentStatus: Record<string, { count: number; amount: number }> = {};

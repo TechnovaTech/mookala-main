@@ -102,6 +102,9 @@ class OrderResult {
     this.keyId = '',
     this.expiresAt,
     this.totalPrice = 0,
+    this.listPrice = 0,
+    this.discount = 0,
+    this.couponCode,
   });
 
   factory OrderResult.fromJson(Map<String, dynamic> json) {
@@ -116,6 +119,9 @@ class OrderResult {
       keyId: (json['keyId'] ?? '').toString(),
       expiresAt: json['expiresAt'] is String ? DateTime.tryParse(json['expiresAt'] as String) : null,
       totalPrice: json['totalPrice'] is num ? (json['totalPrice'] as num).toDouble() : 0,
+      listPrice: json['listPrice'] is num ? (json['listPrice'] as num).toDouble() : 0,
+      discount: json['discount'] is num ? (json['discount'] as num).toDouble() : 0,
+      couponCode: json['couponCode'] is String && (json['couponCode'] as String).isNotEmpty ? json['couponCode'] as String : null,
     );
   }
 
@@ -134,6 +140,33 @@ class OrderResult {
 
   /// The amount the server will charge, in rupees.
   final double totalPrice;
+
+  /// With a coupon: the price before it, the discount, and the code the server accepted.
+  final double listPrice;
+  final double discount;
+  final String? couponCode;
+}
+
+/// The answer of `POST /public/coupons/validate`: whether a code applies to
+/// this total and what it takes off. The order checks it again on the server.
+class CouponCheck {
+  CouponCheck({required this.valid, required this.code, this.reason, this.discount = 0, this.payable = 0, this.description = ''});
+
+  factory CouponCheck.fromJson(Map<String, dynamic> json) => CouponCheck(
+        valid: json['valid'] == true,
+        code: (json['code'] ?? '').toString(),
+        reason: json['reason'] is String ? json['reason'] as String : null,
+        discount: json['discount'] is num ? (json['discount'] as num).toDouble() : 0,
+        payable: json['payable'] is num ? (json['payable'] as num).toDouble() : 0,
+        description: json['description'] is String ? json['description'] as String : '',
+      );
+
+  final bool valid;
+  final String code;
+  final String? reason;
+  final double discount;
+  final double payable;
+  final String description;
 }
 
 /// The answer of `POST /payment/verify` when it is not an error.
@@ -414,14 +447,32 @@ class ApiService {
   }
 
   /// Starts a booking. The server prices it and holds the seats; a free event
-  /// comes back already confirmed.
-  static Future<OrderResult> createOrder({required String eventId, required List<Map<String, dynamic>> tickets}) async {
+  /// (or one a coupon makes free) comes back already confirmed. With
+  /// [couponCode] the server checks the coupon again and charges the
+  /// discounted amount.
+  static Future<OrderResult> createOrder({
+    required String eventId,
+    required List<Map<String, dynamic>> tickets,
+    String? couponCode,
+  }) async {
     final res = await ApiClient.post('/payment/order', body: {
       'userPhone': _phone,
       'eventId': eventId,
       'tickets': tickets,
+      if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
     });
     return OrderResult.fromJson(res.map);
+  }
+
+  /// Checks a coupon against the ticket total without using it.
+  static Future<CouponCheck> validateCoupon({required String code, required double amount}) async {
+    final res = await ApiClient.post('/public/coupons/validate', body: {
+      'code': code.trim().toUpperCase(),
+      'service': 'ticketing',
+      'amount': amount,
+      'userPhone': _phone,
+    });
+    return CouponCheck.fromJson(res.map);
   }
 
   /// Confirms a Razorpay payment. 200 = ticket, 202 = still processing; every
@@ -468,6 +519,52 @@ class ApiService {
       'reason': reason,
     });
     return res.map['message'] is String ? res.map['message'] as String : 'Booking cancelled.';
+  }
+
+  /* ----------------------- Support and ratings ----------------------- */
+
+  /// The customer's own tickets and complaints with the replies written to
+  /// them (`GET /public/support/tickets`). Internal notes never reach the app.
+  static Future<List<Map<String, dynamic>>> getMySupportTickets() async {
+    final res = await ApiClient.get('/public/support/tickets', query: {'phone': _phone});
+    return _maps(res.map['tickets']);
+  }
+
+  /// Raises a ticket (`POST /public/support/tickets`). A booking, when given,
+  /// must be one of the customer's. At most 5 a day (429 otherwise).
+  static Future<Map<String, dynamic>> raiseSupportTicket({
+    required String subject,
+    required String service,
+    required String description,
+    String? bookingId,
+  }) async {
+    final res = await ApiClient.post('/public/support/tickets', body: {
+      'phone': _phone,
+      'subject': subject.trim(),
+      'service': service,
+      'description': description.trim(),
+      if (bookingId != null && bookingId.isNotEmpty) 'bookingId': bookingId,
+    });
+    return res.map['ticket'] is Map ? Map<String, dynamic>.from(res.map['ticket'] as Map) : <String, dynamic>{};
+  }
+
+  /// The ratings this customer has given (`GET /public/feedback`).
+  static Future<List<Map<String, dynamic>>> getMyRatings() async {
+    final res = await ApiClient.get('/public/feedback', query: {'phone': _phone});
+    return _maps(res.map['ratings']);
+  }
+
+  /// Rates an attended booking from 1 to 5 (`POST /public/feedback`). The
+  /// rating waits for moderation. Returns the server's message.
+  static Future<String> rateEvent({required String bookingId, required String eventId, required int rating, String comment = ''}) async {
+    final res = await ApiClient.post('/public/feedback', body: {
+      'phone': _phone,
+      'bookingId': bookingId,
+      if (eventId.isNotEmpty) 'eventId': eventId,
+      'rating': rating,
+      if (comment.trim().isNotEmpty) 'comment': comment.trim(),
+    });
+    return res.map['message'] is String ? res.map['message'] as String : 'Thank you for your rating.';
   }
 
   /* ------------------------------- Hire ------------------------------ */

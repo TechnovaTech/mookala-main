@@ -4,7 +4,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { asString, fail, ok, toObjectId } from '@/lib/http';
 import { fetchRazorpayPayment, verifyCheckoutSignature } from '@/lib/razorpay-api';
 import { BookingError, confirmPaidBooking, publicBooking } from '@/lib/bookings';
-import { logPaymentEvent, recordFailedAttempt } from '../shared';
+import { afterPaymentConfirmed, logPaymentEvent, recordFailedAttempt } from '../shared';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,6 +129,10 @@ export async function POST(request: NextRequest) {
       { id: payment.id, orderId: payment.order_id, amountPaise: payment.amount, method: payment.method || null },
       'verify'
     );
+    // Coupon redemption and referral rewards follow every confirmation, not only the webhook's.
+    if (result.outcome === 'confirmed' || result.outcome === 'already_confirmed') {
+      await afterPaymentConfirmed(db, result.booking, 'verify');
+    }
 
     await attempt(
       result.outcome === 'late_refund' ? 'refused' : 'ok',

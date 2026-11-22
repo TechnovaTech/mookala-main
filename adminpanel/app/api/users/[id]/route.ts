@@ -78,6 +78,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     const phone = typeof user.phone === 'string' ? user.phone : '';
     const none: any[] = [];
+    // Cases and ratings may hold the number with or without +91.
+    const ten = phone.replace(/\D/g, '').slice(-10);
+    const phones = phone ? Array.from(new Set([phone, ten, '+91' + ten, '91' + ten])) : [];
 
     const [bookingRows, bookingsTotal, transactions, transactionsTotal, cases, feedback, reports, audit, signIns, reportsFiled] =
       await Promise.all([
@@ -137,13 +140,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         phone
           ? db
               .collection('supportCases')
-              .find({ customerPhone: phone }, { projection: { notes: 0 } })
+              .find({ customerPhone: { $in: phones } }, { projection: { notes: 0 } })
               .sort({ createdAt: -1 })
               .limit(HISTORY_LIMIT)
               .toArray()
           : none,
         phone
-          ? db.collection('feedback').find({ customerPhone: phone }).sort({ createdAt: -1 }).limit(HISTORY_LIMIT).toArray()
+          ? db.collection('feedback').find({ customerPhone: { $in: phones } }).sort({ createdAt: -1 }).limit(HISTORY_LIMIT).toArray()
           : none,
         phone
           ? db
@@ -207,7 +210,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const adminActions = audit.map((a: any) => ({
       id: String(a._id),
       action: a.action,
-      label: ACTION_LABELS[a.action] || a.action,
+      label: (ACTION_LABELS[a.action] || a.action) + (a.meta?.fromReport ? ' (from a report)' : ''),
       adminName: a.adminName || null,
       adminEmail: a.adminEmail || null,
       adminRole: a.adminRole || null,
@@ -222,10 +225,17 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       service: c.service || '',
       priority: c.priority || '',
       status: c.status || '',
+      source: c.source === 'app' ? 'app' : 'admin',
       assignedTeam: c.assignedTeam || '',
+      assignedToName: c.assignedToName || '',
+      escalated: c.escalated === true,
+      escalationLevel: Number(c.escalationLevel) || 0,
       bookingId: c.bookingId || '',
+      refundId: c.refundId || '',
       resolution: c.resolution || '',
+      firstResponseAt: c.firstResponseAt || null,
       resolvedAt: c.resolvedAt || null,
+      repliesCount: Array.isArray(c.replies) ? c.replies.length : 0,
       createdAt: c.createdAt || null,
     });
 
@@ -255,10 +265,38 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         });
       }
     }
-    for (const c of supportCases) {
+    for (const raw of cases) {
+      const c = serialiseCase(raw);
       const noun = c.kind === 'complaint' ? 'Complaint' : 'Support ticket';
       if (c.createdAt) {
-        timeline.push({ at: c.createdAt, type: 'support', title: `${noun} raised: ${c.subject}`, detail: c.status ? `status ${c.status}` : '' });
+        timeline.push({
+          at: c.createdAt,
+          type: 'support',
+          title: `${noun} ${c.source === 'app' ? 'raised by the customer in the app' : 'recorded by staff'}: ${c.subject}`,
+          detail: [c.status && `status ${c.status}`, c.escalated && `escalated ${c.escalationLevel} time${c.escalationLevel === 1 ? '' : 's'}`]
+            .filter(Boolean)
+            .join(', '),
+        });
+      }
+      // Replies written to the customer. Internal notes are staff-only and stay on the case.
+      for (const reply of Array.isArray(raw.replies) ? raw.replies : []) {
+        if (!reply?.at) continue;
+        const delivery = reply.delivery?.status === 'in_app' ? 'shown in the app' : `${reply.channel}: ${String(reply.delivery?.status || 'not_sent').replace(/_/g, ' ')}`;
+        timeline.push({
+          at: reply.at,
+          type: 'reply',
+          title: `Reply to the customer on "${c.subject}" by ${reply.byName || reply.by || 'support'}`,
+          detail: `${String(reply.text || '').slice(0, 300)} (${delivery})`,
+        });
+      }
+      for (const escalation of Array.isArray(raw.escalations) ? raw.escalations : []) {
+        if (!escalation?.at) continue;
+        timeline.push({
+          at: escalation.at,
+          type: 'support',
+          title: `${noun} escalated: ${c.subject}`,
+          detail: [`priority ${escalation.fromPriority} → ${escalation.toPriority}`, escalation.reason].filter(Boolean).join(' · '),
+        });
       }
       if (c.resolvedAt) {
         timeline.push({ at: c.resolvedAt, type: 'support', title: `${noun} resolved: ${c.subject}`, detail: c.resolution });
@@ -269,8 +307,17 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         timeline.push({
           at: r.createdAt,
           type: 'report',
-          title: 'Reported by another account',
+          title: `Reported${r.reportedType && r.reportedType !== 'user' ? ` as ${r.reportedType === 'organizer' ? 'an organiser' : 'an artist'}` : ''} by another account`,
           detail: [r.reason, r.status && `status ${r.status}`].filter(Boolean).join(', '),
+        });
+      }
+      for (const a of Array.isArray(r.accountActions) ? r.accountActions : []) {
+        if (!a?.at) continue;
+        timeline.push({
+          at: a.at,
+          type: 'report',
+          title: `${a.action === 'restrict' ? 'Account restricted' : 'Restriction lifted'} from a report by ${a.byName || a.by || 'an admin'}`,
+          detail: [`${a.from} → ${a.to}`, a.reason].filter(Boolean).join(' · '),
         });
       }
     }
@@ -279,8 +326,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         timeline.push({
           at: f.createdAt,
           type: 'feedback',
-          title: `Feedback given${f.targetName ? ' on ' + f.targetName : ''}`,
-          detail: [f.rating ? `${f.rating} of 5` : '', f.comment || ''].filter(Boolean).join(': '),
+          title: `${f.rating ? 'Rated' : 'Feedback given on'} ${f.targetName || 'an event'}${f.rating ? ` ${f.rating} of 5` : ''}${f.source === 'app' ? ' in the app' : ''}`,
+          detail: [f.comment || '', f.status ? `status ${f.status}` : ''].filter(Boolean).join(' · '),
+        });
+      }
+      if (f.moderatedAt && (f.status === 'published' || f.status === 'hidden')) {
+        timeline.push({
+          at: f.moderatedAt,
+          type: 'feedback',
+          title: `Rating ${f.status === 'published' ? 'published' : 'hidden'}${f.targetName ? ': ' + f.targetName : ''}${f.moderatedBy ? ' by ' + f.moderatedBy : ''}`,
+          detail: f.moderationReason || '',
         });
       }
     }
@@ -351,6 +406,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         rating: typeof f.rating === 'number' ? f.rating : parseAmount(f.rating),
         comment: f.comment || '',
         status: f.status || '',
+        source: f.source === 'app' ? 'app' : 'admin',
+        bookingId: f.bookingId || '',
         createdAt: f.createdAt || null,
       })),
       reports: reports.map((r: any) => ({

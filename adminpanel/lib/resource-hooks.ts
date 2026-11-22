@@ -56,6 +56,8 @@ export interface ResourceHooks {
   /** Runs before a record is deleted. Returning a string refuses the deletion. */
   beforeDelete?: (ctx: { db: Db; existing: any; admin: AdminIdentity; reason: string } & HookRequestContext) => Promise<HookOutcome> | HookOutcome;
   afterStatusChange?: (ctx: { db: Db; item: any; from: string; to: string; admin: AdminIdentity }) => Promise<void> | void;
+  /** Runs after an internal note was added. Failures are logged and never undo the note. */
+  afterNote?: (ctx: { db: Db; item: any; note: { text: string; by: string | null; at: Date }; admin: AdminIdentity }) => Promise<void> | void;
 }
 
 const registry: Record<string, ResourceHooks> = {};

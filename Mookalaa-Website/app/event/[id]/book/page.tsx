@@ -13,12 +13,13 @@ import {
   fetchPaymentConfig,
   fetchVenueByName,
   formatRupees,
+  toBooking,
   verifyPayment,
   type OrderResult,
   type TicketRequest,
   type VenueInfo,
 } from "@/lib/api"
-import { ApiError, errorMessage } from "@/lib/api-client"
+import { ApiError, api, errorMessage } from "@/lib/api-client"
 import { useAuth } from "@/lib/auth"
 import { loginPath } from "@/lib/navigation"
 import { loadRazorpay, openRazorpay, type RazorpaySuccess } from "@/lib/razorpay"
@@ -38,7 +39,57 @@ interface Line {
   quantity: number
 }
 
-type PaidOrder = Extract<OrderResult, { free: false }>
+/** The coupon part of an order, as the server worked it out. */
+interface CouponPricing {
+  listPrice: number
+  discount: number
+  couponCode: string | null
+}
+
+type PaidOrder = Extract<OrderResult, { free: false }> & Partial<CouponPricing>
+
+/** A coupon that was checked for the current selection (POST /public/coupons/validate). */
+interface AppliedCoupon {
+  code: string
+  discount: number
+  payable: number
+  description: string
+  /** The list total it was checked against: a changed selection needs a new check. */
+  forAmount: number
+}
+
+/**
+ * Step one of a booking with a coupon. The server checks the coupon again,
+ * prices the tickets and creates the order for the discounted amount; it is
+ * the server's figures that are shown and charged.
+ */
+async function createCouponOrder(
+  userPhone: string,
+  eventId: string,
+  tickets: TicketRequest[],
+  couponCode: string,
+): Promise<(OrderResult & Partial<CouponPricing>)> {
+  const data = await api<any>("/payment/order", { body: { userPhone, eventId, tickets, couponCode } })
+  const pricing: CouponPricing = {
+    listPrice: Number(data.listPrice) || 0,
+    discount: Number(data.discount) || 0,
+    couponCode: typeof data.couponCode === "string" ? data.couponCode : null,
+  }
+  if (data.free === true) return { free: true, booking: toBooking(data.booking), ...pricing }
+  return {
+    free: false,
+    bookingId: String(data.bookingId || ""),
+    orderId: String(data.orderId || ""),
+    amount: Number(data.amount) || 0,
+    currency: String(data.currency || "INR"),
+    keyId: String(data.keyId || ""),
+    expiresAt: String(data.expiresAt || ""),
+    totalPrice: Number(data.totalPrice) || 0,
+    totalSeats: Number(data.totalSeats) || 0,
+    tickets: toBooking({ tickets: data.tickets }).tickets,
+    ...pricing,
+  }
+}
 
 type Phase = "select" | "review" | "pay" | "confirming" | "confirmed" | "refund" | "failed"
 
@@ -113,6 +164,8 @@ function orderErrorMessage(error: unknown): string {
       return `${error.message}. Please choose different seats.`
     case "SOLD_OUT":
       return `${error.message}. Please choose another ticket.`
+    case "COUPON_NOT_VALID":
+      return `${error.message}. The coupon was removed: you can book without it or try another code.`
     default:
       if (error.status === 401) return "Your session has expired. Please sign in again to book."
       return error.message
@@ -144,6 +197,11 @@ export default function BookingPage({ params }: BookingPageProps) {
   const [pendingPayment, setPendingPayment] = useState<RazorpaySuccess | null>(null)
   const [confirmNote, setConfirmNote] = useState("")
   const [confirmStalled, setConfirmStalled] = useState(false)
+  const [couponInput, setCouponInput] = useState("")
+  const [coupon, setCoupon] = useState<AppliedCoupon | null>(null)
+  const [couponError, setCouponError] = useState("")
+  const [couponBusy, setCouponBusy] = useState(false)
+  const [savedWithCoupon, setSavedWithCoupon] = useState<CouponPricing | null>(null)
   const alive = useRef(true)
 
   useEffect(() => {
@@ -277,6 +335,9 @@ export default function BookingPage({ params }: BookingPageProps) {
     (note: string) => {
       setOrder(null)
       setPendingPayment(null)
+      // The total may change, so a coupon is checked again on the next review.
+      setCoupon(null)
+      setCouponError("")
       setPhase("select")
       setMessage(note)
       loadEvent() // seat counts may have changed
@@ -379,12 +440,55 @@ export default function BookingPage({ params }: BookingPageProps) {
     [event, session, confirmPayment],
   )
 
+  const applyCoupon = async () => {
+    const code = couponInput.trim().toUpperCase()
+    setCouponError("")
+    if (!code) {
+      setCouponError("Enter a coupon code.")
+      return
+    }
+    if (!session) return
+    setCouponBusy(true)
+    try {
+      const result = await api<any>("/public/coupons/validate", {
+        body: { code, service: "ticketing", amount: estimatedTotal, userPhone: session.phone },
+      })
+      if (!alive.current) return
+      if (result.valid) {
+        setCoupon({
+          code: String(result.code),
+          discount: Number(result.discount) || 0,
+          payable: Number(result.payable) || 0,
+          description: typeof result.description === "string" ? result.description : "",
+          forAmount: estimatedTotal,
+        })
+      } else {
+        setCoupon(null)
+        setCouponError(result.reason || "This coupon cannot be used.")
+      }
+    } catch (err) {
+      if (alive.current) setCouponError(errorMessage(err, "The coupon could not be checked. Please try again."))
+    } finally {
+      if (alive.current) setCouponBusy(false)
+    }
+  }
+
+  const removeCoupon = () => {
+    setCoupon(null)
+    setCouponError("")
+  }
+
   const placeOrder = async () => {
     if (!event || !session || busy) return
     setBusy(true)
     setMessage("")
     try {
-      const result = await createOrder(session.phone, event.id, requestLines())
+      // Only a coupon checked against this exact total is sent; the server checks it again.
+      const result = coupon && coupon.forAmount === estimatedTotal
+        ? await createCouponOrder(session.phone, event.id, requestLines(), coupon.code)
+        : await createOrder(session.phone, event.id, requestLines())
+      const pricing = result as Partial<CouponPricing>
+      setSavedWithCoupon(pricing.couponCode ? { listPrice: pricing.listPrice || 0, discount: pricing.discount || 0, couponCode: pricing.couponCode } : null)
       if (result.free) {
         setBooking(result.booking)
         setPhase("confirmed")
@@ -399,6 +503,10 @@ export default function BookingPage({ params }: BookingPageProps) {
       const text = orderErrorMessage(err)
       if (err instanceof ApiError && (err.code === "SEATS_TAKEN" || err.code === "SOLD_OUT" || err.status === 401)) {
         backToSelection(text)
+      } else if (err instanceof ApiError && err.code === "COUPON_NOT_VALID") {
+        setCoupon(null)
+        setCouponError(err.message)
+        setMessage(text)
       } else {
         setMessage(text)
       }
@@ -461,6 +569,8 @@ export default function BookingPage({ params }: BookingPageProps) {
 
   const past = isPastEvent(event)
   const paid = estimatedTotal > 0
+  // A coupon checked against a different total is checked again before it is used.
+  const couponValid = Boolean(coupon && coupon.forAmount === estimatedTotal)
   const paymentsOff = config !== null && !config.enabled
   const holdMinutes = config?.holdMinutes ?? 15
   const gradient = "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
@@ -537,8 +647,13 @@ export default function BookingPage({ params }: BookingPageProps) {
             <h2 className="text-2xl font-bold">Booking confirmed</h2>
             <p className="text-muted-foreground">
               {booking.totalSeats} {booking.totalSeats === 1 ? "seat" : "seats"} for {booking.eventTitle}
-              {booking.totalPrice > 0 ? ` · ${formatRupees(booking.totalPrice)} paid` : " · free entry"}
+              {booking.totalPrice > 0 ? ` · ${formatRupees(booking.totalPrice)} paid` : savedWithCoupon ? " · free with your coupon" : " · free entry"}
             </p>
+            {savedWithCoupon && (
+              <p className="text-sm text-green-700" data-testid="coupon-saved">
+                Coupon {savedWithCoupon.couponCode} saved you {formatRupees(savedWithCoupon.discount)} on {formatRupees(savedWithCoupon.listPrice)}.
+              </p>
+            )}
             <ul className="text-sm space-y-1">
               {booking.tickets.map((line, index) => (
                 <li key={index}>
@@ -622,9 +737,21 @@ export default function BookingPage({ params }: BookingPageProps) {
                 </li>
               ))}
             </ul>
+            {order.couponCode && (
+              <div className="space-y-1 text-sm border-t border-border pt-4" data-testid="pay-coupon">
+                <div className="flex justify-between">
+                  <span>Tickets</span>
+                  <span>{formatRupees(order.listPrice || 0)}</span>
+                </div>
+                <div className="flex justify-between text-green-700">
+                  <span>Coupon {order.couponCode}</span>
+                  <span>−{formatRupees(order.discount || 0)}</span>
+                </div>
+              </div>
+            )}
             <div className="flex justify-between text-lg font-bold border-t border-border pt-4">
               <span>Amount to pay</span>
-              <span>{formatRupees(order.totalPrice)}</span>
+              <span data-testid="amount-to-pay">{formatRupees(order.totalPrice)}</span>
             </div>
             <Button onClick={() => openCheckout(order)} disabled={busy} className={gradient} size="lg">
               {busy ? "Opening payment..." : "Pay now"}
@@ -645,9 +772,65 @@ export default function BookingPage({ params }: BookingPageProps) {
             {notice}
             {selectedSummary}
             <div className="flex justify-between text-lg font-bold border-t border-border pt-4">
-              <span>Total</span>
-              <span>{paid ? formatRupees(estimatedTotal) : "Free"}</span>
+              <span>{couponValid ? "Tickets" : "Total"}</span>
+              <span className={couponValid ? "text-base font-medium" : ""}>{paid ? formatRupees(estimatedTotal) : "Free"}</span>
             </div>
+
+            {paid && (
+              <div className="rounded-lg border border-border p-4" data-testid="coupon-box">
+                <label htmlFor="coupon-code" className="block font-semibold mb-2">
+                  Have a coupon?
+                </label>
+                {couponValid && coupon ? (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <span className="text-green-700" data-testid="coupon-applied">
+                        Coupon <strong>{coupon.code}</strong> applied{coupon.description ? `: ${coupon.description}` : ""}
+                      </span>
+                      <Button type="button" variant="ghost" size="sm" onClick={removeCoupon} disabled={busy}>
+                        Remove
+                      </Button>
+                    </div>
+                    <div className="flex justify-between text-sm text-green-700">
+                      <span>Discount</span>
+                      <span data-testid="coupon-discount">−{formatRupees(coupon.discount)}</span>
+                    </div>
+                    <div className="flex justify-between text-lg font-bold">
+                      <span>New total</span>
+                      <span data-testid="coupon-total">{coupon.payable === 0 ? "Free" : formatRupees(coupon.payable)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <form
+                    className="flex flex-col sm:flex-row gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      applyCoupon()
+                    }}
+                  >
+                    <Input
+                      id="coupon-code"
+                      value={couponInput}
+                      onChange={(e) => setCouponInput(e.target.value)}
+                      placeholder="Enter code"
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      maxLength={30}
+                      className="sm:flex-1 uppercase"
+                      aria-describedby={couponError ? "coupon-error" : undefined}
+                    />
+                    <Button type="submit" variant="outline" disabled={couponBusy || busy}>
+                      {couponBusy ? "Checking..." : "Apply"}
+                    </Button>
+                  </form>
+                )}
+                {couponError && (
+                  <p id="coupon-error" role="alert" className="text-sm text-red-600 mt-2" data-testid="coupon-error">
+                    {couponError}
+                  </p>
+                )}
+              </div>
+            )}
 
             {paid && (
               <>
@@ -695,7 +878,13 @@ export default function BookingPage({ params }: BookingPageProps) {
                 className={`sm:flex-1 ${gradient}`}
                 size="lg"
               >
-                {busy ? "Please wait..." : paid ? "Continue to payment" : "Confirm free booking"}
+                {busy
+                  ? "Please wait..."
+                  : paid && couponValid && coupon?.payable === 0
+                    ? "Confirm booking with coupon"
+                    : paid
+                      ? "Continue to payment"
+                      : "Confirm free booking"}
               </Button>
             </div>
           </Card>

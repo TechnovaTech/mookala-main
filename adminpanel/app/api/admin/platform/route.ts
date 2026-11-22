@@ -1,13 +1,46 @@
 import { NextRequest } from 'next/server';
+import type { Db } from 'mongodb';
 import { connectToDatabase } from '@/lib/mongodb';
 import { clientIp, requireAdmin } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { diff, logAudit } from '@/lib/audit';
 import { asString, fail, ok } from '@/lib/http';
 import { approvalHeldResponse, gateSensitiveAction } from '@/lib/approvals';
-import { auditShape, getPlatformConfig, maintenanceStatus, savePlatformConfig, validatePlatformConfig } from '@/lib/platform-config';
+import {
+  POLICY_LINK_KEYS,
+  auditShape,
+  getPlatformConfig,
+  maintenanceStatus,
+  policyLinks,
+  savePlatformConfig,
+  validatePlatformConfig,
+  type PlatformConfig,
+} from '@/lib/platform-config';
+import { MAINTENANCE_ENFORCEMENT, noticesForWindows, syncMaintenanceNotices } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
+
+/** The published version of each policy the links point to. */
+async function publishedPolicies(db: Db) {
+  const rows = await db
+    .collection('policies')
+    .find({ status: 'published', type: { $in: POLICY_LINK_KEYS } }, { projection: { type: 1, title: 1, version: 1, effectiveDate: 1, publishedAt: 1 } })
+    .toArray();
+  return Object.fromEntries(rows.map((p) => [p.type, { id: String(p._id), title: p.title, version: p.version, effectiveDate: p.effectiveDate || null, publishedAt: p.publishedAt || null }]));
+}
+
+/** Whether an approved template exists for each channel the advance notices use. */
+async function noticeTemplates(db: Db, config: PlatformConfig) {
+  const rows = await db
+    .collection('notificationTemplates')
+    .find({ key: config.advanceNotice.templateKey, channel: { $in: config.advanceNotice.channels } }, { projection: { channel: 1, status: 1 } })
+    .toArray();
+  return config.advanceNotice.channels.map((channel) => {
+    const found = rows.filter((r) => r.channel === channel);
+    const approved = found.some((r) => r.status === 'approved');
+    return { channel, status: approved ? 'approved' : found[0]?.status || 'missing' };
+  });
+}
 
 /** Platform configuration (requirements section 15). */
 export async function GET(request: NextRequest) {
@@ -17,21 +50,21 @@ export async function GET(request: NextRequest) {
   try {
     const { db } = await connectToDatabase();
     const config = await getPlatformConfig(db);
-
-    // A real round trip to the database, so the status shown is measured, not assumed.
-    let database: { ok: boolean; latencyMs: number | null } = { ok: false, latencyMs: null };
-    try {
-      const started = Date.now();
-      await db.command({ ping: 1 });
-      database = { ok: true, latencyMs: Date.now() - started };
-    } catch {
-      database = { ok: false, latencyMs: null };
-    }
+    const [policies, notices, templates] = await Promise.all([
+      publishedPolicies(db),
+      noticesForWindows(db, config.maintenanceWindows.map((w) => w.id)),
+      noticeTemplates(db, config),
+    ]);
 
     return ok({
       config,
       maintenance: maintenanceStatus(config),
-      system: { database, checkedAt: new Date() },
+      policyLinks: policyLinks(config),
+      policies,
+      notices,
+      noticeTemplates: templates,
+      enforcement: MAINTENANCE_ENFORCEMENT,
+      serverTime: new Date(),
       canManage: can(check.admin, 'platform:manage'),
     });
   } catch (error) {
@@ -57,9 +90,19 @@ export async function PUT(request: NextRequest) {
     const { db } = await connectToDatabase();
     const current = await getPlatformConfig(db);
 
-    const switchingOn = !current.maintenance.enabled && checked.value.maintenance.enabled;
+    // Maintenance starts now either through the switch or through a window that covers the current time.
+    const now = new Date();
+    const wasActive = maintenanceStatus(current, now).active;
+    const willBeActive = maintenanceStatus({ ...checked.value }, now);
+    const switchingOn = !wasActive && willBeActive.active;
     if (switchingOn && body.confirmMaintenance !== true) {
-      return fail('Switching maintenance mode on needs an explicit confirmation', 409, { needsMaintenanceConfirmation: true });
+      return fail(
+        willBeActive.source === 'window'
+          ? 'A maintenance window covers the current time, so saving starts maintenance immediately. This needs an explicit confirmation.'
+          : 'Switching maintenance mode on needs an explicit confirmation',
+        409,
+        { needsMaintenanceConfirmation: true }
+      );
     }
 
     const changes = diff(auditShape(current), auditShape(checked.value));
@@ -87,10 +130,11 @@ export async function PUT(request: NextRequest) {
     if (!gate.proceed) return approvalHeldResponse(gate);
 
     const saved = await savePlatformConfig(db, checked.value, check.admin.email || null);
+    const after = maintenanceStatus(saved);
 
     await logAudit({
       admin: check.admin,
-      action: switchingOn ? 'maintenance_on' : current.maintenance.enabled && !saved.maintenance.enabled ? 'maintenance_off' : 'update',
+      action: switchingOn ? 'maintenance_on' : wasActive && !after.active ? 'maintenance_off' : 'update',
       module: 'platform',
       entityType: 'platform-config',
       entityId: 'platform',
@@ -102,7 +146,17 @@ export async function PUT(request: NextRequest) {
       request,
     });
 
-    return ok({ config: saved, maintenance: maintenanceStatus(saved) });
+    // The configuration is saved either way; a failure here is reported, not hidden.
+    let notices: Awaited<ReturnType<typeof syncMaintenanceNotices>> = [];
+    let noticeError: string | null = null;
+    try {
+      notices = await syncMaintenanceNotices(db, { before: current, after: saved, admin: check.admin, reason, request });
+    } catch (error) {
+      console.error('Maintenance notice sync failed:', error);
+      noticeError = 'The configuration was saved, but the advance notice announcements could not be updated. Save again to retry.';
+    }
+
+    return ok({ config: saved, maintenance: after, notices, noticeError });
   } catch (error) {
     console.error('Save platform configuration failed:', error);
     return fail('Failed to save the platform configuration', 500);

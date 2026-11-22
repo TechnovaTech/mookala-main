@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import Link from 'next/link'
 import { Bell, ChevronDown, LogOut, Search, ShieldCheck, User } from 'lucide-react'
 import Sidebar from './Sidebar'
+import MaintenanceBanner from './platform/MaintenanceBanner'
 import { api } from './ui'
 import { ROLES, can, type AdminIdentity } from '@/lib/permissions'
 
@@ -334,6 +335,7 @@ export default function AdminShell({
           </header>
 
           <main className="px-6 pb-10 pt-28">
+            <MaintenanceBanner admin={admin} />
             {admin?.mustChangePassword && (
               <div className="mb-4 border border-amber-300 bg-amber-50 text-amber-900 rounded-lg px-4 py-3 text-sm" role="alert">
                 This account is still using a temporary password.{' '}

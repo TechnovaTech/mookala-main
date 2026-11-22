@@ -14,6 +14,7 @@ import {
   staffNames,
   summariseTickets,
 } from '@/app/api/admin/catalogue/_lib/shared';
+import { maintenanceBlock } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,6 +101,7 @@ async function ownerGate(request: NextRequest, db: any, event: any): Promise<Nex
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    const down = await maintenanceBlock(null, request); if (down) return down;
     const eventId = toObjectId(params.id);
     if (!eventId) return NextResponse.json({ error: 'Invalid event ID' }, { status: 400 });
 
@@ -172,6 +174,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
  */
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    const down = await maintenanceBlock(null, request); if (down) return down;
     const eventId = toObjectId(params.id);
     if (!eventId) return NextResponse.json({ error: 'Invalid event ID' }, { status: 400 });
 

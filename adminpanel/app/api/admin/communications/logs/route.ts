@@ -4,30 +4,40 @@ import { requireAdmin } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { logAudit } from '@/lib/audit';
 import { csvResponse, escapeRegex, fail, ok, toCsv, toObjectId } from '@/lib/http';
-import { LOG_COLLECTION, isChannel } from '@/lib/notifications';
+import { DELIVERY_STATUSES, LOG_COLLECTION, isChannel } from '@/lib/notifications';
 
 export const dynamic = 'force-dynamic';
 
-const STATUSES = ['accepted', 'failed', 'not_sent'];
 const EXPORT_LIMIT = 5000;
+const KINDS = ['message', 'otp', 'test', 'campaign'];
 
 function buildFilter(params: URLSearchParams, withStatus: boolean) {
-  const filter: Record<string, any> = {};
+  const and: Record<string, any>[] = [];
 
   const channel = params.get('channel');
-  if (isChannel(channel)) filter.channel = channel;
+  if (isChannel(channel)) and.push({ channel });
 
   const status = params.get('status');
-  if (withStatus && status && STATUSES.includes(status)) filter.status = status;
+  if (withStatus && status && (DELIVERY_STATUSES as string[]).includes(status)) and.push({ status });
 
   const template = (params.get('template') || '').trim().slice(0, 60);
-  if (template) filter.templateKey = template;
+  if (template) and.push({ templateKey: template });
 
   const campaign = (params.get('campaign') || '').trim().slice(0, 64);
-  if (campaign) filter.campaignId = campaign;
+  if (campaign) and.push({ campaignId: campaign });
+
+  const kind = params.get('kind');
+  if (kind && KINDS.includes(kind)) and.push(kind === 'message' ? { kind: { $in: ['message', null] } } : { kind });
+
+  // retry=retried: entries that were retried; retry=attempts: second and later attempts;
+  // retry=scheduled: failed entries waiting for an automatic retry.
+  const retry = params.get('retry');
+  if (retry === 'retried') and.push({ retryLogId: { $ne: null } });
+  if (retry === 'attempts') and.push({ attempt: { $gt: 1 } });
+  if (retry === 'scheduled') and.push({ status: 'failed', retryable: true, retryLogId: null, nextRetryAt: { $ne: null } });
 
   const q = (params.get('q') || '').trim().slice(0, 100);
-  if (q) filter.to = { $regex: escapeRegex(q), $options: 'i' };
+  if (q) and.push({ $or: [{ to: { $regex: escapeRegex(q), $options: 'i' } }, { 'recipient.name': { $regex: escapeRegex(q), $options: 'i' } }, { providerMessageId: q }] });
 
   const range: Record<string, Date> = {};
   const from = params.get('from');
@@ -38,9 +48,9 @@ function buildFilter(params: URLSearchParams, withStatus: boolean) {
     end.setHours(23, 59, 59, 999);
     range.$lte = end;
   }
-  if (Object.keys(range).length) filter.createdAt = range;
+  if (Object.keys(range).length) and.push({ createdAt: range });
 
-  return filter;
+  return and.length === 0 ? {} : and.length === 1 ? and[0] : { $and: and };
 }
 
 /** Delivery log with filters, counts per status, the filter options and CSV export. */
@@ -61,35 +71,63 @@ export async function GET(request: NextRequest) {
         action: 'export',
         module: 'communications',
         entityType: 'notification-logs',
-        meta: { rows: rows.length, filter: Object.keys(filter) },
+        meta: { rows: rows.length, filter: Array.from(params.keys()).filter((k) => k !== 'export') },
         request,
       });
-      const csv = toCsv(rows, [
-        { key: 'createdAt', label: 'Time' },
-        { key: 'channel', label: 'Channel' },
-        { key: 'to', label: 'To' },
-        { key: 'templateKey', label: 'Template' },
-        { key: 'status', label: 'Status' },
-        { key: 'provider', label: 'Provider' },
-        { key: 'providerMessageId', label: 'Provider reference' },
-        { key: 'error', label: 'Reason' },
-        { key: 'attempt', label: 'Attempt' },
-        { key: 'campaignType', label: 'Campaign type' },
-        { key: 'campaignId', label: 'Campaign ID' },
-        { key: 'subject', label: 'Subject' },
-        { key: 'body', label: 'Message' },
-        { key: 'requestedBy', label: 'Requested by' },
-      ]);
+      const csv = toCsv(
+        rows.map((row) => ({
+          ...row,
+          recipientName: row.recipient?.name || '',
+          recipientType: row.recipient?.type || '',
+          retried: row.retryLogId ? 'yes' : '',
+        })),
+        [
+          { key: 'createdAt', label: 'Queued or recorded at' },
+          { key: 'channel', label: 'Channel' },
+          { key: 'to', label: 'To' },
+          { key: 'recipientName', label: 'Recipient' },
+          { key: 'recipientType', label: 'Recipient type' },
+          { key: 'templateKey', label: 'Template' },
+          { key: 'status', label: 'Status' },
+          { key: 'acceptedAt', label: 'Accepted by provider at' },
+          { key: 'deliveredAt', label: 'Delivered at' },
+          { key: 'readAt', label: 'Read or opened at' },
+          { key: 'failedAt', label: 'Failed at' },
+          { key: 'provider', label: 'Provider' },
+          { key: 'providerMessageId', label: 'Provider reference' },
+          { key: 'providerStatus', label: 'Last provider event' },
+          { key: 'error', label: 'Reason' },
+          { key: 'attempt', label: 'Attempt' },
+          { key: 'retryOf', label: 'Retry of' },
+          { key: 'retried', label: 'Retried' },
+          { key: 'retryLogId', label: 'Retried as' },
+          { key: 'nextRetryAt', label: 'Automatic retry at' },
+          { key: 'kind', label: 'Kind' },
+          { key: 'campaignType', label: 'Campaign type' },
+          { key: 'campaignId', label: 'Campaign ID' },
+          { key: 'subject', label: 'Subject' },
+          { key: 'body', label: 'Message' },
+          { key: 'requestedBy', label: 'Requested by' },
+        ]
+      );
       return csvResponse(csv, `delivery-log-${new Date().toISOString().slice(0, 10)}.csv`);
     }
 
     const page = Math.max(1, parseInt(params.get('page') || '1', 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(params.get('limit') || '25', 10) || 25));
+    const countFilter = buildFilter(params, false);
 
-    const [items, total, grouped, templates, campaignIds] = await Promise.all([
-      logs.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).toArray(),
+    const [items, total, grouped, retried, retryScheduled, templates, campaignIds] = await Promise.all([
+      logs
+        .find(filter, { projection: { variables: 0, direct: 0 } })
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .toArray(),
       logs.countDocuments(filter),
-      logs.aggregate([{ $match: buildFilter(params, false) }, { $group: { _id: '$status', count: { $sum: 1 } } }]).toArray(),
+      logs.aggregate([{ $match: countFilter }, { $group: { _id: '$status', count: { $sum: 1 } } }]).toArray(),
+      logs.countDocuments({ $and: [countFilter, { retryLogId: { $ne: null } }] }),
+      logs.countDocuments({ $and: [countFilter, { status: 'failed', retryable: true, retryLogId: null, nextRetryAt: { $ne: null } }] }),
       logs.distinct('templateKey', { templateKey: { $ne: null } }),
       logs
         .aggregate([
@@ -114,7 +152,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const counts: Record<string, number> = { accepted: 0, failed: 0, not_sent: 0 };
+    const counts: Record<string, number> = Object.fromEntries(DELIVERY_STATUSES.map((s) => [s, 0]));
     for (const group of grouped) if (group._id in counts) counts[group._id] = group.count;
 
     return ok({
@@ -123,6 +161,8 @@ export async function GET(request: NextRequest) {
       page,
       limit,
       counts,
+      retried,
+      retryScheduled,
       templates: (templates as string[]).filter(Boolean).sort(),
       campaigns,
       canManage: can(check.admin, 'communications:manage'),

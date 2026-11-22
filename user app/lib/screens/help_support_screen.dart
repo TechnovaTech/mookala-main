@@ -6,9 +6,11 @@ import '../utils/formats.dart';
 import '../utils/links.dart';
 import '../widgets/app_theme.dart';
 import '../widgets/state_views.dart';
+import 'support/support_tickets_screen.dart';
 
-/// Help and policies: the support contacts from `/public/platform` and the
-/// published policies from `/public/policies`.
+/// Help and policies: the customer's support tickets (raise one, read the
+/// replies), the support contacts from `/public/platform` and the published
+/// policies from `/public/policies`.
 class HelpSupportScreen extends StatefulWidget {
   const HelpSupportScreen({super.key});
 
@@ -85,6 +87,23 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
               ? ErrorView(message: _error ?? 'Help could not be loaded.', onRetry: _load)
               : ListView(
                   children: [
+                    _heading('Support tickets'),
+                    ListTile(
+                      key: const ValueKey('my-tickets'),
+                      leading: const Icon(Icons.support_agent),
+                      title: const Text('My support tickets'),
+                      subtitle: const Text('Your tickets and the replies from support'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportTicketsScreen())),
+                    ),
+                    ListTile(
+                      key: const ValueKey('raise-ticket'),
+                      leading: const Icon(Icons.add_comment_outlined),
+                      title: const Text('Raise a ticket'),
+                      subtitle: const Text('Tell us what went wrong'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NewTicketScreen())),
+                    ),
                     _heading('Contact support'),
                     if (p.supportEmail.isEmpty && p.supportPhone.isEmpty && p.supportAddress.isEmpty)
                       const Padding(

@@ -14,6 +14,7 @@ import {
   requireAppUser,
   text,
 } from '@/lib/app-auth';
+import { maintenanceBlock } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +27,7 @@ export async function OPTIONS() {
  *   { phone, name?, email?, city?, bio?, genre?, pricing?, profileImage?, bannerImage?, mediaData?, mediaType? }
  */
 export async function POST(request: NextRequest) {
+  const down = await maintenanceBlock(); if (down) return down;
   const body = await readBody(request);
   if (!body) return fail('Invalid request body', 400);
 

@@ -66,6 +66,7 @@ interface BookingRow {
 interface Feedback {
   rating: number | null
   ratingCount: number
+  pendingRatings?: number
   ratings: { _id: string; rating: number; comment: string; customerName: string; status: string; createdAt: string | null }[]
   complaints: { _id: string; subject: string; status: string; priority: string; bookingId: string; createdAt: string | null }[]
   reports: { _id: string; reason: string; details: string; status: string; createdAt: string | null }[]
@@ -817,11 +818,21 @@ function ArtistDetail() {
             <h3 className="text-sm font-semibold text-gray-900 mb-2">
               Ratings{' '}
               <span className="font-normal text-gray-600">
-                {artist.feedback.rating !== null ? `${artist.feedback.rating.toFixed(2)} out of 5 from ${artist.feedback.ratingCount}` : 'none yet'}
+                {artist.feedback.rating !== null
+                  ? `${artist.feedback.rating.toFixed(2)} out of 5 from ${artist.feedback.ratingCount} published`
+                  : 'none published yet'}
               </span>
             </h3>
+            {Boolean(artist.feedback.pendingRatings) && (
+              <p className="text-xs text-gray-500 mb-2">
+                {artist.feedback.pendingRatings} waiting for review on{' '}
+                <Link href="/support/feedback?status=pending" className="text-teal underline">Feedback &amp; Ratings</Link>
+              </p>
+            )}
             {artist.feedback.ratings.length === 0 ? (
-              <p className="text-sm text-gray-500">Ratings recorded under Support, Feedback for this artist appear here.</p>
+              <p className="text-sm text-gray-500">
+                Customers rate the events they attended from My bookings in the app. A rating of an event this artist performed in counts here once it is published.
+              </p>
             ) : (
               <ul className="space-y-2 text-sm">
                 {artist.feedback.ratings.map((rating) => (
@@ -842,7 +853,7 @@ function ArtistDetail() {
               <ul className="space-y-2 text-sm">
                 {artist.feedback.complaints.map((complaint) => (
                   <li key={complaint._id}>
-                    <Link href="/support/complaints" className="font-medium text-deep-blue hover:underline">
+                    <Link href={`/support/complaints?id=${complaint._id}`} className="font-medium text-deep-blue hover:underline">
                       {complaint.subject || 'Complaint'}
                     </Link>
                     <span className="text-gray-500"> · {complaint.status.replace(/_/g, ' ')} · {formatDate(complaint.createdAt)}</span>

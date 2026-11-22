@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import AdminShell from '@/components/AdminShell'
+import RatingsSection from '@/components/support/RatingsSection'
 import {
   Badge,
   Button,
@@ -917,6 +918,8 @@ export default function EventDetailsPage() {
               </>
             )}
           </Section>
+
+          <RatingsSection subject="event" id={id} />
 
           <Section title="History of decisions and changes">
             {history.length === 0 ? (

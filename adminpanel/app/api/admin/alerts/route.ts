@@ -66,6 +66,19 @@ export async function GET(request: NextRequest) {
     })
   );
 
+  // Support cases assigned to this admin that are still open, and how many of them are escalated.
+  if (can(check.admin, 'support:view') && check.admin.id) {
+    try {
+      const mine = { assignedToId: check.admin.id, status: { $in: ['open', 'in_progress', 'waiting_customer', 'escalated'] } };
+      const [count, escalated] = await Promise.all([
+        db.collection('supportCases').countDocuments(mine),
+        db.collection('supportCases').countDocuments({ ...mine, escalated: true }),
+      ]);
+      counted.push({ key: 'my_cases', label: 'Open cases assigned to you', href: '/support/my-cases', severity: 'warning', count });
+      counted.push({ key: 'my_cases_escalated', label: 'Escalated cases assigned to you', href: '/support/my-cases?escalated=1', severity: 'critical', count: escalated });
+    } catch {}
+  }
+
   // Settlements whose payout date has passed are reported separately as overdue.
   if (can(check.admin, 'settlements:manage')) {
     try {

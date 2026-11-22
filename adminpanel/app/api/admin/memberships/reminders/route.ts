@@ -35,7 +35,7 @@ const DEFAULT_WINDOW = 30;
  * Sending goes through sendNotification() with an approved template. What is
  * recorded against the subscription is the delivery log's own status:
  * "accepted" only when a provider took the message, otherwise "not_sent" or
- * "failed" with the reason. There is no scheduler: nothing is sent unless an
+ * "failed" with the reason. The scheduler sends due reminders only when automatic reminders are switched on (Communications -> Channels -> Scheduler); otherwise nothing is sent unless an
  * admin presses a button.
  */
 
