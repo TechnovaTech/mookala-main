@@ -104,11 +104,10 @@ export function Footer() {
             </div>
           )}
         </div>
-        <div className="border-t border-border pt-8 text-center text-sm text-muted-foreground">
-          <p>
-            &copy; {new Date().getFullYear()} Venootic Enterprises OPC Private Limited. MOOKALAA is a registered
-            trademark of Venootic Enterprises OPC Private Limited.
-          </p>
+        <div className="border-t border-border pt-8 text-center text-sm text-muted-foreground space-y-2" data-footer="company">
+          <p className="font-semibold text-foreground">APITxT</p>
+          <p>GSTIN: 08ABVFA4087H1ZW &nbsp;|&nbsp; Industry: Technology</p>
+          <p>&copy; {new Date().getFullYear()} APITxT. All rights reserved.</p>
         </div>
       </div>
     </footer>

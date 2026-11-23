@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { MapPin } from "lucide-react"
+import { MapPin, Sparkles } from "lucide-react"
 import { HeroSearch } from "@/components/hero-search"
-import { FeaturedSlider } from "@/components/featured-slider"
 import { CategorySection } from "@/components/category-section"
 import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
@@ -127,11 +126,19 @@ export default function Home() {
           </section>
 
           <section className="px-4 sm:px-6 lg:px-8 py-8 max-w-7xl mx-auto">
-            <div className="mb-6">
-              <h2 className="text-2xl sm:text-3xl font-bold mb-1">Happening soon</h2>
-              <p className="text-muted-foreground text-sm">The next events on the calendar</p>
+            <div className="mb-8 flex items-center gap-4">
+              <span aria-hidden className="h-10 sm:h-12 w-1.5 rounded-full bg-gradient-to-b from-amber-400 to-primary" />
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-amber-400 via-amber-200 to-primary bg-clip-text text-transparent">
+                Featured Events
+              </h2>
             </div>
-            <FeaturedSlider events={upcoming.slice(0, 5)} />
+            {/* Shown in place of the featured event cards until featured events go live. */}
+            <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/15 via-card to-primary/15 h-64 sm:h-80 flex flex-col items-center justify-center gap-4 text-center px-6">
+              <Sparkles size={40} className="text-amber-400" aria-hidden />
+              <p className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight bg-gradient-to-r from-amber-400 via-amber-200 to-primary bg-clip-text text-transparent">
+                Coming Soon
+              </p>
+            </div>
           </section>
 
           <section className="px-4 sm:px-6 lg:px-8 pb-8 max-w-7xl mx-auto">
@@ -142,21 +149,21 @@ export default function Home() {
 
           {cities.length > 0 && (
             <section className="px-4 sm:px-6 lg:px-8 pb-12 max-w-7xl mx-auto">
-              <div className="mb-6">
-                <h2 className="text-2xl sm:text-3xl font-bold mb-1">Events by city</h2>
-                <p className="text-muted-foreground text-sm">Cities with events you can book now</p>
+              <div className="mb-8">
+                <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight mb-2">Trending Cities</h2>
+                <p className="text-muted-foreground text-base sm:text-lg">Cities with events you can book now</p>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {cities.slice(0, 8).map((city) => (
                   <Link
                     key={city.name}
                     href={`/events?location=${encodeURIComponent(city.name)}`}
-                    className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 hover:border-primary transition"
+                    className="flex items-center gap-4 rounded-xl border border-border bg-card p-5 hover:border-primary transition"
                   >
-                    <MapPin size={20} className="text-primary flex-shrink-0" />
+                    <MapPin size={26} className="text-primary flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="font-semibold truncate">{city.name}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-lg sm:text-xl font-bold truncate">{city.name}</p>
+                      <p className="text-sm text-muted-foreground">
                         {city.count} {city.count === 1 ? "event" : "events"}
                       </p>
                     </div>

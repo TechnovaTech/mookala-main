@@ -426,12 +426,13 @@ export default async function PrivacyPage() {
       <LegalSection heading="Contact Us" highlight>
         <div className="space-y-2">
           <p>
-            <span className="font-semibold text-foreground">Company Name:</span> VENOOTIC
-            ENTERPRISES OPC PVT LTD
+            <span className="font-semibold text-foreground">Company Name:</span> APITxT
           </p>
           <p>
-            <span className="font-semibold text-foreground">Address:</span> Plot No.
-            1180/6456/16042, Satyavihar, Rasulgarh, Bhubaneswar, Khordha – 751010, Odisha, India
+            <span className="font-semibold text-foreground">GSTIN:</span> 08ABVFA4087H1ZW
+          </p>
+          <p>
+            <span className="font-semibold text-foreground">Industry:</span> Technology
           </p>
           <ContactLines email={contacts.email} phone={contacts.phone} website={contacts.website} />
         </div>
