@@ -46,7 +46,7 @@ export function HeroSearch({ categories, cities }: HeroSearchProps) {
             Discover Amazing Arts &amp; Cultural Events
           </h1>
           <p className="text-base sm:text-lg text-muted-foreground mb-8 max-w-2xl">
-            Unite Through Arts - Find Jatra, Cinema, Music, Dance &amp; More
+            Unite Through Arts - Find Cinema, Music, Dance &amp; More
           </p>
         </div>
       </div>

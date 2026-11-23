@@ -20,7 +20,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "Mookalaa - Unite Through Arts",
   description:
-    "Unite Through Arts. Discover and book Jatra, Cinema, Music, Dance, Festivals and Workshops from artists across India.",
+    "Unite Through Arts. Discover and book Cinema, Music, Dance, Festivals and Workshops from artists across India.",
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml" },
