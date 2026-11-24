@@ -105,9 +105,10 @@ export function Footer() {
           )}
         </div>
         <div className="border-t border-border pt-8 text-center text-sm text-muted-foreground space-y-2" data-footer="company">
-          <p className="font-semibold text-foreground">APITxT</p>
-          <p>GSTIN: 08ABVFA4087H1ZW &nbsp;|&nbsp; Industry: Technology</p>
-          <p>&copy; {new Date().getFullYear()} APITxT. All rights reserved.</p>
+          <p className="font-semibold text-foreground">VENOOTIC ENTERPRISES OPC PVT LTD</p>
+          <p>CIN: U90001OD2025OPC051514 &nbsp;|&nbsp; GST: 21AALCV6186G1Z3</p>
+          <p>Registered Office: Satya Vihar, Rasulghar, Bhubaneswar, Khorda, Odisha, 751010</p>
+          <p className="pt-2">&copy; {new Date().getFullYear()} Venootic Enterprises OPC Private Limited. MOOKALAA is a registered trademark.</p>
         </div>
       </div>
     </footer>
